@@ -26,7 +26,7 @@ minor versions may contain breaking changes; they are listed under **Changed** o
 - Python DAG import on Airflow 3.2: `CronTriggerTimetable("@daily", ...)` is recognised as a
   preset again (SDK timetables keep the preset unresolved).
 
-## [0.1.0] - Unreleased
+## [0.1.0] - 2026-10-21
 
 First public release.
 
