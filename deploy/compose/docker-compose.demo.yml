@@ -160,7 +160,7 @@ services:
   # Core (always on)
   # ==========================================================================================
   postgres:
-    image: postgres:17-alpine
+    image: postgres:18-alpine
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: ${DEMO_POSTGRES_PASSWORD:-postgres-demo-only}
