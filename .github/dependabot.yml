@@ -2,6 +2,7 @@
 version: 2
 updates:
   - package-ecosystem: github-actions
+    open-pull-requests-limit: 0   # paused until v0.1.0 ships; remove to resume
     directory: /
     schedule: {interval: weekly, day: monday}
     groups:
@@ -10,6 +11,7 @@ updates:
     commit-message: {prefix: "ci"}
 
   - package-ecosystem: uv
+    open-pull-requests-limit: 0   # paused until v0.1.0 ships; remove to resume
     directory: /
     schedule: {interval: weekly, day: monday}
     groups:
@@ -22,6 +24,7 @@ updates:
     commit-message: {prefix: "deps"}
 
   - package-ecosystem: npm
+    open-pull-requests-limit: 0   # paused until v0.1.0 ships; remove to resume
     directory: /frontend
     schedule: {interval: weekly, day: monday}
     groups:
@@ -30,6 +33,7 @@ updates:
     commit-message: {prefix: "deps(frontend)"}
 
   - package-ecosystem: npm
+    open-pull-requests-limit: 0   # paused until v0.1.0 ships; remove to resume
     directory: /website
     schedule: {interval: weekly, day: monday}
     groups:
@@ -38,6 +42,7 @@ updates:
     commit-message: {prefix: "deps(website)"}
 
   - package-ecosystem: docker
+    open-pull-requests-limit: 0   # paused until v0.1.0 ships; remove to resume
     directories: [/deploy/docker]
     schedule: {interval: weekly, day: monday}
     ignore:
@@ -47,6 +52,7 @@ updates:
     commit-message: {prefix: "deps(docker)"}
 
   - package-ecosystem: docker-compose
+    open-pull-requests-limit: 0   # paused until v0.1.0 ships; remove to resume
     directories: [/deploy/compose]
     schedule: {interval: monthly}
     commit-message: {prefix: "deps(compose)"}
