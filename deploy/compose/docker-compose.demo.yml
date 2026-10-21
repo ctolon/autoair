@@ -307,7 +307,7 @@ services:
   # ==========================================================================================
   redis:
     profiles: [redis]
-    image: redis:7.4-alpine
+    image: redis:8.10-alpine
     command: [redis-server, --requirepass, "${DEMO_REDIS_PASSWORD:-redis-demo-only}", --save, ""]
     healthcheck:
       <<: *hc
