@@ -1,0 +1,231 @@
+---
+title: Publishing a marketplace
+description: Publish a signed marketplace index of DAG templates, fragments and extension packages with autoair marketplace keygen and build, and connect AutoAir to it.
+sidebar_label: Publishing a marketplace
+---
+
+A **marketplace** is a signed `index.json` that lists DAG templates, fragments and extension packages, plus the template files it points to. Platform teams publish one; AutoAir instances pin its public key in `AUTOAIR_MARKETPLACE_SOURCES` and show its entries in the **Templates** dialog. Publishing one is covered here; using a marketplace as an author is in [Marketplace](/docs/user-guide/marketplace).
+
+Trust model:
+
+- The index is signed with **Ed25519** over its canonical JSON (keys sorted, no whitespace, `signature` removed).
+- Every template payload is listed with its **SHA-256**; a payload that does not match is refused.
+- Nothing executes. `dag` and `fragment` entries are data that install into the template gallery. `extension` entries describe pip packages and only display their install command; AutoAir never installs Python code at runtime.
+
+## Layout
+
+The repository's `examples/marketplace/` shows the source layout:
+
+```text
+market/
+├── templates/
+│   ├── daily-http-ingest.json     # kind "dag"
+│   └── slack-on-failure.json      # kind "fragment"
+├── extensions.json                # optional: pip packages
+└── index.json                     # written by `autoair marketplace build`
+```
+
+### Template files
+
+Each `templates/*.json` file is one template in the format the template gallery saves (`TemplateInput`), plus optional publishing metadata:
+
+| Field | Required | Meaning |
+|---|---|---|
+| `id` | yes | `^[a-z0-9][a-z0-9_-]{0,80}$`; also the template id after installation |
+| `title` | yes | 1 to 120 characters |
+| `kind` | yes | `dag` (with `spec`) or `fragment` (with `fragment`). Operator templates are not accepted by the marketplace |
+| `spec` | for `dag` | A complete [DagSpec](/docs/extending/spec-format) |
+| `fragment` | for `fragment` | `{"nodes": [...], "edges": [...]}` with at least one node |
+| `description`, `category`, `tags` | no | Shown in the gallery |
+| `version` | no | Shown in the listing (default `1.0.0`) |
+| `author`, `min_airflow` | no | Shown in the listing |
+| `requires` | no | Provider packages the template needs, for example `["apache-airflow-providers-slack"]` |
+
+A fragment from the example:
+
+```json
+{
+  "id": "slack-on-failure",
+  "title": "Slack alert on failure",
+  "description": "A final task that runs only when something upstream failed and posts to Slack.",
+  "category": "alerts",
+  "tags": ["slack", "alerting"],
+  "kind": "fragment",
+  "version": "1.0.0",
+  "author": "AutoAir examples",
+  "requires": ["apache-airflow-providers-slack"],
+  "fragment": {
+    "nodes": [
+      {
+        "kind": "python_task",
+        "id": "alert",
+        "task_id": "alert_on_failure",
+        "function_name": "alert_on_failure",
+        "trigger_rule": "one_failed",
+        "code": "from airflow.sdk import get_current_context\n\nctx = get_current_context()\nprint(f\"DAG {ctx['dag'].dag_id} failed in run {ctx['run_id']}\")"
+      }
+    ]
+  }
+}
+```
+
+The quickest way to author a template is to build it in AutoAir, save it with **Save as template…** or **Save selection as fragment…**, and copy the stored JSON.
+
+### Extension entries
+
+`extensions.json` is a list of pip packages (node kinds, catalog sources, operator libraries):
+
+```json
+[
+  {
+    "id": "autoair-dbt-nodes",
+    "title": "dbt node kinds",
+    "description": "Node kinds and catalog source for dbt (installed with pip).",
+    "category": "extensions",
+    "package": "autoair-dbt-nodes",
+    "homepage": "https://example.com/autoair-dbt-nodes"
+  }
+]
+```
+
+`package` is the pip requirement shown to users; an administrator installs it in the image.
+
+## Publish
+
+1. **Create a signing key** (once). The private key is written with mode `0600`; the command prints the base64 public key:
+
+   ```bash
+   autoair marketplace keygen --out market.pem
+   # +oRcDnGQmFi9tgI6BeJDp536UkDFKL/MFKdDGUzN+Ls=
+   ```
+
+   Keep `market.pem` in your secret store (for example a CI secret). Anyone holding it can publish templates your users will trust.
+
+2. **Build and sign the index**:
+
+   ```bash
+   autoair marketplace build ./market --name acme --key market.pem \
+     --description "ACME data platform templates"
+   # 3 entries → market/index.json
+   ```
+
+   `build` validates every template against the template model (an invalid file fails the build), computes SHA-256 hashes of the exact file bytes and signs the index. Without `--key` the index is unsigned.
+
+3. **Verify** before uploading:
+
+   ```bash
+   autoair marketplace verify ./market/index.json --public-key '+oRcDnGQmFi9tgI6BeJDp536UkDFKL/MFKdDGUzN+Ls='
+   # signature OK
+   ```
+
+4. **Upload** the whole folder (index and `templates/`) to any location AutoAir can read: an HTTPS server, a bucket (`s3://`, `gs://`), or a shared path (`file://`). Payload paths are resolved relative to the index URL.
+
+The `keygen` and `build` commands refuse to run when `features.marketplace` is off in the environment where you run them.
+
+### Publishing from CI
+
+```yaml
+# .github/workflows/marketplace.yml (excerpt)
+- run: pip install autoair
+- run: printf '%s' "$MARKET_KEY" > market.pem
+  env: { MARKET_KEY: "${{ secrets.MARKET_KEY }}" }
+- run: autoair marketplace build ./market --name acme --key market.pem
+- run: autoair marketplace verify ./market/index.json --public-key "${{ vars.MARKET_PUBLIC_KEY }}"
+- run: aws s3 sync ./market s3://acme-autoair-market/ --delete
+```
+
+Rebuild and re-sign whenever a template changes: editing a template file without rebuilding makes its hash mismatch, and installs of that entry are refused.
+
+## Index format
+
+`index.json` (format 1), as written by `build` for the example folder:
+
+```json
+{
+  "format": 1,
+  "name": "acme",
+  "description": "ACME data platform templates",
+  "entries": [
+    {
+      "id": "daily-http-ingest",
+      "kind": "dag",
+      "title": "Daily HTTP ingest",
+      "description": "Fetch a JSON API every day, transform it in Python and log the row count.",
+      "category": "ingestion",
+      "tags": ["http", "daily"],
+      "version": "1.1.0",
+      "author": "AutoAir examples",
+      "requires": [],
+      "path": "templates/daily-http-ingest.json",
+      "sha256": "1412916abbff44d75e14a63202ef5671b5d513ff0eab9dcd67511b3d30fde6db"
+    },
+    {
+      "id": "autoair-dbt-nodes",
+      "kind": "extension",
+      "title": "dbt node kinds",
+      "category": "extensions",
+      "package": "autoair-dbt-nodes",
+      "homepage": "https://example.com/autoair-dbt-nodes"
+    }
+  ],
+  "signature": "VDcJsaSce0fshmMYx5TNGUOm...NAw=="
+}
+```
+
+| Entry field | Meaning |
+|---|---|
+| `id`, `kind`, `title`, `description`, `category`, `tags`, `version`, `author`, `min_airflow`, `requires` | Listing metadata |
+| `path` | Payload path relative to the index; absolute paths, URLs and `..` are rejected |
+| `sha256` | Hash of the payload bytes |
+| `package`, `homepage` | `extension` entries only |
+
+## Connect AutoAir to the marketplace
+
+```bash
+AUTOAIR_MARKETPLACE_SOURCES='[
+  {"name": "acme", "url": "https://dags.acme.io/market/index.json",
+   "public_key": "+oRcDnGQmFi9tgI6BeJDp536UkDFKL/MFKdDGUzN+Ls="}
+]'
+```
+
+| Source field | Default | Meaning |
+|---|---|---|
+| `name` | required | `^[A-Za-z0-9_.-]{1,64}$`; installed templates are tagged `marketplace:<name>` |
+| `url` | required | `https://`, `file://`, `s3://`, `gs://` or any fsspec URL of `index.json` |
+| `public_key` | none | Base64 raw Ed25519 public key the index must be signed with |
+| `require_signature` | `true` | `false` accepts an unsigned internal index; it is shown as **UNSIGNED** |
+
+| Setting | Default | |
+|---|---|---|
+| `marketplace_timeout` | `15` | Seconds per index or payload download |
+| `marketplace_cache_ttl` | `300` | Seconds a fetched index is reused (per replica) |
+| `marketplace_max_bytes` | `5242880` | Largest index or payload accepted |
+| `features.marketplace` | `true` | Switch the feature off entirely |
+
+HTTPS downloads use the `marketplace` outbound client (`AUTOAIR_OUTBOUND__CLIENTS`), so a private CA or proxy can be set for it alone.
+
+<Screenshot name="marketplace" alt="Templates dialog with the marketplace tab listing verified entries from a signed source, each with an install button" caption="Entries from a signed source in the Templates dialog." />
+
+Users with the `template:write` permission install entries; the API is `GET /api/marketplace` (listing, `?refresh=true` bypasses the cache) and `POST /api/marketplace/install` with `{"source": "acme", "entry_id": "daily-http-ingest"}`.
+
+## Failure behaviour
+
+| Situation | Result |
+|---|---|
+| Index unreachable or not JSON | The source is listed with `ok: false` and the error; other sources still work |
+| Signature missing or invalid (with `require_signature`) | The whole source is rejected: `index signature is missing or invalid` |
+| Payload hash differs from the index | Install refused: `payload hash mismatch` |
+| Payload id or kind differs from its index entry | Install refused |
+| Payload is not a valid template | Install refused with the validation error |
+| Entry is an extension | Install refused with the `pip install <package>` hint |
+| Index or payload larger than `marketplace_max_bytes` | Refused |
+
+## Key rotation
+
+Generate a new key, rebuild and re-sign the index, then update `public_key` in every AutoAir instance. Between the upload and the configuration change, instances with the old key reject the source (it fails closed). To avoid the gap, publish the newly signed index under a new URL and configure it as a second source before retiring the old one.
+
+## Related pages
+
+- [Marketplace (user guide)](/docs/user-guide/marketplace)
+- [Templates and fragments](/docs/user-guide/templates-and-fragments)
+- [Air-gapped installation](/docs/deployment/air-gapped)

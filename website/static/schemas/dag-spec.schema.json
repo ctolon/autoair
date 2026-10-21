@@ -1,0 +1,3526 @@
+{
+  "$defs": {
+    "AssetAliasLeaf": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "alias",
+          "title": "Op",
+          "type": "string"
+        },
+        "name": {
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        }
+      },
+      "required": [
+        "op",
+        "name"
+      ],
+      "title": "AssetAliasLeaf",
+      "type": "object"
+    },
+    "AssetAndTimeScheduleSpec": {
+      "additionalProperties": false,
+      "description": "Airflow >= 3.4: scheduled run happens only once the assets were updated.",
+      "properties": {
+        "type": {
+          "const": "assets_and_time",
+          "title": "Type",
+          "type": "string"
+        },
+        "expression": {
+          "discriminator": {
+            "mapping": {
+              "alias": "#/$defs/AssetAliasLeaf",
+              "all": "#/$defs/AssetCombination",
+              "any": "#/$defs/AssetCombination",
+              "asset": "#/$defs/AssetLeaf"
+            },
+            "propertyName": "op"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/AssetLeaf"
+            },
+            {
+              "$ref": "#/$defs/AssetAliasLeaf"
+            },
+            {
+              "$ref": "#/$defs/AssetCombination"
+            }
+          ],
+          "title": "Expression"
+        },
+        "time": {
+          "discriminator": {
+            "mapping": {
+              "cron": "#/$defs/CronSchedule",
+              "events": "#/$defs/EventsSchedule",
+              "interval": "#/$defs/IntervalSchedule",
+              "multi_cron": "#/$defs/MultiCronSchedule",
+              "preset": "#/$defs/PresetSchedule"
+            },
+            "propertyName": "type"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/PresetSchedule"
+            },
+            {
+              "$ref": "#/$defs/CronSchedule"
+            },
+            {
+              "$ref": "#/$defs/IntervalSchedule"
+            },
+            {
+              "$ref": "#/$defs/MultiCronSchedule"
+            },
+            {
+              "$ref": "#/$defs/EventsSchedule"
+            }
+          ],
+          "title": "Time"
+        }
+      },
+      "required": [
+        "type",
+        "expression",
+        "time"
+      ],
+      "title": "AssetAndTimeScheduleSpec",
+      "type": "object"
+    },
+    "AssetCombination": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "enum": [
+            "all",
+            "any"
+          ],
+          "title": "Op",
+          "type": "string"
+        },
+        "items": {
+          "items": {
+            "discriminator": {
+              "mapping": {
+                "alias": "#/$defs/AssetAliasLeaf",
+                "all": "#/$defs/AssetCombination",
+                "any": "#/$defs/AssetCombination",
+                "asset": "#/$defs/AssetLeaf"
+              },
+              "propertyName": "op"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/$defs/AssetLeaf"
+              },
+              {
+                "$ref": "#/$defs/AssetAliasLeaf"
+              },
+              {
+                "$ref": "#/$defs/AssetCombination"
+              }
+            ]
+          },
+          "minItems": 1,
+          "title": "Items",
+          "type": "array"
+        }
+      },
+      "required": [
+        "op",
+        "items"
+      ],
+      "title": "AssetCombination",
+      "type": "object"
+    },
+    "AssetLeaf": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "asset",
+          "title": "Op",
+          "type": "string"
+        },
+        "asset": {
+          "$ref": "#/$defs/AssetRef"
+        }
+      },
+      "required": [
+        "op",
+        "asset"
+      ],
+      "title": "AssetLeaf",
+      "type": "object"
+    },
+    "AssetOrTimeScheduleSpec": {
+      "additionalProperties": false,
+      "description": "Run on the time schedule *or* when the assets update.",
+      "properties": {
+        "type": {
+          "const": "assets_or_time",
+          "title": "Type",
+          "type": "string"
+        },
+        "expression": {
+          "discriminator": {
+            "mapping": {
+              "alias": "#/$defs/AssetAliasLeaf",
+              "all": "#/$defs/AssetCombination",
+              "any": "#/$defs/AssetCombination",
+              "asset": "#/$defs/AssetLeaf"
+            },
+            "propertyName": "op"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/AssetLeaf"
+            },
+            {
+              "$ref": "#/$defs/AssetAliasLeaf"
+            },
+            {
+              "$ref": "#/$defs/AssetCombination"
+            }
+          ],
+          "title": "Expression"
+        },
+        "time": {
+          "discriminator": {
+            "mapping": {
+              "cron": "#/$defs/CronSchedule",
+              "events": "#/$defs/EventsSchedule",
+              "interval": "#/$defs/IntervalSchedule",
+              "multi_cron": "#/$defs/MultiCronSchedule",
+              "preset": "#/$defs/PresetSchedule"
+            },
+            "propertyName": "type"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/PresetSchedule"
+            },
+            {
+              "$ref": "#/$defs/CronSchedule"
+            },
+            {
+              "$ref": "#/$defs/IntervalSchedule"
+            },
+            {
+              "$ref": "#/$defs/MultiCronSchedule"
+            },
+            {
+              "$ref": "#/$defs/EventsSchedule"
+            }
+          ],
+          "title": "Time"
+        }
+      },
+      "required": [
+        "type",
+        "expression",
+        "time"
+      ],
+      "title": "AssetOrTimeScheduleSpec",
+      "type": "object"
+    },
+    "AssetRef": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Name"
+        },
+        "uri": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Uri"
+        },
+        "group": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Group"
+        },
+        "extra": {
+          "additionalProperties": true,
+          "title": "Extra",
+          "type": "object"
+        },
+        "watchers": {
+          "items": {
+            "$ref": "#/$defs/AssetWatcherSpec"
+          },
+          "title": "Watchers",
+          "type": "array"
+        }
+      },
+      "title": "AssetRef",
+      "type": "object"
+    },
+    "AssetSchedule": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "assets",
+          "title": "Type",
+          "type": "string"
+        },
+        "expression": {
+          "discriminator": {
+            "mapping": {
+              "alias": "#/$defs/AssetAliasLeaf",
+              "all": "#/$defs/AssetCombination",
+              "any": "#/$defs/AssetCombination",
+              "asset": "#/$defs/AssetLeaf"
+            },
+            "propertyName": "op"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/AssetLeaf"
+            },
+            {
+              "$ref": "#/$defs/AssetAliasLeaf"
+            },
+            {
+              "$ref": "#/$defs/AssetCombination"
+            }
+          ],
+          "title": "Expression"
+        },
+        "batch_asset_events": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Airflow >= 3.4: batch events into one run (default per event).",
+          "title": "Batch Asset Events"
+        }
+      },
+      "required": [
+        "type",
+        "expression"
+      ],
+      "title": "AssetSchedule",
+      "type": "object"
+    },
+    "AssetWatcherSpec": {
+      "additionalProperties": false,
+      "description": "Event-driven scheduling: ``AssetWatcher(trigger=MessageQueueTrigger(...))``.",
+      "properties": {
+        "name": {
+          "maxLength": 250,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.-]+$",
+          "title": "Name",
+          "type": "string"
+        },
+        "scheme": {
+          "examples": [
+            "sqs",
+            "kafka",
+            "redis+pubsub",
+            "google+pubsub",
+            "azure+servicebus",
+            "kinesis"
+          ],
+          "pattern": "^[a-z0-9+.-]+$",
+          "title": "Scheme",
+          "type": "string"
+        },
+        "kwargs": {
+          "description": "Provider specific MessageQueueTrigger kwargs.",
+          "patternProperties": {
+            "^[A-Za-z_][A-Za-z0-9_]*$": {}
+          },
+          "propertyNames": {
+            "maxLength": 100
+          },
+          "title": "Kwargs",
+          "type": "object"
+        }
+      },
+      "required": [
+        "name",
+        "scheme"
+      ],
+      "title": "AssetWatcherSpec",
+      "type": "object"
+    },
+    "CallbackRef": {
+      "additionalProperties": false,
+      "description": "A notifier instance (``BaseNotifier`` subclass from the catalog).",
+      "properties": {
+        "notifier": {
+          "examples": [
+            "airflow.providers.slack.notifications.slack.SlackNotifier"
+          ],
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]*(\\.[A-Za-z_][A-Za-z0-9_]*)+$",
+          "title": "Notifier",
+          "type": "string"
+        },
+        "params": {
+          "patternProperties": {
+            "^[A-Za-z_][A-Za-z0-9_]*$": {}
+          },
+          "propertyNames": {
+            "maxLength": 100
+          },
+          "title": "Params",
+          "type": "object"
+        }
+      },
+      "required": [
+        "notifier"
+      ],
+      "title": "CallbackRef",
+      "type": "object"
+    },
+    "Callbacks": {
+      "additionalProperties": false,
+      "properties": {
+        "on_success": {
+          "items": {
+            "$ref": "#/$defs/CallbackRef"
+          },
+          "title": "On Success",
+          "type": "array"
+        },
+        "on_failure": {
+          "items": {
+            "$ref": "#/$defs/CallbackRef"
+          },
+          "title": "On Failure",
+          "type": "array"
+        },
+        "on_retry": {
+          "items": {
+            "$ref": "#/$defs/CallbackRef"
+          },
+          "title": "On Retry",
+          "type": "array"
+        },
+        "on_execute": {
+          "items": {
+            "$ref": "#/$defs/CallbackRef"
+          },
+          "title": "On Execute",
+          "type": "array"
+        },
+        "on_skipped": {
+          "items": {
+            "$ref": "#/$defs/CallbackRef"
+          },
+          "title": "On Skipped",
+          "type": "array"
+        }
+      },
+      "title": "Callbacks",
+      "type": "object"
+    },
+    "CronSchedule": {
+      "additionalProperties": false,
+      "description": "``CronTriggerTimetable`` (default) or ``CronDataIntervalTimetable``.",
+      "properties": {
+        "type": {
+          "const": "cron",
+          "title": "Type",
+          "type": "string"
+        },
+        "expression": {
+          "examples": [
+            "0 6 * * 1-5"
+          ],
+          "pattern": "^\\S+( \\S+){4,5}$",
+          "title": "Expression",
+          "type": "string"
+        },
+        "timezone": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "examples": [
+            "UTC",
+            "Europe/Istanbul"
+          ],
+          "title": "Timezone"
+        },
+        "data_interval": {
+          "default": false,
+          "description": "Airflow 2 semantics: logical date = start of the interval.",
+          "title": "Data Interval",
+          "type": "boolean"
+        },
+        "interval_seconds": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "CronTriggerTimetable(interval=...) data interval length.",
+          "title": "Interval Seconds"
+        },
+        "run_immediately": {
+          "default": false,
+          "title": "Run Immediately",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "type",
+        "expression"
+      ],
+      "title": "CronSchedule",
+      "type": "object"
+    },
+    "CustomNode": {
+      "additionalProperties": false,
+      "description": "Node provided by an extension handler (entry point group ``autoair.node_kinds``).",
+      "properties": {
+        "id": {
+          "maxLength": 100,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_-]+$",
+          "title": "Id",
+          "type": "string"
+        },
+        "label": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Canvas label only.",
+          "title": "Label"
+        },
+        "icon": {
+          "anyOf": [
+            {
+              "pattern": "^(builtin|custom):[a-z0-9][a-z0-9-]{0,80}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Canvas icon only (builtin:<logo> or custom:<name>); overrides the default.",
+          "title": "Icon"
+        },
+        "parent_group": {
+          "anyOf": [
+            {
+              "maxLength": 100,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9_-]+$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Id of a task_group node.",
+          "title": "Parent Group"
+        },
+        "position": {
+          "$ref": "#/$defs/Position"
+        },
+        "task_id": {
+          "maxLength": 250,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.-]+$",
+          "title": "Task Id",
+          "type": "string"
+        },
+        "trigger_rule": {
+          "anyOf": [
+            {
+              "enum": [
+                "all_success",
+                "all_failed",
+                "all_done",
+                "all_done_min_one_success",
+                "all_skipped",
+                "one_success",
+                "one_done",
+                "one_failed",
+                "none_failed",
+                "none_failed_min_one_success",
+                "none_skipped",
+                "always",
+                "all_done_setup_success"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Trigger Rule"
+        },
+        "retries": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Retries"
+        },
+        "retry_delay_seconds": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Retry Delay Seconds"
+        },
+        "execution_timeout_seconds": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Execution Timeout Seconds"
+        },
+        "pool": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Pool"
+        },
+        "pool_slots": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Pool Slots"
+        },
+        "queue": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Queue"
+        },
+        "owner": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Owner"
+        },
+        "doc_md": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Doc Md"
+        },
+        "outlets": {
+          "items": {
+            "$ref": "#/$defs/AssetRef"
+          },
+          "title": "Outlets",
+          "type": "array"
+        },
+        "inlets": {
+          "items": {
+            "$ref": "#/$defs/AssetRef"
+          },
+          "title": "Inlets",
+          "type": "array"
+        },
+        "mapping": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MappingSpec"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "is_setup": {
+          "default": false,
+          "title": "Is Setup",
+          "type": "boolean"
+        },
+        "is_teardown": {
+          "default": false,
+          "title": "Is Teardown",
+          "type": "boolean"
+        },
+        "callbacks": {
+          "$ref": "#/$defs/Callbacks"
+        },
+        "retry_policy": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RetryPolicySpec"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "retry_exponential_backoff": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Retry Exponential Backoff"
+        },
+        "priority_weight": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Priority Weight"
+        },
+        "weight_rule": {
+          "anyOf": [
+            {
+              "enum": [
+                "downstream",
+                "upstream",
+                "absolute"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Weight Rule"
+        },
+        "task_display_name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Task Display Name"
+        },
+        "executor": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Executor"
+        },
+        "executor_config": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Executor Config"
+        },
+        "max_active_tis_per_dagrun": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Active Tis Per Dagrun"
+        },
+        "depends_on_past": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Depends On Past"
+        },
+        "disabled": {
+          "default": false,
+          "description": "Excluded from the generated DAG (kept on the canvas).",
+          "title": "Disabled",
+          "type": "boolean"
+        },
+        "lineage": {
+          "default": "inherit",
+          "description": "OpenLineage selective enable/disable for this task.",
+          "enum": [
+            "inherit",
+            "enabled",
+            "disabled"
+          ],
+          "title": "Lineage",
+          "type": "string"
+        },
+        "template_ref": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TemplateRef"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Operator template (blueprint) this task was created from; validation enforces the template's locked fields. Not part of the generated DAG."
+        },
+        "kind": {
+          "const": "custom",
+          "title": "Kind",
+          "type": "string"
+        },
+        "handler": {
+          "pattern": "^[a-z0-9_.-]+$",
+          "title": "Handler",
+          "type": "string"
+        },
+        "config": {
+          "additionalProperties": true,
+          "title": "Config",
+          "type": "object"
+        }
+      },
+      "required": [
+        "id",
+        "task_id",
+        "kind",
+        "handler"
+      ],
+      "title": "CustomNode",
+      "type": "object"
+    },
+    "DagParam": {
+      "additionalProperties": false,
+      "description": "``airflow.sdk.Param`` \u2014 JSON Schema validated, rendered in Airflow's trigger form.",
+      "properties": {
+        "default": {
+          "default": null,
+          "title": "Default"
+        },
+        "type": {
+          "anyOf": [
+            {
+              "enum": [
+                "string",
+                "number",
+                "integer",
+                "boolean",
+                "array",
+                "object",
+                "null"
+              ],
+              "type": "string"
+            },
+            {
+              "items": {
+                "enum": [
+                  "string",
+                  "number",
+                  "integer",
+                  "boolean",
+                  "array",
+                  "object",
+                  "null"
+                ],
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Type"
+        },
+        "title": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Title"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Description"
+        },
+        "description_md": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Description Md"
+        },
+        "section": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Section"
+        },
+        "format": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "examples": [
+            "date",
+            "date-time",
+            "time",
+            "duration",
+            "multiline",
+            "email"
+          ],
+          "title": "Format"
+        },
+        "enum": {
+          "anyOf": [
+            {
+              "items": {},
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Enum"
+        },
+        "values_display": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Values Display"
+        },
+        "examples": {
+          "anyOf": [
+            {
+              "items": {},
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Examples"
+        },
+        "minimum": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Minimum"
+        },
+        "maximum": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Maximum"
+        },
+        "min_length": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Min Length"
+        },
+        "max_length": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Length"
+        },
+        "pattern": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Pattern"
+        },
+        "items": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Items"
+        },
+        "const": {
+          "default": null,
+          "title": "Const"
+        }
+      },
+      "title": "DagParam",
+      "type": "object"
+    },
+    "DeadlineSpec": {
+      "additionalProperties": false,
+      "description": "Airflow >= 3.1 ``DeadlineAlert``.",
+      "properties": {
+        "name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Name"
+        },
+        "reference": {
+          "default": "dagrun_queued_at",
+          "enum": [
+            "dagrun_queued_at",
+            "dagrun_logical_date",
+            "fixed_datetime",
+            "average_runtime"
+          ],
+          "title": "Reference",
+          "type": "string"
+        },
+        "interval_seconds": {
+          "title": "Interval Seconds",
+          "type": "number"
+        },
+        "fixed_datetime": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Fixed Datetime"
+        },
+        "average_max_runs": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Average Max Runs"
+        },
+        "callback": {
+          "$ref": "#/$defs/CallbackRef"
+        },
+        "synchronous": {
+          "default": false,
+          "title": "Synchronous",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "interval_seconds",
+        "callback"
+      ],
+      "title": "DeadlineSpec",
+      "type": "object"
+    },
+    "DefaultArgs": {
+      "additionalProperties": false,
+      "properties": {
+        "owner": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Owner"
+        },
+        "retries": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Retries"
+        },
+        "retry_delay_seconds": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Retry Delay Seconds"
+        },
+        "execution_timeout_seconds": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Execution Timeout Seconds"
+        },
+        "depends_on_past": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Depends On Past"
+        },
+        "email": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Email"
+        },
+        "email_on_failure": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Email On Failure"
+        },
+        "pool": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Pool"
+        },
+        "queue": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Queue"
+        }
+      },
+      "title": "DefaultArgs",
+      "type": "object"
+    },
+    "Edge": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Id"
+        },
+        "source": {
+          "maxLength": 100,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_-]+$",
+          "title": "Source",
+          "type": "string"
+        },
+        "target": {
+          "maxLength": 100,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_-]+$",
+          "title": "Target",
+          "type": "string"
+        },
+        "label": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Label"
+        }
+      },
+      "required": [
+        "source",
+        "target"
+      ],
+      "title": "Edge",
+      "type": "object"
+    },
+    "EnvironmentOverlay": {
+      "additionalProperties": false,
+      "description": "Per-environment overrides applied at deploy time (dev / staging / prod...).",
+      "properties": {
+        "schedule": {
+          "anyOf": [
+            {
+              "discriminator": {
+                "mapping": {
+                  "assets": "#/$defs/AssetSchedule",
+                  "assets_and_time": "#/$defs/AssetAndTimeScheduleSpec",
+                  "assets_or_time": "#/$defs/AssetOrTimeScheduleSpec",
+                  "cron": "#/$defs/CronSchedule",
+                  "events": "#/$defs/EventsSchedule",
+                  "interval": "#/$defs/IntervalSchedule",
+                  "multi_cron": "#/$defs/MultiCronSchedule",
+                  "none": "#/$defs/NoSchedule",
+                  "partitioned_assets": "#/$defs/PartitionedAssetSchedule",
+                  "partitioned_cron": "#/$defs/PartitionedCronSchedule",
+                  "preset": "#/$defs/PresetSchedule"
+                },
+                "propertyName": "type"
+              },
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/NoSchedule"
+                },
+                {
+                  "$ref": "#/$defs/PresetSchedule"
+                },
+                {
+                  "$ref": "#/$defs/CronSchedule"
+                },
+                {
+                  "$ref": "#/$defs/IntervalSchedule"
+                },
+                {
+                  "$ref": "#/$defs/MultiCronSchedule"
+                },
+                {
+                  "$ref": "#/$defs/EventsSchedule"
+                },
+                {
+                  "$ref": "#/$defs/AssetSchedule"
+                },
+                {
+                  "$ref": "#/$defs/AssetOrTimeScheduleSpec"
+                },
+                {
+                  "$ref": "#/$defs/AssetAndTimeScheduleSpec"
+                },
+                {
+                  "$ref": "#/$defs/PartitionedCronSchedule"
+                },
+                {
+                  "$ref": "#/$defs/PartitionedAssetSchedule"
+                }
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Schedule"
+        },
+        "is_paused_upon_creation": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Is Paused Upon Creation"
+        },
+        "tags": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Tags"
+        },
+        "default_args": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/DefaultArgs"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "params_defaults": {
+          "patternProperties": {
+            "^[A-Za-z_][A-Za-z0-9_]*$": {}
+          },
+          "propertyNames": {
+            "maxLength": 100
+          },
+          "title": "Params Defaults",
+          "type": "object"
+        },
+        "max_active_runs": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Active Runs"
+        },
+        "connections": {
+          "description": "Logical connection id -> this environment's Airflow connection id (substituted in *_conn_id parameters, Jinja `conn.<id>` and Python hook calls; see autoair.spec.env_mapping).",
+          "patternProperties": {
+            "^[A-Za-z0-9_.-]+$": {
+              "maxLength": 250,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9_.-]+$",
+              "type": "string"
+            }
+          },
+          "propertyNames": {
+            "maxLength": 250,
+            "minLength": 1
+          },
+          "title": "Connections",
+          "type": "object"
+        },
+        "variables": {
+          "description": "Logical Variable key -> this environment's Variable key (Jinja `var.value.<key>` / `var.json.<key>` and `Variable.get(\"<key>\")`).",
+          "patternProperties": {
+            "^[A-Za-z0-9_.-]+$": {
+              "maxLength": 250,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9_.-]+$",
+              "type": "string"
+            }
+          },
+          "propertyNames": {
+            "maxLength": 250,
+            "minLength": 1
+          },
+          "title": "Variables",
+          "type": "object"
+        }
+      },
+      "title": "EnvironmentOverlay",
+      "type": "object"
+    },
+    "EventsSchedule": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "events",
+          "title": "Type",
+          "type": "string"
+        },
+        "dates": {
+          "items": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Dates",
+          "type": "array"
+        },
+        "restrict_to_events": {
+          "default": false,
+          "title": "Restrict To Events",
+          "type": "boolean"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Description"
+        }
+      },
+      "required": [
+        "type",
+        "dates"
+      ],
+      "title": "EventsSchedule",
+      "type": "object"
+    },
+    "IntervalSchedule": {
+      "additionalProperties": false,
+      "description": "``DeltaTriggerTimetable`` (default) or ``DeltaDataIntervalTimetable``.",
+      "properties": {
+        "type": {
+          "const": "interval",
+          "title": "Type",
+          "type": "string"
+        },
+        "seconds": {
+          "exclusiveMinimum": 0,
+          "title": "Seconds",
+          "type": "integer"
+        },
+        "data_interval": {
+          "default": false,
+          "title": "Data Interval",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "type",
+        "seconds"
+      ],
+      "title": "IntervalSchedule",
+      "type": "object"
+    },
+    "LoopSpec": {
+      "additionalProperties": false,
+      "description": "Airflow >= 3.4 Task Loop: repeat the group's tasks (``@task_group ... .loop()``).\n\nThe body must have exactly one terminal task; its return value is ``loop.result`` for\nthe ``until`` condition and ``loop.previous`` for the next iteration.",
+      "properties": {
+        "max_iterations": {
+          "maximum": 10000,
+          "minimum": 1,
+          "title": "Max Iterations",
+          "type": "integer"
+        },
+        "until_code": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Body of the stop condition (`loop`, `ti`, `params`, ... are available); return True to stop. Omit for a fixed-count loop.",
+          "title": "Until Code"
+        },
+        "until_name": {
+          "default": "until_done",
+          "maxLength": 100,
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+          "title": "Until Name",
+          "type": "string"
+        }
+      },
+      "required": [
+        "max_iterations"
+      ],
+      "title": "LoopSpec",
+      "type": "object"
+    },
+    "MappingSpec": {
+      "additionalProperties": false,
+      "description": "Dynamic task mapping.\n\n* ``expand``: ``Op.partial(...).expand(**expand)`` \u2014 values are lists or XCom refs;\n  those argument names are removed from the node's regular params.\n* ``expand_kwargs``: ``Op.partial(...).expand_kwargs(<xcom ref to a list of dicts>)``.",
+      "properties": {
+        "expand": {
+          "patternProperties": {
+            "^[A-Za-z_][A-Za-z0-9_]*$": {}
+          },
+          "propertyNames": {
+            "maxLength": 100
+          },
+          "title": "Expand",
+          "type": "object"
+        },
+        "expand_kwargs": {
+          "default": null,
+          "title": "Expand Kwargs"
+        },
+        "map_index_template": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Map Index Template"
+        }
+      },
+      "title": "MappingSpec",
+      "type": "object"
+    },
+    "MultiCronSchedule": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "multi_cron",
+          "title": "Type",
+          "type": "string"
+        },
+        "expressions": {
+          "items": {
+            "examples": [
+              "0 6 * * 1-5"
+            ],
+            "pattern": "^\\S+( \\S+){4,5}$",
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Expressions",
+          "type": "array"
+        },
+        "timezone": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Timezone"
+        }
+      },
+      "required": [
+        "type",
+        "expressions"
+      ],
+      "title": "MultiCronSchedule",
+      "type": "object"
+    },
+    "NoSchedule": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "none",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "title": "NoSchedule",
+      "type": "object"
+    },
+    "NoteNode": {
+      "additionalProperties": false,
+      "description": "Sticky note on the canvas. Not a task; optionally appended to the DAG docs.",
+      "properties": {
+        "id": {
+          "maxLength": 100,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_-]+$",
+          "title": "Id",
+          "type": "string"
+        },
+        "label": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Canvas label only.",
+          "title": "Label"
+        },
+        "icon": {
+          "anyOf": [
+            {
+              "pattern": "^(builtin|custom):[a-z0-9][a-z0-9-]{0,80}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Canvas icon only (builtin:<logo> or custom:<name>); overrides the default.",
+          "title": "Icon"
+        },
+        "parent_group": {
+          "anyOf": [
+            {
+              "maxLength": 100,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9_-]+$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Id of a task_group node.",
+          "title": "Parent Group"
+        },
+        "position": {
+          "$ref": "#/$defs/Position"
+        },
+        "kind": {
+          "const": "note",
+          "title": "Kind",
+          "type": "string"
+        },
+        "text": {
+          "default": "",
+          "maxLength": 20000,
+          "title": "Text",
+          "type": "string"
+        },
+        "color": {
+          "anyOf": [
+            {
+              "pattern": "^[a-z]+$|^#[0-9a-fA-F]{6}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Color"
+        },
+        "include_in_docs": {
+          "default": false,
+          "title": "Include In Docs",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id",
+        "kind"
+      ],
+      "title": "NoteNode",
+      "type": "object"
+    },
+    "OperatorNode": {
+      "additionalProperties": false,
+      "description": "Any ``BaseOperator`` subclass discovered by the operator catalog.",
+      "properties": {
+        "id": {
+          "maxLength": 100,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_-]+$",
+          "title": "Id",
+          "type": "string"
+        },
+        "label": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Canvas label only.",
+          "title": "Label"
+        },
+        "icon": {
+          "anyOf": [
+            {
+              "pattern": "^(builtin|custom):[a-z0-9][a-z0-9-]{0,80}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Canvas icon only (builtin:<logo> or custom:<name>); overrides the default.",
+          "title": "Icon"
+        },
+        "parent_group": {
+          "anyOf": [
+            {
+              "maxLength": 100,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9_-]+$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Id of a task_group node.",
+          "title": "Parent Group"
+        },
+        "position": {
+          "$ref": "#/$defs/Position"
+        },
+        "task_id": {
+          "maxLength": 250,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.-]+$",
+          "title": "Task Id",
+          "type": "string"
+        },
+        "trigger_rule": {
+          "anyOf": [
+            {
+              "enum": [
+                "all_success",
+                "all_failed",
+                "all_done",
+                "all_done_min_one_success",
+                "all_skipped",
+                "one_success",
+                "one_done",
+                "one_failed",
+                "none_failed",
+                "none_failed_min_one_success",
+                "none_skipped",
+                "always",
+                "all_done_setup_success"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Trigger Rule"
+        },
+        "retries": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Retries"
+        },
+        "retry_delay_seconds": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Retry Delay Seconds"
+        },
+        "execution_timeout_seconds": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Execution Timeout Seconds"
+        },
+        "pool": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Pool"
+        },
+        "pool_slots": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Pool Slots"
+        },
+        "queue": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Queue"
+        },
+        "owner": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Owner"
+        },
+        "doc_md": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Doc Md"
+        },
+        "outlets": {
+          "items": {
+            "$ref": "#/$defs/AssetRef"
+          },
+          "title": "Outlets",
+          "type": "array"
+        },
+        "inlets": {
+          "items": {
+            "$ref": "#/$defs/AssetRef"
+          },
+          "title": "Inlets",
+          "type": "array"
+        },
+        "mapping": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MappingSpec"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "is_setup": {
+          "default": false,
+          "title": "Is Setup",
+          "type": "boolean"
+        },
+        "is_teardown": {
+          "default": false,
+          "title": "Is Teardown",
+          "type": "boolean"
+        },
+        "callbacks": {
+          "$ref": "#/$defs/Callbacks"
+        },
+        "retry_policy": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RetryPolicySpec"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "retry_exponential_backoff": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Retry Exponential Backoff"
+        },
+        "priority_weight": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Priority Weight"
+        },
+        "weight_rule": {
+          "anyOf": [
+            {
+              "enum": [
+                "downstream",
+                "upstream",
+                "absolute"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Weight Rule"
+        },
+        "task_display_name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Task Display Name"
+        },
+        "executor": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Executor"
+        },
+        "executor_config": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Executor Config"
+        },
+        "max_active_tis_per_dagrun": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Active Tis Per Dagrun"
+        },
+        "depends_on_past": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Depends On Past"
+        },
+        "disabled": {
+          "default": false,
+          "description": "Excluded from the generated DAG (kept on the canvas).",
+          "title": "Disabled",
+          "type": "boolean"
+        },
+        "lineage": {
+          "default": "inherit",
+          "description": "OpenLineage selective enable/disable for this task.",
+          "enum": [
+            "inherit",
+            "enabled",
+            "disabled"
+          ],
+          "title": "Lineage",
+          "type": "string"
+        },
+        "template_ref": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TemplateRef"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Operator template (blueprint) this task was created from; validation enforces the template's locked fields. Not part of the generated DAG."
+        },
+        "kind": {
+          "const": "operator",
+          "title": "Kind",
+          "type": "string"
+        },
+        "operator": {
+          "examples": [
+            "airflow.providers.standard.operators.bash.BashOperator"
+          ],
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]*(\\.[A-Za-z_][A-Za-z0-9_]*)+$",
+          "title": "Operator",
+          "type": "string"
+        },
+        "params": {
+          "patternProperties": {
+            "^[A-Za-z_][A-Za-z0-9_]*$": {}
+          },
+          "propertyNames": {
+            "maxLength": 100
+          },
+          "title": "Params",
+          "type": "object"
+        }
+      },
+      "required": [
+        "id",
+        "task_id",
+        "kind",
+        "operator"
+      ],
+      "title": "OperatorNode",
+      "type": "object"
+    },
+    "PartitionedAssetSchedule": {
+      "additionalProperties": false,
+      "description": "Airflow >= 3.2 ``PartitionedAssetTimetable`` \u2014 consume partitioned asset events.",
+      "properties": {
+        "type": {
+          "const": "partitioned_assets",
+          "title": "Type",
+          "type": "string"
+        },
+        "expression": {
+          "discriminator": {
+            "mapping": {
+              "alias": "#/$defs/AssetAliasLeaf",
+              "all": "#/$defs/AssetCombination",
+              "any": "#/$defs/AssetCombination",
+              "asset": "#/$defs/AssetLeaf"
+            },
+            "propertyName": "op"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/AssetLeaf"
+            },
+            {
+              "$ref": "#/$defs/AssetAliasLeaf"
+            },
+            {
+              "$ref": "#/$defs/AssetCombination"
+            }
+          ],
+          "title": "Expression"
+        },
+        "mapper": {
+          "default": "identity",
+          "enum": [
+            "identity",
+            "start_of_hour",
+            "start_of_day",
+            "start_of_week",
+            "start_of_month",
+            "start_of_quarter",
+            "start_of_year"
+          ],
+          "title": "Mapper",
+          "type": "string"
+        },
+        "timezone": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Timezone"
+        }
+      },
+      "required": [
+        "type",
+        "expression"
+      ],
+      "title": "PartitionedAssetSchedule",
+      "type": "object"
+    },
+    "PartitionedCronSchedule": {
+      "additionalProperties": false,
+      "description": "Airflow >= 3.2 ``CronPartitionTimetable`` \u2014 produces partitioned runs.",
+      "properties": {
+        "type": {
+          "const": "partitioned_cron",
+          "title": "Type",
+          "type": "string"
+        },
+        "expression": {
+          "examples": [
+            "0 6 * * 1-5"
+          ],
+          "pattern": "^\\S+( \\S+){4,5}$",
+          "title": "Expression",
+          "type": "string"
+        },
+        "timezone": {
+          "default": "UTC",
+          "title": "Timezone",
+          "type": "string"
+        },
+        "key_format": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Key Format"
+        }
+      },
+      "required": [
+        "type",
+        "expression"
+      ],
+      "title": "PartitionedCronSchedule",
+      "type": "object"
+    },
+    "Position": {
+      "additionalProperties": false,
+      "description": "Canvas geometry (relative to the parent group). Ignored by code generation.",
+      "properties": {
+        "x": {
+          "default": 0,
+          "title": "X",
+          "type": "number"
+        },
+        "y": {
+          "default": 0,
+          "title": "Y",
+          "type": "number"
+        },
+        "width": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Width"
+        },
+        "height": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Height"
+        }
+      },
+      "title": "Position",
+      "type": "object"
+    },
+    "PresetSchedule": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "preset",
+          "title": "Type",
+          "type": "string"
+        },
+        "preset": {
+          "enum": [
+            "@once",
+            "@continuous",
+            "@hourly",
+            "@daily",
+            "@weekly",
+            "@monthly",
+            "@quarterly",
+            "@yearly"
+          ],
+          "title": "Preset",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "preset"
+      ],
+      "title": "PresetSchedule",
+      "type": "object"
+    },
+    "PythonTaskNode": {
+      "additionalProperties": false,
+      "description": "A TaskFlow task whose body is user-supplied Python (privileged).\n\n``decorator`` selects ``@task``, ``@task.branch`` (return the downstream task id(s)\nto follow), ``@task.short_circuit`` (return falsy to skip downstream),\n``@task.virtualenv``, ``@task.sensor`` (return bool / PokeReturnValue),\n``@task.bash`` (return a command) and friends; ``decorator_kwargs`` are passed to it.",
+      "properties": {
+        "id": {
+          "maxLength": 100,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_-]+$",
+          "title": "Id",
+          "type": "string"
+        },
+        "label": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Canvas label only.",
+          "title": "Label"
+        },
+        "icon": {
+          "anyOf": [
+            {
+              "pattern": "^(builtin|custom):[a-z0-9][a-z0-9-]{0,80}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Canvas icon only (builtin:<logo> or custom:<name>); overrides the default.",
+          "title": "Icon"
+        },
+        "parent_group": {
+          "anyOf": [
+            {
+              "maxLength": 100,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9_-]+$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Id of a task_group node.",
+          "title": "Parent Group"
+        },
+        "position": {
+          "$ref": "#/$defs/Position"
+        },
+        "task_id": {
+          "maxLength": 250,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.-]+$",
+          "title": "Task Id",
+          "type": "string"
+        },
+        "trigger_rule": {
+          "anyOf": [
+            {
+              "enum": [
+                "all_success",
+                "all_failed",
+                "all_done",
+                "all_done_min_one_success",
+                "all_skipped",
+                "one_success",
+                "one_done",
+                "one_failed",
+                "none_failed",
+                "none_failed_min_one_success",
+                "none_skipped",
+                "always",
+                "all_done_setup_success"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Trigger Rule"
+        },
+        "retries": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Retries"
+        },
+        "retry_delay_seconds": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Retry Delay Seconds"
+        },
+        "execution_timeout_seconds": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Execution Timeout Seconds"
+        },
+        "pool": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Pool"
+        },
+        "pool_slots": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Pool Slots"
+        },
+        "queue": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Queue"
+        },
+        "owner": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Owner"
+        },
+        "doc_md": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Doc Md"
+        },
+        "outlets": {
+          "items": {
+            "$ref": "#/$defs/AssetRef"
+          },
+          "title": "Outlets",
+          "type": "array"
+        },
+        "inlets": {
+          "items": {
+            "$ref": "#/$defs/AssetRef"
+          },
+          "title": "Inlets",
+          "type": "array"
+        },
+        "mapping": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MappingSpec"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "is_setup": {
+          "default": false,
+          "title": "Is Setup",
+          "type": "boolean"
+        },
+        "is_teardown": {
+          "default": false,
+          "title": "Is Teardown",
+          "type": "boolean"
+        },
+        "callbacks": {
+          "$ref": "#/$defs/Callbacks"
+        },
+        "retry_policy": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RetryPolicySpec"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "retry_exponential_backoff": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Retry Exponential Backoff"
+        },
+        "priority_weight": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Priority Weight"
+        },
+        "weight_rule": {
+          "anyOf": [
+            {
+              "enum": [
+                "downstream",
+                "upstream",
+                "absolute"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Weight Rule"
+        },
+        "task_display_name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Task Display Name"
+        },
+        "executor": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Executor"
+        },
+        "executor_config": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Executor Config"
+        },
+        "max_active_tis_per_dagrun": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Active Tis Per Dagrun"
+        },
+        "depends_on_past": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Depends On Past"
+        },
+        "disabled": {
+          "default": false,
+          "description": "Excluded from the generated DAG (kept on the canvas).",
+          "title": "Disabled",
+          "type": "boolean"
+        },
+        "lineage": {
+          "default": "inherit",
+          "description": "OpenLineage selective enable/disable for this task.",
+          "enum": [
+            "inherit",
+            "enabled",
+            "disabled"
+          ],
+          "title": "Lineage",
+          "type": "string"
+        },
+        "template_ref": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TemplateRef"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Operator template (blueprint) this task was created from; validation enforces the template's locked fields. Not part of the generated DAG."
+        },
+        "kind": {
+          "const": "python_task",
+          "title": "Kind",
+          "type": "string"
+        },
+        "decorator": {
+          "default": "task",
+          "enum": [
+            "task",
+            "branch",
+            "short_circuit",
+            "virtualenv",
+            "external_python",
+            "branch_virtualenv",
+            "branch_external_python",
+            "sensor",
+            "bash",
+            "docker",
+            "kubernetes",
+            "stub",
+            "llm",
+            "agent",
+            "llm_branch",
+            "llm_sql"
+          ],
+          "title": "Decorator",
+          "type": "string"
+        },
+        "decorator_kwargs": {
+          "patternProperties": {
+            "^[A-Za-z_][A-Za-z0-9_]*$": {}
+          },
+          "propertyNames": {
+            "maxLength": 100
+          },
+          "title": "Decorator Kwargs",
+          "type": "object"
+        },
+        "function_name": {
+          "maxLength": 100,
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+          "title": "Function Name",
+          "type": "string"
+        },
+        "arguments": {
+          "description": "Keyword arguments; values may be XCom references.",
+          "patternProperties": {
+            "^[A-Za-z_][A-Za-z0-9_]*$": {}
+          },
+          "propertyNames": {
+            "maxLength": 100
+          },
+          "title": "Arguments",
+          "type": "object"
+        },
+        "extra_parameters": {
+          "description": "Additional function parameters without a bound value (e.g. keys provided by expand_kwargs).",
+          "items": {
+            "maxLength": 100,
+            "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+            "type": "string"
+          },
+          "title": "Extra Parameters",
+          "type": "array"
+        },
+        "code": {
+          "description": "Function body (statements). Use `return` to push XCom.",
+          "title": "Code",
+          "type": "string"
+        },
+        "multiple_outputs": {
+          "default": false,
+          "title": "Multiple Outputs",
+          "type": "boolean"
+        },
+        "is_result": {
+          "default": false,
+          "description": "Airflow >= 3.3: mark as the DAG result (`@result`), returned by the dagRuns/{id}/wait API.",
+          "title": "Is Result",
+          "type": "boolean"
+        },
+        "uses_loop_context": {
+          "default": false,
+          "description": "Inside a loop group: receive the `loop` context (index, previous, result, max_iterations) as a keyword-only parameter.",
+          "title": "Uses Loop Context",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id",
+        "task_id",
+        "kind",
+        "function_name",
+        "code"
+      ],
+      "title": "PythonTaskNode",
+      "type": "object"
+    },
+    "RetryPolicySpec": {
+      "additionalProperties": false,
+      "description": "Airflow >= 3.3 ``ExceptionRetryPolicy``.",
+      "properties": {
+        "rules": {
+          "items": {
+            "$ref": "#/$defs/RetryRuleSpec"
+          },
+          "minItems": 1,
+          "title": "Rules",
+          "type": "array"
+        },
+        "default": {
+          "enum": [
+            "retry",
+            "fail",
+            "default"
+          ],
+          "type": "string",
+          "default": "default",
+          "title": "Default"
+        }
+      },
+      "required": [
+        "rules"
+      ],
+      "title": "RetryPolicySpec",
+      "type": "object"
+    },
+    "RetryRuleSpec": {
+      "additionalProperties": false,
+      "properties": {
+        "exception": {
+          "description": "Dotted exception class path, e.g. builtins.ValueError or requests.exceptions.HTTPError",
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]*(\\.[A-Za-z_][A-Za-z0-9_]*)+$",
+          "title": "Exception",
+          "type": "string"
+        },
+        "action": {
+          "default": "retry",
+          "enum": [
+            "retry",
+            "fail",
+            "default"
+          ],
+          "title": "Action",
+          "type": "string"
+        },
+        "retry_delay_seconds": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Retry Delay Seconds"
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reason"
+        },
+        "match_subclasses": {
+          "default": true,
+          "title": "Match Subclasses",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "exception"
+      ],
+      "title": "RetryRuleSpec",
+      "type": "object"
+    },
+    "TaskGroupNode": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "maxLength": 100,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_-]+$",
+          "title": "Id",
+          "type": "string"
+        },
+        "label": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Canvas label only.",
+          "title": "Label"
+        },
+        "icon": {
+          "anyOf": [
+            {
+              "pattern": "^(builtin|custom):[a-z0-9][a-z0-9-]{0,80}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Canvas icon only (builtin:<logo> or custom:<name>); overrides the default.",
+          "title": "Icon"
+        },
+        "parent_group": {
+          "anyOf": [
+            {
+              "maxLength": 100,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9_-]+$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Id of a task_group node.",
+          "title": "Parent Group"
+        },
+        "position": {
+          "$ref": "#/$defs/Position"
+        },
+        "kind": {
+          "const": "task_group",
+          "title": "Kind",
+          "type": "string"
+        },
+        "group_id": {
+          "maxLength": 250,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.-]+$",
+          "title": "Group Id",
+          "type": "string"
+        },
+        "tooltip": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Tooltip"
+        },
+        "prefix_group_id": {
+          "default": true,
+          "title": "Prefix Group Id",
+          "type": "boolean"
+        },
+        "loop": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LoopSpec"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "group_id"
+      ],
+      "title": "TaskGroupNode",
+      "type": "object"
+    },
+    "TemplateRef": {
+      "additionalProperties": false,
+      "description": "The operator template (blueprint) a task was inserted from.",
+      "properties": {
+        "id": {
+          "pattern": "^[a-z0-9][a-z0-9_-]{0,80}$",
+          "title": "Id",
+          "type": "string"
+        },
+        "version": {
+          "anyOf": [
+            {
+              "maxLength": 40,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Version"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "title": "TemplateRef",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "spec_version": {
+      "const": 2,
+      "default": 2,
+      "title": "Spec Version",
+      "type": "integer"
+    },
+    "dag_id": {
+      "maxLength": 250,
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9_.-]+$",
+      "title": "Dag Id",
+      "type": "string"
+    },
+    "output_mode": {
+      "default": "python",
+      "enum": [
+        "python",
+        "loader",
+        "yaml"
+      ],
+      "title": "Output Mode",
+      "type": "string"
+    },
+    "display_name": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Display Name"
+    },
+    "description": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Description"
+    },
+    "doc_md": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Doc Md"
+    },
+    "schedule": {
+      "discriminator": {
+        "mapping": {
+          "assets": "#/$defs/AssetSchedule",
+          "assets_and_time": "#/$defs/AssetAndTimeScheduleSpec",
+          "assets_or_time": "#/$defs/AssetOrTimeScheduleSpec",
+          "cron": "#/$defs/CronSchedule",
+          "events": "#/$defs/EventsSchedule",
+          "interval": "#/$defs/IntervalSchedule",
+          "multi_cron": "#/$defs/MultiCronSchedule",
+          "none": "#/$defs/NoSchedule",
+          "partitioned_assets": "#/$defs/PartitionedAssetSchedule",
+          "partitioned_cron": "#/$defs/PartitionedCronSchedule",
+          "preset": "#/$defs/PresetSchedule"
+        },
+        "propertyName": "type"
+      },
+      "oneOf": [
+        {
+          "$ref": "#/$defs/NoSchedule"
+        },
+        {
+          "$ref": "#/$defs/PresetSchedule"
+        },
+        {
+          "$ref": "#/$defs/CronSchedule"
+        },
+        {
+          "$ref": "#/$defs/IntervalSchedule"
+        },
+        {
+          "$ref": "#/$defs/MultiCronSchedule"
+        },
+        {
+          "$ref": "#/$defs/EventsSchedule"
+        },
+        {
+          "$ref": "#/$defs/AssetSchedule"
+        },
+        {
+          "$ref": "#/$defs/AssetOrTimeScheduleSpec"
+        },
+        {
+          "$ref": "#/$defs/AssetAndTimeScheduleSpec"
+        },
+        {
+          "$ref": "#/$defs/PartitionedCronSchedule"
+        },
+        {
+          "$ref": "#/$defs/PartitionedAssetSchedule"
+        }
+      ],
+      "title": "Schedule"
+    },
+    "timezone": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "DAG timezone (IANA). start/end dates are wall-clock times in it and schedules without their own timezone (presets, cron, intervals) follow it. None: Airflow's default_timezone (UTC unless configured).",
+      "examples": [
+        "Europe/Istanbul",
+        "America/New_York"
+      ],
+      "title": "Timezone"
+    },
+    "start_date": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Start Date"
+    },
+    "end_date": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "End Date"
+    },
+    "catchup": {
+      "default": false,
+      "title": "Catchup",
+      "type": "boolean"
+    },
+    "tags": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Tags",
+      "type": "array"
+    },
+    "max_active_runs": {
+      "anyOf": [
+        {
+          "minimum": 1,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Max Active Runs"
+    },
+    "max_active_tasks": {
+      "anyOf": [
+        {
+          "minimum": 1,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Max Active Tasks"
+    },
+    "dagrun_timeout_seconds": {
+      "anyOf": [
+        {
+          "exclusiveMinimum": 0,
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Dagrun Timeout Seconds"
+    },
+    "is_paused_upon_creation": {
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Is Paused Upon Creation"
+    },
+    "default_args": {
+      "$ref": "#/$defs/DefaultArgs"
+    },
+    "params": {
+      "patternProperties": {
+        "^[A-Za-z_][A-Za-z0-9_]*$": {
+          "$ref": "#/$defs/DagParam"
+        }
+      },
+      "propertyNames": {
+        "maxLength": 100
+      },
+      "title": "Params",
+      "type": "object"
+    },
+    "callbacks": {
+      "$ref": "#/$defs/Callbacks",
+      "description": "DAG-level on_success / on_failure only."
+    },
+    "deadlines": {
+      "items": {
+        "$ref": "#/$defs/DeadlineSpec"
+      },
+      "title": "Deadlines",
+      "type": "array"
+    },
+    "fail_fast": {
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Fail Fast"
+    },
+    "max_consecutive_failed_dag_runs": {
+      "anyOf": [
+        {
+          "minimum": 1,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Max Consecutive Failed Dag Runs"
+    },
+    "owner_links": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "title": "Owner Links",
+      "type": "object"
+    },
+    "render_template_as_native_obj": {
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Render Template As Native Obj"
+    },
+    "rerun_with_latest_version": {
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Rerun With Latest Version"
+    },
+    "team": {
+      "anyOf": [
+        {
+          "pattern": "^[a-z0-9_-]+$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Team"
+    },
+    "lineage": {
+      "default": "inherit",
+      "description": "OpenLineage for the whole DAG (selective enable/disable).",
+      "enum": [
+        "inherit",
+        "enabled",
+        "disabled"
+      ],
+      "title": "Lineage",
+      "type": "string"
+    },
+    "environments": {
+      "patternProperties": {
+        "^[A-Za-z0-9_.-]+$": {
+          "$ref": "#/$defs/EnvironmentOverlay"
+        }
+      },
+      "propertyNames": {
+        "maxLength": 250,
+        "minLength": 1
+      },
+      "title": "Environments",
+      "type": "object"
+    },
+    "nodes": {
+      "items": {
+        "discriminator": {
+          "mapping": {
+            "custom": "#/$defs/CustomNode",
+            "note": "#/$defs/NoteNode",
+            "operator": "#/$defs/OperatorNode",
+            "python_task": "#/$defs/PythonTaskNode",
+            "task_group": "#/$defs/TaskGroupNode"
+          },
+          "propertyName": "kind"
+        },
+        "oneOf": [
+          {
+            "$ref": "#/$defs/OperatorNode"
+          },
+          {
+            "$ref": "#/$defs/PythonTaskNode"
+          },
+          {
+            "$ref": "#/$defs/TaskGroupNode"
+          },
+          {
+            "$ref": "#/$defs/CustomNode"
+          },
+          {
+            "$ref": "#/$defs/NoteNode"
+          }
+        ]
+      },
+      "title": "Nodes",
+      "type": "array"
+    },
+    "edges": {
+      "items": {
+        "$ref": "#/$defs/Edge"
+      },
+      "title": "Edges",
+      "type": "array"
+    }
+  },
+  "required": [
+    "dag_id"
+  ],
+  "title": "DagSpec",
+  "type": "object"
+}

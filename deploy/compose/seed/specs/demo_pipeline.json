@@ -1,0 +1,106 @@
+{
+  "spec_version": 1,
+  "dag_id": "demo_pipeline",
+  "description": "AutoAir demo: task group, Python tasks, dynamic task mapping and an asset outlet",
+  "schedule": {
+    "type": "none"
+  },
+  "start_date": "2026-01-01T00:00:00Z",
+  "tags": [
+    "autoair",
+    "demo"
+  ],
+  "params": {
+    "count": {
+      "default": 3,
+      "type": "integer"
+    }
+  },
+  "nodes": [
+    {
+      "kind": "task_group",
+      "id": "g",
+      "group_id": "prepare"
+    },
+    {
+      "kind": "operator",
+      "id": "start",
+      "task_id": "start",
+      "operator": "airflow.providers.standard.operators.empty.EmptyOperator"
+    },
+    {
+      "kind": "operator",
+      "id": "hello",
+      "task_id": "hello",
+      "parent_group": "g",
+      "operator": "airflow.providers.standard.operators.bash.BashOperator",
+      "params": {
+        "bash_command": "echo \"run {{ run_id }} limit={{ params.count }}\""
+      }
+    },
+    {
+      "kind": "python_task",
+      "id": "plan",
+      "task_id": "plan",
+      "parent_group": "g",
+      "function_name": "plan",
+      "arguments": {
+        "count": 3
+      },
+      "code": "return [f\"echo processing part {i}\" for i in range(count)]"
+    },
+    {
+      "kind": "operator",
+      "id": "work",
+      "task_id": "work",
+      "operator": "airflow.providers.standard.operators.bash.BashOperator",
+      "params": {},
+      "mapping": {
+        "expand": {
+          "bash_command": {
+            "$type": "xcom",
+            "node": "plan"
+          }
+        }
+      },
+      "outlets": [
+        {
+          "name": "e2e_done"
+        }
+      ]
+    },
+    {
+      "kind": "python_task",
+      "id": "report",
+      "task_id": "report",
+      "function_name": "report",
+      "arguments": {
+        "parts": {
+          "$type": "xcom",
+          "node": "plan"
+        }
+      },
+      "code": "assert len(parts) == 3\nreturn {'parts': len(parts)}",
+      "multiple_outputs": true
+    }
+  ],
+  "edges": [
+    {
+      "source": "start",
+      "target": "g"
+    },
+    {
+      "source": "hello",
+      "target": "plan"
+    },
+    {
+      "source": "g",
+      "target": "work",
+      "label": "planned"
+    },
+    {
+      "source": "work",
+      "target": "report"
+    }
+  ]
+}

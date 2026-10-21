@@ -1,0 +1,10 @@
+[
+  {
+    "id": "autoair-dbt-nodes",
+    "title": "dbt node kinds",
+    "description": "Example extension entry: node kinds and catalog source for dbt (installed with pip).",
+    "category": "extensions",
+    "package": "autoair-dbt-nodes",
+    "homepage": "https://example.com/autoair-dbt-nodes"
+  }
+]

@@ -1,0 +1,7 @@
+src/api/gen
+node_modules
+e2e/.results
+e2e/visual/.dist
+e2e/visual/.state
+e2e/visual/.results
+e2e/visual/__screenshots__

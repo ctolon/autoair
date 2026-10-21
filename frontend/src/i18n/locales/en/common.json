@@ -1,0 +1,106 @@
+{
+  "appName": "DAG Builder",
+  "language": "Language",
+  "languages": {
+    "en": "English",
+    "tr": "Türkçe"
+  },
+  "save": "Save",
+  "cancel": "Cancel",
+  "delete": "Delete",
+  "close": "Close",
+  "copy": "Copy",
+  "copied": "Copied to clipboard",
+  "loading": "Loading…",
+  "error": "Error",
+  "unsaved": "unsaved",
+  "deployed": "deployed",
+  "new": "new",
+  "confirmDiscard": "Discard unsaved changes?",
+  "signInRequired": "Airflow sign-in required",
+  "signInHelp": "Sign in with your Airflow username and password, or paste an Airflow API token. The token is kept only for this browser session and forwarded to Airflow, which enforces your permissions.",
+  "continue": "Continue",
+  "login": {
+    "username": "Username",
+    "password": "Password",
+    "submit": "Sign in",
+    "submitting": "Signing in…",
+    "failed": "Invalid username or password.",
+    "rateLimited": "Too many failed attempts. Try again in {{seconds}} s.",
+    "unavailable": "Password sign-in is not available on this server; paste a token instead.",
+    "error": "Sign-in failed: {{message}}",
+    "orToken": "or paste an access token",
+    "token": "Access token",
+    "expired": "Your Airflow session expired. Please sign in again.",
+    "withAirflow": "Sign in with Airflow",
+    "withAirflowHelp": "Uses your Airflow UI session. A sign-in window opens; AutoAir continues as soon as Airflow has signed you in.",
+    "waitingForAirflow": "Waiting for the Airflow sign-in…",
+    "popupBlocked": "The browser blocked the sign-in window; allow pop-ups or open Airflow yourself.",
+    "pluginHelp": "Your Airflow session has ended. Sign in to Airflow again to continue.",
+    "openAirflow": "Sign in to Airflow",
+    "localToken": "This local server requires an access token (autoair local --token).",
+    "orPassword": "or use your Airflow username and password"
+  },
+  "apiUnreachable": "Cannot reach the AutoAir API: {{message}}",
+  "errorBoundary": {
+    "title": "Something went wrong in the {{area}}.",
+    "retry": "Try again",
+    "areas": {
+      "builder": "builder",
+      "toolbar": "toolbar",
+      "palette": "palette",
+      "canvas": "canvas",
+      "bottomPanel": "bottom panel",
+      "inspector": "inspector",
+      "dialog": "dialog",
+      "codeMode": "code editor"
+    },
+    "undo": "Undo last change"
+  },
+  "codeEditor": {
+    "expand": "Open {{name}} in a large editor",
+    "resize": "Resize editor (drag, or arrow keys; double-click to reset)",
+    "validate": "Validate {{name}}",
+    "validateShort": "Validate",
+    "validating": "Validating…",
+    "validateFailed": "Validation failed: {{message}}",
+    "valid": "No problems found",
+    "noValidator": "No validator is installed on the server for this language",
+    "errors_one": "{{count}} error",
+    "errors_other": "{{count}} errors",
+    "warnings_one": "{{count}} warning",
+    "warnings_other": "{{count}} warnings",
+    "checkedWith": "Checked with {{tools}}",
+    "notAvailable": "Not available: {{tools}}"
+  },
+  "markdown": {
+    "view": "Markdown view",
+    "edit": "Edit",
+    "preview": "Preview",
+    "empty": "Nothing to preview yet. Type / for headings, lists, code blocks, tables…",
+    "split": "Split",
+    "toolbar": "Formatting",
+    "fullscreen": "Full screen",
+    "cmd": {
+      "heading": "Heading",
+      "bold": "Bold (Ctrl/⌘+B)",
+      "italic": "Italic (Ctrl/⌘+I)",
+      "bulletList": "Bulleted list",
+      "numberedList": "Numbered list",
+      "quote": "Quote",
+      "code": "Code",
+      "link": "Link (Ctrl/⌘+K)",
+      "table": "Table"
+    },
+    "placeholder": {
+      "text": "text",
+      "heading": "Heading",
+      "code": "code"
+    }
+  },
+  "session": {
+    "expiring": "Your Airflow session expires in {{minutes}} min. Save your work and sign in again.",
+    "ended": "Your Airflow session ended (signed out in Airflow?). Sign in again to continue.",
+    "signOut": "Sign out"
+  }
+}

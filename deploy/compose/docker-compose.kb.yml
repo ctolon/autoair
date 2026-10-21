@@ -1,0 +1,75 @@
+# Optional knowledge-base stores for the demo stack: PostgreSQL with pgvector and a
+# single-node Elasticsearch. Use it on top of docker-compose.demo.yml with a preset:
+#
+#   docker compose -f docker-compose.demo.yml -f docker-compose.kb.yml \
+#       --env-file .env --env-file env/kb-pgvector.env --profile kb-pgvector up -d --wait
+#   docker compose -f docker-compose.demo.yml -f docker-compose.kb.yml \
+#       --env-file .env --env-file env/kb-elasticsearch.env --profile kb-elasticsearch up -d --wait
+#
+# Without a preset the replicas keep the default local (SQLite) knowledge-base store.
+# Workstation only: Elasticsearch runs without security and every password is public.
+
+x-kb-env: &kb-env
+  AUTOAIR_KB__STORE: ${DEMO_KB_STORE:-local}
+  AUTOAIR_KB__ONLINE: ${DEMO_KB_ONLINE:-false}
+  AUTOAIR_KB__PGVECTOR__CONN_ID: ${DEMO_KB_PGVECTOR_CONN_ID:-}
+  AUTOAIR_KB__ELASTICSEARCH__URL: ${DEMO_KB_ELASTICSEARCH_URL:-}
+  # The pgvector credentials reach AutoAir as an Airflow connection (environment backend).
+  AIRFLOW_CONN_KB_PGVECTOR: postgresql://autoair_kb:${DEMO_KB_PG_PASSWORD:-kb-demo-only}@kb-pgvector:5432/autoair_kb
+
+x-kb-depends: &kb-depends
+  kb-pgvector:
+    condition: service_healthy
+    required: false
+  kb-elasticsearch:
+    condition: service_healthy
+    required: false
+
+services:
+  airflow-apiserver:            # the plugin
+    environment: *kb-env
+    depends_on: *kb-depends
+  autoair-a:
+    environment: *kb-env
+    depends_on: *kb-depends
+  autoair-b:
+    environment: *kb-env
+    depends_on: *kb-depends
+
+  kb-pgvector:
+    profiles: [kb-pgvector]
+    image: pgvector/pgvector:pg17
+    environment:
+      POSTGRES_USER: autoair_kb
+      POSTGRES_PASSWORD: ${DEMO_KB_PG_PASSWORD:-kb-demo-only}
+      POSTGRES_DB: autoair_kb
+    volumes:
+      - kb-pgvector:/var/lib/postgresql/data
+    healthcheck:
+      test: [CMD-SHELL, pg_isready -U autoair_kb -d autoair_kb]
+      interval: 10s
+      timeout: 10s
+      retries: 30
+    restart: unless-stopped
+
+  kb-elasticsearch:
+    profiles: [kb-elasticsearch]
+    image: docker.elastic.co/elasticsearch/elasticsearch:9.5.4
+    environment:
+      discovery.type: single-node
+      xpack.security.enabled: "false"
+      ES_JAVA_OPTS: -Xms512m -Xmx512m
+    ports: ["127.0.0.1:${DEMO_KB_ES_PORT:-9200}:9200"]
+    volumes:
+      - kb-elasticsearch:/usr/share/elasticsearch/data
+    healthcheck:
+      test: [CMD-SHELL, "curl -fs http://localhost:9200/_cluster/health?wait_for_status=yellow&timeout=5s"]
+      interval: 10s
+      timeout: 10s
+      retries: 30
+      start_period: 30s
+    restart: unless-stopped
+
+volumes:
+  kb-pgvector:
+  kb-elasticsearch:

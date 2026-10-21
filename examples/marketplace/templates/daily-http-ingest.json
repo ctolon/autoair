@@ -1,0 +1,27 @@
+{
+  "id": "daily-http-ingest",
+  "title": "Daily HTTP ingest",
+  "description": "Fetch a JSON API every day, transform it in Python and log the row count.",
+  "category": "ingestion",
+  "tags": ["http", "daily"],
+  "kind": "dag",
+  "version": "1.1.0",
+  "author": "AutoAir examples",
+  "spec": {
+    "spec_version": 2,
+    "dag_id": "daily_http_ingest",
+    "schedule": {"type": "preset", "preset": "@daily"},
+    "start_date": "2026-01-01T00:00:00Z",
+    "tags": ["autoair", "marketplace"],
+    "nodes": [
+      {"kind": "python_task", "id": "fetch", "task_id": "fetch", "function_name": "fetch",
+       "code": "import json, urllib.request\n\nwith urllib.request.urlopen('https://api.github.com/repos/apache/airflow') as r:\n    return json.load(r)",
+       "position": {"x": 0, "y": 0}},
+      {"kind": "python_task", "id": "transform", "task_id": "transform", "function_name": "transform",
+       "code": "return {'stars': data['stargazers_count']}",
+       "arguments": {"data": {"$type": "xcom", "node": "fetch"}},
+       "position": {"x": 320, "y": 0}}
+    ],
+    "edges": [{"id": "e1", "source": "fetch", "target": "transform"}]
+  }
+}

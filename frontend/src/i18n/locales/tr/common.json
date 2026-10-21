@@ -1,0 +1,106 @@
+{
+  "appName": "DAG Oluşturucu",
+  "language": "Dil",
+  "languages": {
+    "en": "English",
+    "tr": "Türkçe"
+  },
+  "save": "Kaydet",
+  "cancel": "Vazgeç",
+  "delete": "Sil",
+  "close": "Kapat",
+  "copy": "Kopyala",
+  "copied": "Panoya kopyalandı",
+  "loading": "Yükleniyor…",
+  "error": "Hata",
+  "unsaved": "kaydedilmedi",
+  "deployed": "yayında",
+  "new": "yeni",
+  "confirmDiscard": "Kaydedilmemiş değişiklikler silinsin mi?",
+  "signInRequired": "Airflow girişi gerekli",
+  "signInHelp": "Airflow kullanıcı adınız ve parolanızla giriş yapın ya da bir Airflow API token'ı yapıştırın. Token yalnızca bu tarayıcı oturumunda tutulur ve yetkilerinizi uygulayan Airflow'a iletilir.",
+  "continue": "Devam",
+  "login": {
+    "username": "Kullanıcı adı",
+    "password": "Parola",
+    "submit": "Giriş yap",
+    "submitting": "Giriş yapılıyor…",
+    "failed": "Kullanıcı adı veya parola hatalı.",
+    "rateLimited": "Çok fazla başarısız deneme. {{seconds}} sn sonra tekrar deneyin.",
+    "unavailable": "Bu sunucuda parolayla giriş kullanılamıyor; bunun yerine bir token yapıştırın.",
+    "error": "Giriş başarısız: {{message}}",
+    "orToken": "ya da bir erişim token'ı yapıştırın",
+    "token": "Erişim token'ı",
+    "expired": "Airflow oturumunuzun süresi doldu. Lütfen yeniden giriş yapın.",
+    "withAirflow": "Airflow ile giriş yap",
+    "withAirflowHelp": "Airflow arayüzü oturumunuzu kullanır. Bir giriş penceresi açılır; Airflow girişinizi tamamladığında AutoAir devam eder.",
+    "waitingForAirflow": "Airflow girişi bekleniyor…",
+    "popupBlocked": "Tarayıcı giriş penceresini engelledi; açılır pencerelere izin verin ya da Airflow'u kendiniz açın.",
+    "pluginHelp": "Airflow oturumunuz sona erdi. Devam etmek için Airflow'a yeniden giriş yapın.",
+    "openAirflow": "Airflow'a giriş yap",
+    "localToken": "Bu yerel sunucu bir erişim token'ı istiyor (autoair local --token).",
+    "orPassword": "ya da Airflow kullanıcı adı ve parolanızı kullanın"
+  },
+  "apiUnreachable": "AutoAir API'sine ulaşılamıyor: {{message}}",
+  "errorBoundary": {
+    "title": "{{area}} içinde bir hata oluştu.",
+    "retry": "Tekrar dene",
+    "areas": {
+      "builder": "Oluşturucu",
+      "toolbar": "Araç çubuğu",
+      "palette": "Palet",
+      "canvas": "Tuval",
+      "bottomPanel": "Alt panel",
+      "inspector": "Denetçi",
+      "dialog": "Pencere",
+      "codeMode": "kod düzenleyici"
+    },
+    "undo": "Son değişikliği geri al"
+  },
+  "codeEditor": {
+    "expand": "{{name}} için büyük editörü aç",
+    "resize": "Editörü boyutlandır (sürükle veya ok tuşları; sıfırlamak için çift tıkla)",
+    "validate": "{{name}} doğrula",
+    "validateShort": "Doğrula",
+    "validating": "Doğrulanıyor…",
+    "validateFailed": "Doğrulama başarısız: {{message}}",
+    "valid": "Sorun bulunamadı",
+    "noValidator": "Sunucuda bu dil için doğrulayıcı kurulu değil",
+    "errors_one": "{{count}} hata",
+    "errors_other": "{{count}} hata",
+    "warnings_one": "{{count}} uyarı",
+    "warnings_other": "{{count}} uyarı",
+    "checkedWith": "Denetleyen: {{tools}}",
+    "notAvailable": "Kullanılamıyor: {{tools}}"
+  },
+  "markdown": {
+    "view": "Markdown görünümü",
+    "edit": "Düzenle",
+    "preview": "Önizleme",
+    "empty": "Henüz önizlenecek bir şey yok. Başlık, liste, kod bloğu, tablo için / yazın…",
+    "split": "Yan yana",
+    "toolbar": "Biçimlendirme",
+    "fullscreen": "Tam ekran",
+    "cmd": {
+      "heading": "Başlık",
+      "bold": "Kalın (Ctrl/⌘+B)",
+      "italic": "İtalik (Ctrl/⌘+I)",
+      "bulletList": "Madde işaretli liste",
+      "numberedList": "Numaralı liste",
+      "quote": "Alıntı",
+      "code": "Kod",
+      "link": "Bağlantı (Ctrl/⌘+K)",
+      "table": "Tablo"
+    },
+    "placeholder": {
+      "text": "metin",
+      "heading": "Başlık",
+      "code": "kod"
+    }
+  },
+  "session": {
+    "expiring": "Airflow oturumunuzun süresi {{minutes}} dk içinde doluyor. Çalışmanızı kaydedip yeniden giriş yapın.",
+    "ended": "Airflow oturumunuz sona erdi (Airflow'dan çıkış mı yapıldı?). Devam etmek için yeniden giriş yapın.",
+    "signOut": "Çıkış yap"
+  }
+}

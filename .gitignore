@@ -1,0 +1,61 @@
+# Python
+.venv*/
+__pycache__/
+*.py[cod]
+.nox/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.hypothesis/
+.coverage
+.coverage.*
+htmlcov/
+dist/
+build/
+*.egg-info/
+
+# Local Airflow used for development / e2e. .airflow-dev/ is the state of scripts/demo.sh
+# (metadata DB, demo git repo, marketplace copy, demo-token.txt); delete it to reset the demo.
+.airflow-dev/
+.airflow-fab/
+.airflow-keycloak/
+
+# Frontend
+frontend/node_modules/
+frontend/e2e/.results/
+frontend/shots/
+*.tsbuildinfo
+
+# Built UI bundles (produced by `npm run build`, shipped in the wheel)
+src/autoair/static/plugin/
+src/autoair/static/standalone/
+
+# Local state, secrets and tool scratch directories
+.env
+.env.*
+!.env.example
+.backups/
+.codex/
+.aws/
+*.log
+
+# Claude Code: CLAUDE.md and .claude/ (settings.json, rules, skills, agents, hooks, workflows)
+# are tracked; personal settings and instructions, worktrees and Python caches are not. Hook
+# state lives in $TMPDIR, outside the repository.
+.claude/settings.local.json
+.claude/worktrees/
+CLAUDE.local.md
+
+# Private working notes (owner's planning documents); never published
+docs/internal/
+
+# Local compose overrides (may hold secrets)
+deploy/compose/autoair.env
+
+# Generated local reports (hard-coded values audit, docs site screenshots)
+.artifacts/
+
+# Editors and OS files
+.idea/
+.vscode/
+.DS_Store

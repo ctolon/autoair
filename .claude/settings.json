@@ -1,0 +1,108 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "allow": [
+      "Bash(git status)",
+      "Bash(git status *)",
+      "Bash(git diff)",
+      "Bash(git diff *)",
+      "Bash(git log)",
+      "Bash(git log *)",
+      "Bash(git show *)",
+      "Bash(git ls-files *)",
+      "Bash(git check-ignore *)",
+      "Bash(uv run ruff check *)",
+      "Bash(uv run ruff format *)",
+      "Bash(uv run mypy)",
+      "Bash(uv run mypy *)",
+      "Bash(uv run pytest)",
+      "Bash(uv run pytest *)",
+      "Bash(uv run nox --list)",
+      "Bash(uv run python scripts/gen_config_docs.py)",
+      "Bash(uv run python scripts/gen_config_docs.py --check)",
+      "Bash(uv run python scripts/scan_hardcoded.py)",
+      "Bash(uv run python scripts/scan_hardcoded.py *)",
+      "Bash(uv run python scripts/check_release.py)",
+      "Bash(uv run autoair --help)",
+      "Bash(npm run typecheck)",
+      "Bash(npm run lint)",
+      "Bash(npm run format)",
+      "Bash(npm run format:check)",
+      "Bash(npm run codegen)",
+      "Bash(npm test)",
+      "Bash(npx tsc *)",
+      "Bash(npx eslint *)",
+      "Bash(npx prettier *)",
+      "Bash(npx vitest run *)",
+      "Bash(npx playwright test --list *)",
+      "Bash(node scripts/check-mdx.mjs *)",
+      "Bash(uv run python scripts/gen_shared_constants.py --check)",
+      "Bash(uv run autoair * --help)",
+      "Bash(python3 .claude/hooks/test_hooks.py)"
+    ],
+    "deny": [
+      "Read(**/.env)",
+      "Read(./deploy/compose/autoair.env)",
+      "Read(./.aws/**)",
+      "Read(**/.autoair/*.key)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/guard_bash.py",
+            "timeout": 5
+          }
+        ]
+      },
+      {
+        "matcher": "Edit|Write|MultiEdit|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/guard_generated.py",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/format_file.py",
+            "timeout": 20
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/stop_regen_check.py",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/stop_regen_check.py",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,20 @@
+AutoAir
+Copyright 2026 ctolon and the AutoAir contributors
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+AutoAir is an independent project. It is not affiliated with, endorsed by, or sponsored by
+The Apache Software Foundation. Apache, Apache Airflow, Airflow and the Airflow logo are
+trademarks of The Apache Software Foundation.
+
+This product integrates with Apache Airflow (https://airflow.apache.org/), developed at The
+Apache Software Foundation (https://www.apache.org/) and licensed under the Apache License,
+Version 2.0.
+
+Integration logos shown on canvas nodes are trademarks of their respective owners. They are
+used only to identify the corresponding integrations.
+
+Third-party Python and JavaScript dependencies are distributed under their own licences. The
+built editor bundles in the wheel include JavaScript libraries under the MIT, ISC, BSD and
+Apache-2.0 licences; their licence texts are listed in THIRD_PARTY_LICENSES.md next to each
+bundle (autoair/static/plugin/ and autoair/static/standalone/).

@@ -1,0 +1,239 @@
+[build-system]
+requires = ["hatchling>=1.27", "hatch-fancy-pypi-readme>=24.1"]
+build-backend = "hatchling.build"
+
+[project]
+name = "autoair"
+dynamic = ["readme"]
+version = "0.1.0"
+description = "Type-safe, extensible no-code DAG builder for Apache Airflow 3"
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
+requires-python = ">=3.10"
+authors = [{ name = "ctolon", email = "cevatbatuhan.tolon@gmail.com" }]
+maintainers = [{ name = "ctolon", email = "cevatbatuhan.tolon@gmail.com" }]
+keywords = [
+  "airflow",
+  "apache-airflow",
+  "airflow-plugin",
+  "dag",
+  "dag-builder",
+  "no-code",
+  "low-code",
+  "workflow",
+  "orchestration",
+  "data-engineering",
+  "etl",
+  "visual-editor",
+  "mcp",
+]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Environment :: Web Environment",
+  "Framework :: Apache Airflow",
+  "Framework :: FastAPI",
+  "Framework :: Pydantic :: 2",
+  "Intended Audience :: Developers",
+  "Intended Audience :: Information Technology",
+  "Intended Audience :: System Administrators",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
+  "Programming Language :: JavaScript",
+  "Topic :: Software Development :: Code Generators",
+  "Topic :: System :: Distributed Computing",
+  "Topic :: System :: Monitoring",
+  "Typing :: Typed",
+]
+dependencies = [
+  "pydantic>=2.11",
+  "pydantic-settings>=2.7",
+  "fastapi>=0.115",
+  "httpx2>=2.12",
+  "pyyaml>=6.0",
+  "typer>=0.16",
+  "jinja2>=3.1",
+  "fsspec>=2024.6",
+  "prometheus-client>=0.20",
+  "jedi>=0.19",
+  "cryptography>=42",
+  "pillow>=10",
+]
+
+[project.optional-dependencies]
+airflow = ["apache-airflow>=3.0,<4", "apache-airflow-providers-standard>=1.0"]
+standalone = ["uvicorn[standard]>=0.30"]
+format = ["ruff>=0.9"]
+# Git deploy targets use the hosts' REST APIs (httpx2) or the `git` CLI: no Python packages.
+# The extra is empty; install commands and images name it, so a Git dependency added later
+# reaches them without changes.
+git = []
+mcp = [
+    "fastmcp>=4.0",
+    "mcp>=2.3",
+]
+collab = ["pycrdt>=0.12", "pycrdt-websocket>=0.16"]
+# Optional Redis pub/sub fan-out of collaboration rooms (collab.redis_url).
+collab-redis = ["redis>=5.0"]
+# AutoAir state in a SQL database (database.backend = sqlite | postgresql).
+sqlite = ["sqlalchemy>=2.0"]
+postgres = ["sqlalchemy>=2.0", "psycopg[binary]>=3.2"]
+# Documentation knowledge base stores (kb.store). The default local store needs nothing.
+# pgvector: SQLAlchemy + psycopg 3 (libpq); the vector extension is installed server-side.
+kb-pgvector = ["sqlalchemy>=2.0", "psycopg[binary]>=3.2"]
+# Elasticsearch is reached over its REST API with AutoAir's own HTTP client (httpx2,
+# outbound.* TLS/proxy settings): no client package. Kept as a stable install name.
+kb-elasticsearch = []
+otel = ["opentelemetry-instrumentation-fastapi>=0.50b0", "opentelemetry-sdk>=1.29",
+        "opentelemetry-exporter-otlp-proto-http>=1.29"]
+# AI features on pydantic-ai (the same library Airflow's common.ai provider builds on).
+# `ai` installs the agent runtime; add one provider extra per model family (they map to
+# pydantic-ai-slim extras). `ai-ollama` uses Ollama's OpenAI-compatible API.
+ai = ["pydantic-ai-slim>=2.43,<3"]
+ai-anthropic = ["pydantic-ai-slim[anthropic]>=2.43,<3"]
+ai-openai = ["pydantic-ai-slim[openai]>=2.43,<3"]
+ai-google = ["pydantic-ai-slim[google]>=2.43,<3"]
+ai-ollama = ["pydantic-ai-slim[openai]>=2.43,<3"]
+ai-bedrock = ["pydantic-ai-slim[bedrock]>=2.43,<3"]
+ai-groq = ["pydantic-ai-slim[groq]>=2.43,<3"]
+ai-mistral = ["pydantic-ai-slim[mistral]>=2.43,<3"]
+ai-cohere = ["pydantic-ai-slim[cohere]>=2.43,<3"]
+ai-all = [
+    "pydantic-ai-slim[anthropic,openai,google,bedrock,groq,mistral,cohere]>=2.43,<3",
+]
+# Local cross-encoder reranking for retrieval (pulls PyTorch: large).
+ai-rerank = ["sentence-transformers>=3.0"]
+# Third-party guardrails (enable each with AUTOAIR_AI__GUARDRAILS__EXTERNAL).
+ai-guardrails = ["llm-guard>=0.3"]
+all = ["autoair[standalone,format,git,mcp,ai,ai-anthropic,ai-openai,otel,collab,shell,yaml]"]
+shell = [
+    "shellcheck-py>=0.10",
+]
+# IDE IntelliSense (features.ide_language_server, lsp.python_server): python-lsp-server with
+# ruff for lsp.python_server=pylsp; basedpyright (bundles Node via nodejs-wheel) for the
+# default lsp.python_server=basedpyright. Bash: npm i -g bash-language-server.
+lsp = ["python-lsp-server>=1.12", "python-lsp-ruff>=2.2"]
+lsp-pyright = ["basedpyright>=1.20"]
+# YAML configuration files (PyYAML is also a core dependency today; the extra keeps the
+# install name stable should it become optional).
+yaml = [
+    "pyyaml>=6.0",
+]
+
+[dependency-groups]
+dev = [
+  "apache-airflow>=3.3.2,<4",
+  "apache-airflow-providers-standard>=1.0",
+  "uvicorn[standard]>=0.30",
+  "ruff>=0.13",
+  "mypy>=1.15",
+  "pytest>=8.3",
+  "nox>=2024.10",
+  "types-pyyaml",
+  "mcp>=2.3",
+  "apache-airflow-providers-git>=1.0",
+  "apache-airflow-providers-common-messaging>=2.1",
+  "apache-airflow-providers-openlineage>=2.0",
+  "opentelemetry-instrumentation-fastapi>=0.50b0",
+  "opentelemetry-sdk>=1.29",
+  "pycrdt>=0.12",
+  "pycrdt-websocket>=0.16",
+  "apache-airflow-providers-fab>=3.0",
+  "apache-airflow-providers-keycloak>=0.11",
+  "fastmcp>=4.0",
+  "shellcheck-py>=0.10",
+  "psycopg[binary]>=3.2",
+  "pydantic-ai-slim[anthropic,openai,google]>=2.43,<3",
+]
+
+[project.urls]
+Homepage = "https://github.com/ctolon/autoair"
+Documentation = "https://ctolon.github.io/autoair/"
+Repository = "https://github.com/ctolon/autoair"
+Issues = "https://github.com/ctolon/autoair/issues"
+Changelog = "https://github.com/ctolon/autoair/blob/main/CHANGELOG.md"
+"Release notes" = "https://github.com/ctolon/autoair/releases"
+"Container image" = "https://github.com/ctolon/autoair/pkgs/container/autoair"
+
+[project.scripts]
+autoair = "autoair.cli:app"
+autoair-mcp = "autoair.mcp.server:main"
+
+[project.entry-points."airflow.plugins"]
+autoair = "autoair.plugin:AutoAirPlugin"
+
+[tool.hatch.build]
+artifacts = ["src/autoair/static/plugin/", "src/autoair/static/standalone/"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/autoair"]
+
+[tool.hatch.build.targets.sdist]
+# Leading slashes anchor the patterns at the project root (an unanchored "tests" would also
+# match tests/ folders inside website/node_modules).
+include = [
+  "/src/autoair",
+  "/tests",
+  "/pyproject.toml",
+  "/README.md",
+  "/CHANGELOG.md",
+  "/LICENSE",
+  "/NOTICE",
+  "/noxfile.py",
+]
+exclude = ["**/__pycache__", "**/*.py[cod]", "tests/**/.pytest_cache"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+src = ["src", "tests"]
+extend-exclude = ["frontend", "tests/golden/expected", "src/autoair/scaffold/custom-node"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM", "RUF", "PT", "TC", "ANN", "S", "AIR"]
+ignore = ["ANN401", "S101", "S603", "TC001", "TC002", "TC003"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["ANN", "S"]
+
+[tool.mypy]
+strict = true
+python_version = "3.10"
+plugins = ["pydantic.mypy"]
+mypy_path = "src"
+exclude = ["src/autoair/scaffold/custom-node/"]
+packages = ["autoair"]
+
+[[tool.mypy.overrides]]
+module = ["fsspec", "fsspec.*", "jsonschema", "jsonschema.*", "jedi", "jedi.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["airflow.*"]
+ignore_missing_imports = true
+follow_imports = "skip"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra --strict-markers"
+markers = [
+  "airflow: requires apache-airflow installed",
+  "postgres: needs a PostgreSQL server (AUTOAIR_TEST_POSTGRES_URL)",
+  "live: needs a running Airflow with a real auth manager (AUTOAIR_LIVE_AIRFLOW_URL)",
+]
+
+# PyPI renders the README outside the repository: relative links point at GitHub there.
+[tool.hatch.metadata.hooks.fancy-pypi-readme]
+content-type = "text/markdown"
+
+[[tool.hatch.metadata.hooks.fancy-pypi-readme.fragments]]
+path = "README.md"
+
+[[tool.hatch.metadata.hooks.fancy-pypi-readme.substitutions]]
+pattern = '\]\((?!https?://|#)\.?/?([^)]+)\)'
+replacement = '](https://github.com/ctolon/autoair/blob/main/\1)'

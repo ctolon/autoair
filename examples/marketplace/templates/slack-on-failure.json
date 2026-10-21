@@ -1,0 +1,23 @@
+{
+  "id": "slack-on-failure",
+  "title": "Slack alert on failure",
+  "description": "A final task that runs only when something upstream failed and posts to Slack.",
+  "category": "alerts",
+  "tags": ["slack", "alerting"],
+  "kind": "fragment",
+  "version": "1.0.0",
+  "author": "AutoAir examples",
+  "requires": ["apache-airflow-providers-slack"],
+  "fragment": {
+    "nodes": [
+      {
+        "kind": "python_task",
+        "id": "alert",
+        "task_id": "alert_on_failure",
+        "function_name": "alert_on_failure",
+        "trigger_rule": "one_failed",
+        "code": "from airflow.sdk import get_current_context\n\nctx = get_current_context()\nprint(f\"DAG {ctx['dag'].dag_id} failed in run {ctx['run_id']}\")"
+      }
+    ]
+  }
+}

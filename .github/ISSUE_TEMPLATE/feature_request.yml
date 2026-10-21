@@ -1,0 +1,43 @@
+name: Feature request
+description: Suggest a new capability or an improvement.
+labels: [enhancement, triage]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What are you trying to do, and what makes it hard today?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: How it could work in the builder, the API, the CLI or the configuration.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives and workarounds
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      multiple: true
+      options:
+        - Canvas / editor
+        - Operators / catalog
+        - Validation / policy
+        - Deploy targets / git
+        - Collaboration
+        - IAM / SSO
+        - AI / MCP
+        - Deployment / operations
+        - Documentation
+  - type: checkboxes
+    id: contribute
+    attributes:
+      label: Contribution
+      options:
+        - label: I would like to work on this (see CONTRIBUTING.md)

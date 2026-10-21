@@ -1,0 +1,15 @@
+.git
+.backups
+.venv*
+.nox
+.airflow-*
+**/node_modules
+**/__pycache__
+**/.pytest_cache
+**/.mypy_cache
+**/.ruff_cache
+**/.results
+website/build
+website/.docusaurus
+.env
+*.log

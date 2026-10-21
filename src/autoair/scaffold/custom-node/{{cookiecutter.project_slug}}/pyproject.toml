@@ -1,0 +1,25 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "{{ cookiecutter.project_slug }}"
+version = "0.1.0"
+description = "{{ cookiecutter.description }}"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = ["autoair", "pydantic>=2"]
+
+[project.optional-dependencies]
+test = ["pytest"]
+
+# AutoAir discovers node kinds through this entry point group (restart AutoAir after
+# installing the package). The key is informational; the handler's `name` is the node kind.
+[project.entry-points."autoair.node_kinds"]
+{{ cookiecutter.node_name }} = "{{ cookiecutter.package_name }}.handler:{{ cookiecutter.class_name }}"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/{{ cookiecutter.package_name }}"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

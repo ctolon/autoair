@@ -1,0 +1,11 @@
+node_modules
+build
+.docusaurus
+.cache-loader
+scripts/capture/.out
+scripts/capture/.state
+test-results
+# generated at build time by scripts/sync-reference.mjs
+docs/reference/configuration.md
+
+scripts/.check-site

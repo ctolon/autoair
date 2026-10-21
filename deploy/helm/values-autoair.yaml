@@ -1,0 +1,70 @@
+# Values for the official Apache Airflow Helm chart (>= 1.22) running AutoAir.
+#   helm upgrade --install airflow apache-airflow/airflow -f deploy/helm/values-autoair.yaml
+#
+# Cloud-native setup: AutoAir commits DAG specs + generated files to Git (pull-request
+# mode); Airflow's GitDagBundle reads the same repository. No shared volume is needed
+# and api-server replicas are stateless.
+images:
+  airflow:
+    repository: registry.example.com/my-airflow-autoair
+    tag: "3.3.2"
+
+apiServer:
+  replicas: 2
+
+config:
+  dag_processor:
+    dag_bundle_config_list: >-
+      [{"name": "dags", "classpath": "airflow.providers.git.bundles.git.GitDagBundle",
+        "kwargs": {"git_conn_id": "git_dags", "tracking_ref": "main", "subdir": "dags",
+                   "refresh_interval": 60}}]
+
+env:
+  # --- deploy target: Git, reusing the bundle's git connection & location
+  - { name: AUTOAIR_STORAGE__MODE, value: "git" }
+  - { name: AUTOAIR_STORAGE__GIT__PROVIDER, value: "github" }
+  - { name: AUTOAIR_STORAGE__GIT__REPO, value: "acme/airflow-dags" }
+  - { name: AUTOAIR_STORAGE__GIT__BASE_BRANCH, value: "main" }
+  - { name: AUTOAIR_STORAGE__GIT__SUBDIR, value: "dags/autoair" }
+  - { name: AUTOAIR_STORAGE__GIT__MODE, value: "pr" }
+  - { name: AUTOAIR_STORAGE__GIT__USE_AIRFLOW_BUNDLE, value: "true" }
+  # Multi-replica safe state (templates & audit trail) on object storage
+  - { name: AUTOAIR_TEMPLATES_URL, value: "s3://acme-airflow/autoair/templates" }
+  - { name: AUTOAIR_AUDIT_URL, value: "s3://acme-airflow/autoair/audit" }
+  # Organisation policy
+  - { name: AUTOAIR_REQUIRE_OWNER, value: "true" }
+  - { name: AUTOAIR_MIN_RETRIES, value: "1" }
+  - { name: AUTOAIR_ENVIRONMENTS, value: '["dev","prod"]' }
+  - { name: AUTOAIR_DEFAULT_ENVIRONMENT, value: "prod" }
+  # IAM: AutoAir roles from Airflow roles (FAB / Keycloak / SimpleAuthManager role names),
+  # plus custom-view permissions where the auth manager supports them (see docs/iam.md).
+  - { name: AUTOAIR_IAM__STRATEGIES, value: '["airflow_permissions","role_mapping","custom_view"]' }
+  - { name: AUTOAIR_IAM__DIRECT_PUSH_ROLES, value: '["Admin"]' }
+  - { name: AUTOAIR_IAM__REQUIRE_APPROVAL, value: "true" }
+  # Feature switches (all on by default)
+  - { name: AUTOAIR_FEATURES__MARKETPLACE, value: "false" }
+  # AI: central model by default; the AI service can run separately (see docs/ai-architecture.md).
+  # The image needs autoair[ai,ai-anthropic] (pydantic-ai + the Anthropic SDK; deploy/docker/Dockerfile
+  # installs ai, ai-anthropic and ai-openai). Alternatively point AUTOAIR_AI__LLM_CONN_ID at an
+  # Airflow connection of type pydanticai (extra.model "anthropic:claude-sonnet-5-5").
+  - { name: AUTOAIR_AI__PROVIDER, value: "anthropic" }
+  - { name: AUTOAIR_AI__MODEL, value: "claude-sonnet-5-5" }
+  - { name: AUTOAIR_AI__LLM_MODE, value: "central" }
+  # - { name: AUTOAIR_AI__SERVICE_URL, value: "http://autoair-ai:8790" }
+  # Config exposure for admins (like Airflow's [api] expose_config)
+  - { name: AUTOAIR_EXPOSE_CONFIG, value: "non-sensitive-only" }
+
+secret:
+  # GitHub App credentials (preferred) or a fine-grained token for AutoAir commits/PRs
+  - envName: AUTOAIR_STORAGE__GIT__TOKEN
+    secretName: autoair-git
+    secretKey: token
+  # Optional: enables the AI assistant (central model). AUTOAIR_ANTHROPIC_API_KEY is also
+  # accepted for the anthropic provider.
+  - envName: AUTOAIR_AI__API_KEY
+    secretName: autoair-ai
+    secretKey: api-key
+  # Required when the AI service runs separately (HMAC of the forwarded identity)
+  # - envName: AUTOAIR_AI__SERVICE__SHARED_SECRET
+  #   secretName: autoair-ai
+  #   secretKey: service-secret

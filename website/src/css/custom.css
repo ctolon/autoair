@@ -1,0 +1,311 @@
+/**
+ * AutoAir documentation theme. Teal primary with an Airflow-blue secondary accent; every color
+ * is a token so light and dark mode stay in step.
+ */
+:root {
+  --ifm-color-primary: #0b7a7a;
+  --ifm-color-primary-dark: #0a6e6e;
+  --ifm-color-primary-darker: #096868;
+  --ifm-color-primary-darkest: #075555;
+  --ifm-color-primary-light: #0c8686;
+  --ifm-color-primary-lighter: #0d8c8c;
+  --ifm-color-primary-lightest: #0f9f9f;
+  --aa-accent: #017cee;
+  --aa-accent-soft: rgba(1, 124, 238, 0.1);
+  --aa-teal-soft: rgba(11, 122, 122, 0.09);
+  --aa-surface: #ffffff;
+  --aa-surface-2: #f5f8fa;
+  --aa-border: #dde5ea;
+  --aa-muted: #556673;
+  --aa-shadow: 0 1px 2px rgba(16, 32, 48, 0.06), 0 8px 28px rgba(16, 32, 48, 0.08);
+  --aa-hero-bg: radial-gradient(1200px 500px at 85% -10%, rgba(1, 124, 238, 0.13), transparent 60%),
+    radial-gradient(900px 480px at -10% 10%, rgba(11, 122, 122, 0.14), transparent 60%), #f7fafb;
+
+  --ifm-font-family-base: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --ifm-font-family-monospace: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --ifm-heading-font-weight: 650;
+  --ifm-line-height-base: 1.7;
+  --ifm-code-font-size: 88%;
+  --ifm-navbar-height: 3.75rem;
+  --ifm-global-radius: 8px;
+  --ifm-background-color: #ffffff;
+  --ifm-footer-background-color: #0f1d26;
+  --docusaurus-highlighted-code-line-bg: rgba(11, 122, 122, 0.12);
+}
+
+[data-theme='dark'] {
+  --ifm-color-primary: #4fd1c5;
+  --ifm-color-primary-dark: #35cabd;
+  --ifm-color-primary-darker: #31bfb2;
+  --ifm-color-primary-darkest: #289d93;
+  --ifm-color-primary-light: #69d8ce;
+  --ifm-color-primary-lighter: #76dbd2;
+  --ifm-color-primary-lightest: #9de6df;
+  --aa-accent: #5aa9ff;
+  --aa-accent-soft: rgba(90, 169, 255, 0.12);
+  --aa-teal-soft: rgba(79, 209, 197, 0.1);
+  --aa-surface: #16222c;
+  --aa-surface-2: #111b23;
+  --aa-border: #26363f;
+  --aa-muted: #9fb0bb;
+  --aa-shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 10px 30px rgba(0, 0, 0, 0.35);
+  --aa-hero-bg: radial-gradient(1200px 500px at 85% -10%, rgba(90, 169, 255, 0.16), transparent 60%),
+    radial-gradient(900px 480px at -10% 10%, rgba(79, 209, 197, 0.13), transparent 60%), #0d161d;
+  --ifm-background-color: #0d161d;
+  --ifm-background-surface-color: #111b23;
+  --ifm-navbar-background-color: rgba(13, 22, 29, 0.92);
+  --ifm-footer-background-color: #0a1117;
+  --ifm-toc-border-color: #26363f;
+  --ifm-color-emphasis-200: #26363f;
+  --docusaurus-highlighted-code-line-bg: rgba(79, 209, 197, 0.14);
+}
+
+body {
+  background: var(--ifm-background-color);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Navbar */
+.navbar {
+  box-shadow: 0 1px 0 var(--aa-border);
+  backdrop-filter: saturate(160%) blur(8px);
+}
+.navbar__title {
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+.header-github-link {
+  display: flex;
+  align-items: center;
+}
+.header-github-link::before {
+  content: '';
+  width: 22px;
+  height: 22px;
+  background-color: var(--ifm-navbar-link-color);
+  -webkit-mask: url("data:image/svg+xml,%3Csvg viewBox='0 0 24 24' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12'/%3E%3C/svg%3E") no-repeat center / contain;
+  mask: url("data:image/svg+xml,%3Csvg viewBox='0 0 24 24' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12'/%3E%3C/svg%3E") no-repeat center / contain;
+}
+.header-github-link:hover::before {
+  background-color: var(--ifm-color-primary);
+}
+
+/* Docs content */
+.markdown h1 {
+  font-size: 2.3rem;
+  letter-spacing: -0.02em;
+}
+.markdown h2 {
+  margin-top: 2.6rem;
+  padding-top: 0.4rem;
+  letter-spacing: -0.01em;
+}
+.markdown h3 {
+  margin-top: 1.9rem;
+}
+/*
+ * Tables take the full content width and scroll inside their own box when they are wider than
+ * it (phones, the configuration reference), so they never widen the page.
+ */
+.markdown table {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  font-size: 0.9rem;
+  border-collapse: collapse;
+}
+.markdown table thead tr {
+  background: var(--aa-surface-2);
+}
+.markdown table td,
+.markdown table th {
+  border-color: var(--aa-border);
+  vertical-align: top;
+}
+/*
+ * Code in tables (environment variables, setting keys, permissions) never breaks inside a token:
+ * a cell wraps only at spaces, and a long token widens its column (the table scrolls instead).
+ */
+.markdown table code {
+  white-space: nowrap;
+  word-break: normal;
+  overflow-wrap: normal;
+  hyphens: none;
+}
+/*
+ * The generated configuration reference: the first cell stacks the environment variable and the
+ * configuration-file key (scripts/sync-reference.mjs); both stay on one line. The description
+ * keeps a readable width.
+ */
+html.docs-doc-id-reference\/configuration .markdown table {
+  font-size: 0.85rem;
+}
+/* Type values (Literal unions) wrap at their spaces. Defaults include long regexes without spaces: they may wrap anywhere, in a column of fair width. */
+html.docs-doc-id-reference\/configuration .markdown table td:nth-child(2) code,
+html.docs-doc-id-reference\/configuration .markdown table td:nth-child(4) code {
+  white-space: normal;
+}
+html.docs-doc-id-reference\/configuration .markdown table td:nth-child(3) {
+  min-width: 7rem;
+}
+html.docs-doc-id-reference\/configuration .markdown table td:nth-child(3) code {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+html.docs-doc-id-reference\/configuration .markdown table td:nth-child(4) {
+  min-width: 12rem;
+}
+.markdown code {
+  border: 1px solid var(--aa-border);
+  background: var(--aa-surface-2);
+}
+.markdown pre code {
+  border: 0;
+  background: transparent;
+}
+.theme-code-block {
+  border: 1px solid var(--aa-border);
+  box-shadow: none;
+}
+.alert {
+  --ifm-alert-border-left-width: 4px;
+  border-width: 1px 1px 1px 4px;
+  box-shadow: none;
+}
+.menu__link {
+  font-size: 0.93rem;
+}
+.menu__list-item-collapsible > .menu__link--sublist {
+  font-weight: 600;
+}
+.table-of-contents__link--active {
+  font-weight: 600;
+}
+
+/*
+ * Doc page layout: a wider content column and a narrow table of contents against the right
+ * edge. Docusaurus gives the content 75% of a container capped at 1320px; on 1440-1920px
+ * screens that left tables cramped next to a wide empty margin.
+ */
+html.docs-doc-page {
+  --aa-toc-width: 13rem;
+  --doc-sidebar-width: 272px;
+}
+@media (min-width: 997px) {
+  html.docs-doc-page .main-wrapper .container {
+    max-width: 1720px;
+  }
+  html.docs-doc-page .main-wrapper .container > .row > .col:first-child {
+    flex: 1 1 0;
+    min-width: 0;
+    max-width: calc(100% - var(--aa-toc-width)) !important;
+  }
+  html.docs-doc-page .main-wrapper .container > .row > .col.col--3 {
+    flex: 0 0 var(--aa-toc-width);
+    max-width: var(--aa-toc-width);
+    padding-right: 0;
+  }
+  .table-of-contents {
+    font-size: 0.8rem;
+  }
+  .table-of-contents code {
+    padding: 0 0.15rem;
+    border: 0;
+    font-size: 0.7rem;
+    overflow-wrap: anywhere;
+  }
+}
+@media (min-width: 1440px) {
+  html.docs-doc-page {
+    --aa-toc-width: 15rem;
+    --doc-sidebar-width: 290px;
+  }
+}
+.docusaurus-mermaid-container {
+  display: flex;
+  justify-content: center;
+  overflow-x: auto;
+  padding: 1rem;
+  border: 1px solid var(--aa-border);
+  border-radius: var(--ifm-global-radius);
+  background: var(--aa-surface);
+  margin-bottom: var(--ifm-leading);
+}
+
+/* Screenshots and videos (src/components/Screenshot.tsx, Video.tsx) */
+.aa-shot {
+  margin: 1.5rem 0 2rem;
+}
+.aa-shot--narrow {
+  max-width: 720px;
+}
+.aa-shot--wide {
+  max-width: 1040px;
+}
+.aa-shot__frame {
+  display: block;
+  overflow: hidden;
+  border: 1px solid var(--aa-border);
+  border-radius: 10px;
+  box-shadow: var(--aa-shadow);
+  background: var(--aa-surface-2);
+  line-height: 0;
+}
+.aa-shot__frame img,
+.aa-shot__frame video {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+.aa-shot figcaption {
+  margin-top: 0.6rem;
+  font-size: 0.875rem;
+  color: var(--aa-muted);
+  text-align: center;
+}
+
+/* Footer */
+.footer--dark {
+  --ifm-footer-link-color: #c3d1d9;
+  --ifm-footer-title-color: #ffffff;
+}
+.footer__copyright {
+  font-size: 0.8rem;
+  color: #8fa3ae;
+  max-width: 60rem;
+  margin: 0 auto;
+}
+
+/* Blog */
+.blog-post-page article header h1,
+article .avatar__name {
+  letter-spacing: -0.01em;
+}
+
+/* Accessibility: visible keyboard focus everywhere. */
+a:focus-visible,
+button:focus-visible,
+[role='button']:focus-visible,
+input:focus-visible,
+summary:focus-visible,
+video:focus-visible {
+  outline: 2px solid var(--aa-accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    scroll-behavior: auto !important;
+    transition: none !important;
+    animation: none !important;
+  }
+}
+
+@media (max-width: 996px) {
+  .markdown h1 {
+    font-size: 1.9rem;
+  }
+}

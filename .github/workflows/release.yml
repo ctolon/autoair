@@ -1,0 +1,218 @@
+name: Release
+
+# Tag vX.Y.Z (matching pyproject's version) on main to publish:
+#   PyPI (trusted publishing) -> GHCR multi-arch image (SBOM + provenance) -> GitHub Release.
+# workflow_dispatch builds and checks everything without publishing (dry run).
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  FORCE_COLOR: "1"
+  UV_FROZEN: "1"
+  IMAGE: ghcr.io/${{ github.repository }}
+  AIRFLOW_VERSION: "3.3.2"   # base image of the published container (deploy/docker/Dockerfile)
+
+jobs:
+  version:
+    name: Tag matches the package version
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+      prerelease: ${{ steps.meta.outputs.prerelease }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.12"
+      - name: Verify tag, pyproject, __init__, frontend and website versions
+        env:
+          RELEASE_TAG: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
+        run: uv run --no-project python scripts/check_release.py
+      - name: Version and pre-release flag
+        id: meta
+        run: |
+          version=$(python3 -c "import tomllib; print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if [[ "$version" =~ (a|b|rc|dev)[0-9]*$ ]]; then pre=true; else pre=false; fi
+          echo "prerelease=$pre" >> "$GITHUB_OUTPUT"
+      - name: CHANGELOG has a section for this version
+        run: grep -Eq "^## \[${{ steps.meta.outputs.version }}\]" CHANGELOG.md
+
+  verify:
+    name: CI
+    needs: version
+    uses: ./.github/workflows/ci.yml
+    permissions:
+      contents: read
+
+  build:
+    name: Build sdist + wheel
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.12"
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Build the editor bundles (shipped inside the wheel)
+        working-directory: frontend
+        run: npm ci --no-audit --no-fund && npm run build
+      - run: uv build
+      - run: uvx twine check --strict dist/*
+      - name: Check packaged editor, py.typed and licence
+        run: uv run python scripts/check_release.py --artifacts
+      - name: SHA-256 checksums
+        run: cd dist && sha256sum -- * > SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: distributions
+          path: dist/
+          if-no-files-found: error
+
+  pypi:
+    name: Publish to PyPI
+    if: ${{ github.ref_type == 'tag' }}
+    needs: [version, build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment:
+      name: pypi
+      url: https://pypi.org/project/autoair/${{ needs.version.outputs.version }}/
+    permissions:
+      id-token: write   # trusted publishing (OIDC); no API token is stored
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: distributions
+          path: dist/
+      - run: rm -f dist/SHA256SUMS
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          print-hash: true
+
+  container:
+    name: Publish container image to GHCR
+    if: ${{ github.ref_type == 'tag' }}
+    needs: [version, build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    environment: release
+    permissions:
+      contents: read
+      packages: write
+      id-token: write       # build provenance attestation
+      attestations: write
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v4
+        with:
+          name: distributions
+          path: dist/
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/metadata-action@v5
+        id: meta
+        with:
+          images: ${{ env.IMAGE }}
+          flavor: latest=false
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{version}}-airflow${{ env.AIRFLOW_VERSION }}
+            type=semver,pattern={{major}}.{{minor}},enable=${{ needs.version.outputs.prerelease == 'false' }}
+            type=raw,value=latest,enable=${{ needs.version.outputs.prerelease == 'false' }}
+          labels: |
+            org.opencontainers.image.title=autoair
+            org.opencontainers.image.description=AutoAir no-code DAG builder on Apache Airflow ${{ env.AIRFLOW_VERSION }}
+            org.opencontainers.image.licenses=Apache-2.0
+            org.opencontainers.image.documentation=https://${{ github.repository_owner }}.github.io/autoair/
+            org.opencontainers.image.base.name=docker.io/apache/airflow:${{ env.AIRFLOW_VERSION }}
+          annotations: |
+            org.opencontainers.image.description=AutoAir no-code DAG builder on Apache Airflow ${{ env.AIRFLOW_VERSION }}
+            org.opencontainers.image.licenses=Apache-2.0
+      - uses: docker/build-push-action@v6
+        id: push
+        with:
+          context: .
+          file: deploy/docker/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          build-args: |
+            AIRFLOW_VERSION=${{ env.AIRFLOW_VERSION }}
+            AUTOAIR_VERSION=${{ needs.version.outputs.version }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          annotations: ${{ steps.meta.outputs.annotations }}
+          provenance: mode=max
+          sbom: true
+          cache-from: type=gha,scope=release-image
+          cache-to: type=gha,mode=max,scope=release-image
+      - uses: actions/attest-build-provenance@v2
+        with:
+          subject-name: ${{ env.IMAGE }}
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true
+
+  github-release:
+    name: GitHub Release
+    if: ${{ github.ref_type == 'tag' }}
+    needs: [version, pypi, container]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v4
+        with:
+          name: distributions
+          path: dist/
+      - name: Release notes from CHANGELOG.md
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          awk -v v="$VERSION" '
+            $0 ~ "^## \\[" v "\\]" { on = 1; next }
+            on && /^## \[/ { exit }
+            on && /^\[[^]]+\]: / { exit }
+            on { print }
+          ' CHANGELOG.md > notes.md
+          test -s notes.md
+          {
+            echo
+            echo "**Install:** \`pip install autoair==$VERSION\` · "
+            echo "**Image:** \`ghcr.io/${GITHUB_REPOSITORY}:$VERSION\`"
+          } >> notes.md
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+          VERSION: ${{ needs.version.outputs.version }}
+          PRERELEASE: ${{ needs.version.outputs.prerelease }}
+        run: |
+          flags=(--verify-tag --title "AutoAir $VERSION" --notes-file notes.md)
+          if [ "$PRERELEASE" = true ]; then flags+=(--prerelease); fi
+          gh release create "$TAG" dist/* "${flags[@]}"

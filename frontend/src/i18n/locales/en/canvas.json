@@ -1,0 +1,329 @@
+{
+  "groups": {
+    "edit": "Edit",
+    "canvas": "Canvas",
+    "general": "General"
+  },
+  "commands": {
+    "undo": "Undo",
+    "redo": "Redo",
+    "copy": "Copy",
+    "cut": "Cut",
+    "paste": "Paste",
+    "duplicate": "Duplicate",
+    "delete": "Delete selection",
+    "selectAll": "Select all",
+    "clearSelection": "Clear selection",
+    "group": "Group selection",
+    "ungroup": "Ungroup",
+    "toggleCollapse": "Collapse / expand group",
+    "addNote": "Add note",
+    "autoLayout": "Auto layout",
+    "fitView": "Fit view",
+    "toggleSnap": "Toggle snap to grid",
+    "toggleMinimap": "Toggle minimap",
+    "commandPalette": "Command palette",
+    "insert": "Insert node…",
+    "shortcuts": "Keyboard shortcuts",
+    "toggleColorMode": "Toggle light / dark mode",
+    "nudgeLeft": "Move selection left",
+    "nudgeRight": "Move selection right",
+    "nudgeUp": "Move selection up",
+    "nudgeDown": "Move selection down",
+    "nudgeLeftFast": "Move selection left (large step)",
+    "nudgeRightFast": "Move selection right (large step)",
+    "nudgeUpFast": "Move selection up (large step)",
+    "nudgeDownFast": "Move selection down (large step)",
+    "togglePalette": "Toggle palette",
+    "toggleInspector": "Toggle inspector",
+    "toggleBottom": "Toggle bottom panel"
+  },
+  "actions": {
+    "copy": "Copy",
+    "cut": "Cut",
+    "paste": "Paste here",
+    "duplicate": "Duplicate",
+    "delete": "Delete",
+    "deleteEdge": "Delete dependency",
+    "group_one": "Group into task group",
+    "group_other": "Group {{count}} nodes",
+    "ungroup": "Ungroup",
+    "collapse": "Collapse group",
+    "expand": "Expand group",
+    "focus": "Zoom to node",
+    "editLabel": "Edit label",
+    "addNote": "Add note here",
+    "selectAll": "Select all",
+    "autoLayout": "Auto layout",
+    "fitView": "Fit view",
+    "saveOperatorTemplate": "Save as operator template…"
+  },
+  "menu": {
+    "label": "Canvas actions"
+  },
+  "toolbar": {
+    "label": "Actions for {{name}}",
+    "disable": "Disable task (kept on canvas, excluded from the DAG)",
+    "enable": "Enable task",
+    "setup": "Setup task",
+    "teardown": "Teardown task",
+    "test": "Test this task",
+    "testUnavailable": "Task testing is not available",
+    "docs": "Operator documentation",
+    "noDocs": "No documentation available."
+  },
+  "badge": {
+    "disabled": "disabled",
+    "setup": "setup",
+    "teardown": "teardown",
+    "mapped": "mapped",
+    "asset": "→ asset",
+    "errors_one": "{{count}} error",
+    "errors_other": "{{count}} errors",
+    "warnings_one": "{{count}} warning",
+    "warnings_other": "{{count}} warnings",
+    "result": "result",
+    "stub": "stub · {{queue}}",
+    "lineage_enabled": "lineage",
+    "lineage_disabled": "no lineage"
+  },
+  "marker": {
+    "sensor": "Sensor",
+    "deferrable": "Deferrable",
+    "hitl": "Human-in-the-loop",
+    "branch": "Branching",
+    "shortCircuit": "Short-circuit"
+  },
+  "state": {
+    "success": "success",
+    "failed": "failed",
+    "running": "running",
+    "restarting": "restarting",
+    "queued": "queued",
+    "scheduled": "scheduled",
+    "skipped": "skipped",
+    "up_for_retry": "up for retry",
+    "up_for_reschedule": "up for reschedule",
+    "upstream_failed": "upstream failed",
+    "deferred": "deferred",
+    "awaiting_input": "awaiting input",
+    "removed": "removed",
+    "none": "no status"
+  },
+  "run": {
+    "title": "Run {{runId}}",
+    "legend": "Run state legend",
+    "clear": "Hide run overlay",
+    "chipLabel": "State: {{state}}, try {{n}}",
+    "shortTitle": "{{type}} run · {{when}}",
+    "showLegend": "Show the state legend",
+    "hideLegend": "Hide the state legend",
+    "types": {
+      "manual": "Manual",
+      "scheduled": "Scheduled",
+      "backfill": "Backfill",
+      "dataset_triggered": "Asset-triggered",
+      "asset_triggered": "Asset-triggered",
+      "asset_materialization": "Asset materialization"
+    }
+  },
+  "diff": {
+    "added": "added",
+    "changed": "changed",
+    "title": "Compared with {{label}}",
+    "clear": "Hide comparison",
+    "addedCount": "{{count}} added",
+    "changedCount": "{{count}} changed",
+    "removedCount": "{{count}} removed",
+    "removedTitle": "Removed in this version"
+  },
+  "group": {
+    "badge": "task group",
+    "members_one": "{{count}} task",
+    "members_other": "{{count}} tasks",
+    "collapse": "Collapse {{name}}",
+    "expand": "Expand {{name}}",
+    "loopTitle": "Task loop: repeats up to this many iterations"
+  },
+  "note": {
+    "empty": "Double-click to write a note",
+    "placeholder": "Markdown: # heading, - list, **bold**, `code`…",
+    "editLabel": "Note text",
+    "toolbar": "Note actions",
+    "color": "Color: {{color}}",
+    "edit": "Edit note",
+    "colors": {
+      "yellow": "Yellow",
+      "orange": "Orange",
+      "pink": "Pink",
+      "purple": "Purple",
+      "blue": "Blue",
+      "teal": "Teal",
+      "green": "Green",
+      "gray": "Gray"
+    }
+  },
+  "edge": {
+    "insert": "Insert a node here",
+    "editHint": "Double-click to edit the label",
+    "labelInput": "Dependency label"
+  },
+  "insert": {
+    "pythonTask": "Python task",
+    "taskGroup": "Task group",
+    "taskGroupHint": "Visually and logically group tasks",
+    "note": "Note",
+    "noteHint": "Sticky note with markdown text",
+    "fragmentHint": "Reusable group of tasks",
+    "decorators": {
+      "task": "Plain @task function with your own code",
+      "branch": "Returns the task_id(s) to follow",
+      "short_circuit": "Falsy result skips downstream tasks",
+      "virtualenv": "Runs in a fresh virtualenv",
+      "external_python": "Runs in an existing Python interpreter",
+      "branch_virtualenv": "Branching function in a virtualenv",
+      "sensor": "Pokes until the function says done",
+      "bash": "Returns a bash command to run",
+      "docker": "Runs inside a Docker container",
+      "kubernetes": "Runs in a Kubernetes pod",
+      "stub": "Language SDK task (Java/Go/TS)",
+      "branch_external_python": "Branching function in an existing Python interpreter",
+      "llm": "Prompt an LLM (common.ai)",
+      "agent": "AI agent with toolsets (common.ai)",
+      "llm_branch": "LLM chooses the branch (common.ai)",
+      "llm_sql": "LLM writes SQL (common.ai)"
+    },
+    "operatorTemplateHint": "Reusable configured task"
+  },
+  "insertPopover": {
+    "label": "Insert node",
+    "placeholder": "Search operators, @task variants…"
+  },
+  "palette": {
+    "title": "Command palette",
+    "insertTitle": "Insert node",
+    "placeholder": "Search nodes, tasks and commands…",
+    "insertPlaceholder": "Search operators, @task variants, templates…",
+    "search": "Search operators…",
+    "empty": "No results",
+    "loading": "Loading catalog…",
+    "builtin": "Built-in",
+    "fragments": "Templates",
+    "operators": "Operators",
+    "favoritesAndRecent": "Favorites & recent",
+    "goTo": "Go to task",
+    "commands": "Commands",
+    "deprecated": "deprecated",
+    "unsupported": "Not supported yet: {{reason}}",
+    "favorite": "Add {{name}} to favorites",
+    "unfavorite": "Remove {{name}} from favorites",
+    "dragHint": "Drag onto the canvas, double-click or press Enter to add.",
+    "noFavorites": "Star items to keep them here.",
+    "noRecent": "Nodes you add show up here.",
+    "footer": "↑↓ navigate · Enter add · Alt+S favorite · drag to place",
+    "hintNavigate": "navigate",
+    "hintSelect": "select",
+    "hintClose": "close",
+    "tabs": {
+      "all": "All",
+      "operators": "Operators",
+      "sensors": "Sensors",
+      "transfers": "Transfers",
+      "builtin": "Built-in",
+      "favorites": "Favorites",
+      "recent": "Recent"
+    },
+    "needsCallable": "needs Python callable parameter(s): {{params}}",
+    "callableOperator": "Takes Python object(s) — {{params}} — given as Python references (import paths).",
+    "callableWithAlternative": "Takes {{params}} as a Python reference (import path) — or use a {{decorator}} node to write the function here.",
+    "needsPythonCode": "Needs Python code permission on the server (allow_python_code) for {{params}}",
+    "operatorTemplates": "Operator templates",
+    "newOperatorTemplate": "New operator template"
+  },
+  "shortcuts": {
+    "title": "Keyboard shortcuts",
+    "close": "Close",
+    "footer": "Shortcuts are ignored while typing in a field or code editor. Ctrl is ⌘ on macOS."
+  },
+  "shell": {
+    "commandPalette": "Command palette (Ctrl+K)",
+    "shortcuts": "Keyboard shortcuts (?)",
+    "language": "Language",
+    "darkMode": "Switch to dark mode",
+    "lightMode": "Switch to light mode",
+    "hide": {
+      "palette": "Hide palette (Ctrl/⌘+B)",
+      "bottom": "Hide bottom panel (Ctrl/⌘+J)",
+      "inspector": "Hide inspector (Ctrl/⌘+I)"
+    },
+    "show": {
+      "palette": "Show palette (Ctrl/⌘+B)",
+      "bottom": "Show bottom panel (Ctrl/⌘+J)",
+      "inspector": "Show inspector (Ctrl/⌘+I)"
+    },
+    "user": "Signed in as {{user}}",
+    "signOut": "Sign out",
+    "configuration": "AutoAir configuration",
+    "resize": {
+      "palette": "Resize the palette (arrow keys; double click resets)",
+      "inspector": "Resize the inspector (arrow keys; double click resets)",
+      "bottom": "Resize the bottom panel (arrow keys; double click resets)"
+    },
+    "rail": {
+      "palette": "Operators",
+      "inspector": "Inspector"
+    },
+    "more": "More",
+    "commandPaletteItem": "Command palette",
+    "shortcutsItem": "Keyboard shortcuts",
+    "hideItem": {
+      "palette": "Hide palette",
+      "inspector": "Hide inspector",
+      "bottom": "Hide bottom panel"
+    },
+    "showItem": {
+      "palette": "Show palette",
+      "inspector": "Show inspector",
+      "bottom": "Show bottom panel"
+    },
+    "rolePermissions": "{{role}} grants:"
+  },
+  "toast": {
+    "copied_one": "Copied 1 node",
+    "copied_other": "Copied {{count}} nodes",
+    "nothingToPaste": "Nothing to paste: copy nodes from the canvas first",
+    "layoutFailed": "Auto layout failed",
+    "fragmentFailed": "Cannot insert template",
+    "notAFragment": "This template is not a fragment"
+  },
+  "aria": {
+    "operator": "{{name}}, {{operator}}",
+    "python": "{{name}}, Python {{decorator}}",
+    "custom": "{{name}}, {{handler}}",
+    "group": "{{name}}, task group",
+    "groupCollapsed": "{{name}}, collapsed task group",
+    "note": "Note: {{text}}"
+  },
+  "a11y": {
+    "nodeDefault": "Press Enter or Space to select a node. Arrow keys move it, Delete removes it, Escape cancels.",
+    "nodeKeyboardDisabled": "Press Enter or Space to select a node. Escape cancels.",
+    "moved": "Moved node {{direction}} to x {{x}}, y {{y}}",
+    "edgeDefault": "Press Enter or Space to select a dependency. Delete removes it, Escape cancels.",
+    "controls": "Canvas controls",
+    "zoomIn": "Zoom in",
+    "zoomOut": "Zoom out",
+    "fitView": "Fit view",
+    "interactive": "Toggle interactivity",
+    "minimap": "Minimap",
+    "handle": "Connection handle"
+  },
+  "emptyState": {
+    "title": "Start your DAG",
+    "help": "Drag an operator from the palette onto the canvas, or:",
+    "search": "Search operators…",
+    "template": "Start from a template…",
+    "ai": "Generate with AI…",
+    "code": "Write it as code",
+    "raw": "Write a raw code DAG"
+  }
+}

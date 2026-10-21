@@ -1,0 +1,40 @@
+{
+  "spec_version": 1,
+  "dag_id": "etl_full",
+  "display_name": "ETL — full feature demo",
+  "description": "Exercises groups, mapping, assets, labels and python tasks",
+  "schedule": {"type": "cron", "expression": "0 6 * * 1-5"},
+  "start_date": "2026-01-01T00:00:00Z",
+  "catchup": false,
+  "tags": ["autoair", "demo"],
+  "max_active_runs": 1,
+  "default_args": {"owner": "data", "retries": 2, "retry_delay_seconds": 300},
+  "params": {"limit": {"default": 10, "type": "integer", "description": "Row limit"}},
+  "nodes": [
+    {"kind": "task_group", "id": "g1", "group_id": "extract", "tooltip": "Extract stage"},
+    {"kind": "operator", "id": "n1", "task_id": "start",
+     "operator": "airflow.providers.standard.operators.empty.EmptyOperator"},
+    {"kind": "operator", "id": "n2", "task_id": "download", "parent_group": "g1",
+     "operator": "airflow.providers.standard.operators.bash.BashOperator",
+     "params": {"bash_command": "echo '\"); import os; os.system(\"rm -rf /\")  # {{ ds }}'",
+                "env": {"LIMIT": "{{ params.limit }}"}},
+     "retries": 3, "execution_timeout_seconds": 600},
+    {"kind": "python_task", "id": "n3", "task_id": "list_files", "parent_group": "g1",
+     "function_name": "list_files", "arguments": {"prefix": "raw/"},
+     "code": "return [f\"{prefix}{i}.csv\" for i in range(3)]"},
+    {"kind": "operator", "id": "n4", "task_id": "process",
+     "operator": "airflow.providers.standard.operators.bash.BashOperator",
+     "params": {"bash_command": "placeholder"},
+     "mapping": {"expand": {"bash_command": {"$type": "xcom", "node": "n3"}}},
+     "outlets": [{"name": "processed", "uri": "file:///tmp/processed"}]},
+    {"kind": "python_task", "id": "n5", "task_id": "summarize",
+     "function_name": "summarize", "arguments": {}, "code": "print('done')\nreturn {'ok': True}",
+     "multiple_outputs": true, "trigger_rule": "all_done"}
+  ],
+  "edges": [
+    {"source": "n1", "target": "g1"},
+    {"source": "n2", "target": "n3"},
+    {"source": "g1", "target": "n4", "label": "files ready"},
+    {"source": "n4", "target": "n5"}
+  ]
+}

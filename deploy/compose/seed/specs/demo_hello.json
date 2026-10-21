@@ -1,0 +1,16 @@
+{
+  "spec_version": 1,
+  "dag_id": "demo_hello",
+  "description": "AutoAir demo: the smallest useful DAG (start -> say hello)",
+  "schedule": {"type": "none"},
+  "start_date": "2026-01-01T00:00:00Z",
+  "tags": ["autoair", "demo"],
+  "nodes": [
+    {"kind": "operator", "id": "start", "task_id": "start",
+     "operator": "airflow.providers.standard.operators.empty.EmptyOperator"},
+    {"kind": "operator", "id": "hello", "task_id": "hello",
+     "operator": "airflow.providers.standard.operators.bash.BashOperator",
+     "params": {"bash_command": "echo \"hello from AutoAir, run {{ run_id }}\""}}
+  ],
+  "edges": [{"source": "start", "target": "hello"}]
+}

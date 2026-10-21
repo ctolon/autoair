@@ -1,0 +1,60 @@
+{
+  "name": "autoair-website",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Documentation website for AutoAir (Docusaurus 3)",
+  "license": "Apache-2.0",
+  "scripts": {
+    "docusaurus": "docusaurus",
+    "sync": "node scripts/sync-reference.mjs",
+    "prestart": "npm run sync",
+    "start": "docusaurus start",
+    "prebuild": "npm run sync",
+    "build": "docusaurus build",
+    "swizzle": "docusaurus swizzle",
+    "deploy": "docusaurus deploy",
+    "clear": "docusaurus clear",
+    "serve": "docusaurus serve",
+    "write-translations": "docusaurus write-translations",
+    "write-heading-ids": "docusaurus write-heading-ids",
+    "typecheck": "tsc",
+    "docs:version": "docusaurus docs:version",
+    "export-api": "node scripts/export-api.mjs",
+    "capture": "node scripts/capture/run.mjs",
+    "capture:screens": "node scripts/capture/run.mjs --only screens",
+    "capture:videos": "node scripts/capture/run.mjs --only videos",
+    "check:site": "node scripts/check-site.mjs"
+  },
+  "dependencies": {
+    "@docusaurus/core": "3.10.2",
+    "@docusaurus/preset-classic": "3.10.2",
+    "@docusaurus/theme-mermaid": "3.10.2",
+    "@easyops-cn/docusaurus-search-local": "0.55.3",
+    "@mdx-js/react": "3.1.0",
+    "prism-react-renderer": "2.4.1",
+    "react": "19.1.0",
+    "react-dom": "19.1.0"
+  },
+  "devDependencies": {
+    "@docusaurus/module-type-aliases": "3.10.2",
+    "@docusaurus/tsconfig": "3.10.2",
+    "@docusaurus/types": "3.10.2",
+    "@playwright/test": "1.64.0",
+    "typescript": "5.8.3"
+  },
+  "browserslist": {
+    "production": [
+      ">0.5%",
+      "not dead",
+      "not op_mini all"
+    ],
+    "development": [
+      "last 3 chrome version",
+      "last 3 firefox version",
+      "last 5 safari version"
+    ]
+  },
+  "engines": {
+    "node": ">=20.0"
+  }
+}

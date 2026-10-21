@@ -1,0 +1,83 @@
+name: Bug report
+description: Something does not work as documented.
+labels: [bug, triage]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. Please do **not** report security problems here; use
+        [private vulnerability reporting](https://github.com/ctolon/autoair/security/advisories/new).
+        Remove tokens, passwords and private hostnames from logs and configuration.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: Minimal steps. A DAG spec (File → Export) or the generated code helps a lot.
+      placeholder: |
+        1. Open the builder ...
+        2. Add a BashOperator ...
+        3. Deploy ...
+    validations:
+      required: true
+  - type: input
+    id: autoair-version
+    attributes:
+      label: AutoAir version
+      placeholder: "0.1.0 (pip show autoair)"
+    validations:
+      required: true
+  - type: input
+    id: airflow-version
+    attributes:
+      label: Apache Airflow version
+      placeholder: "3.3.2"
+    validations:
+      required: true
+  - type: dropdown
+    id: mode
+    attributes:
+      label: Deployment mode
+      options:
+        - Airflow plugin
+        - Standalone (autoair serve)
+        - Local (autoair local)
+        - Separate AI service (autoair ai-serve)
+        - Docker Compose demo
+        - Helm / Kubernetes
+        - Other
+    validations:
+      required: true
+  - type: dropdown
+    id: target
+    attributes:
+      label: Deploy target
+      options: [local folder, object storage, git (pull requests), git (push), not relevant]
+  - type: input
+    id: auth-manager
+    attributes:
+      label: Airflow auth manager
+      placeholder: "SimpleAuthManager / FAB / Keycloak / other"
+  - type: input
+    id: environment
+    attributes:
+      label: Python version, OS and browser
+      placeholder: "Python 3.12, Ubuntu 24.04, Chrome 141"
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs and errors
+      description: Server logs (AUTOAIR_LOGGING__LEVEL=DEBUG helps), browser console, Problems panel.
+      render: text
+  - type: textarea
+    id: config
+    attributes:
+      label: Relevant configuration
+      description: "`autoair config show --changed` output. Secrets are masked, but check before pasting."
+      render: text

@@ -1,0 +1,539 @@
+# AutoAir integration demo: Airflow 3 (split components) + the AutoAir plugin, two standalone
+# AutoAir replicas sharing PostgreSQL state and the DAG volume, and opt-in profiles.
+#
+#   cd deploy/compose && cp .env.example .env
+#   docker compose -f docker-compose.demo.yml up --build -d                  # core only
+#   docker compose -f docker-compose.demo.yml --profile lb up -d             # + nginx load balancer
+#   docker compose -f docker-compose.demo.yml --env-file .env --env-file env/git.env \
+#       --profile git up -d                                                  # + Gitea deploy target
+#
+# Profiles: lb, redis, ai, ollama, git, tls, observability. See README.md for every service,
+# port, credential and walkthrough. Everything here is for a workstation: all Airflow users are
+# administrators and every secret has a public default. Never expose this stack as is.
+name: autoair-demo
+
+# --------------------------------------------------------------------------------------------
+# Shared fragments
+# --------------------------------------------------------------------------------------------
+x-build: &build
+  context: ../..
+  dockerfile: deploy/docker/Dockerfile.demo
+  args:
+    AIRFLOW_VERSION: ${DEMO_AIRFLOW_VERSION:-3.3.2}
+
+# Airflow configuration shared by every Airflow component, the AutoAir replicas (which read
+# Airflow's GitDagBundle config and connections) and the one-shot jobs built on the same image.
+x-airflow-env: &airflow-env
+  AIRFLOW__CORE__EXECUTOR: LocalExecutor
+  AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+  AIRFLOW__CORE__FERNET_KEY: ${DEMO_FERNET_KEY:-6c3JJdtyiF5gkdKTnUFKpNub4Kcc-3vthcY4xSUi7xE=}
+  AIRFLOW__CORE__EXECUTION_API_SERVER_URL: http://airflow-apiserver:8080/execution/
+  AIRFLOW__CORE__TEST_CONNECTION: Enabled
+  # Local demonstration only: every visitor is an administrator, no login page.
+  AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_ALL_ADMINS: "true"
+  AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:${DEMO_AIRFLOW_DB_PASSWORD:-airflow-demo-only}@postgres:5432/airflow
+  AIRFLOW__API_AUTH__JWT_SECRET: ${DEMO_JWT_SECRET:-local-demo-jwt-secret-change-before-exposing-0123456789abcdef0123456789abcdef}
+  AIRFLOW__API_AUTH__JWT_EXPIRATION_TIME: ${DEMO_JWT_EXPIRATION_TIME:-86400}
+  AIRFLOW__API__SECRET_KEY: ${DEMO_API_SECRET_KEY:-local-demo-api-secret-key}
+  AIRFLOW__API__WORKERS: ${DEMO_AIRFLOW_API_WORKERS:-2}
+  AIRFLOW__API__EXPOSE_CONFIG: "true"
+  AIRFLOW__DAG_PROCESSOR__REFRESH_INTERVAL: "5"
+  AIRFLOW__DAG_PROCESSOR__DAG_BUNDLE_CONFIG_LIST: '${DEMO_DAG_BUNDLE_CONFIG_LIST:-[{"name": "dags-folder", "classpath": "airflow.dag_processing.bundles.local.LocalDagBundle", "kwargs": {}}]}'
+  AIRFLOW__SCHEDULER__ENABLE_HEALTH_CHECK: "true"
+  AIRFLOW__LOGGING__LOGGING_LEVEL: ${DEMO_AIRFLOW_LOG_LEVEL:-INFO}
+
+# AutoAir configuration shared by the plugin (inside the Airflow api-server), the standalone
+# replicas and the AutoAir one-shot jobs. Every value can be changed through .env (DEMO_*);
+# arbitrary other AUTOAIR_* variables go into autoair.env (optional, see README) or the YAML.
+x-autoair-env: &autoair-env
+  AUTOAIR_CONFIG_FILE: /etc/autoair/autoair.yaml
+  AUTOAIR_AIRFLOW_URL: http://airflow-apiserver:8080
+  AUTOAIR_DAGS_FOLDER: /opt/airflow/dags
+  AUTOAIR_EXPOSE_CONFIG: ${DEMO_EXPOSE_CONFIG:-non-sensitive-only}
+  AUTOAIR_LOGGING__LEVEL: ${DEMO_AUTOAIR_LOG_LEVEL:-INFO}
+  AUTOAIR_LOGGING__FORMAT: ${DEMO_AUTOAIR_LOG_FORMAT:-text}
+  # --- state: PostgreSQL, migrated once by autoair-migrate
+  AUTOAIR_DATABASE__BACKEND: postgresql
+  AUTOAIR_DATABASE__URL: postgresql+psycopg://autoair@postgres:5432/autoair
+  AUTOAIR_DATABASE__PASSWORD: ${DEMO_AUTOAIR_DB_PASSWORD:-autoair-demo-only}
+  AUTOAIR_DATABASE__MIGRATE_ON_START: "false"
+  # --- collaboration fan-out: database (LISTEN/NOTIFY) or redis (profile redis)
+  AUTOAIR_COLLAB__SYNC: ${DEMO_COLLAB_SYNC:-database}
+  AUTOAIR_COLLAB__REDIS_URL: ${DEMO_COLLAB_REDIS_URL:-}
+  AUTOAIR_COLLAB_SECRET: ${DEMO_COLLAB_SECRET:-local-demo-collab-secret}
+  # --- sign-in
+  AUTOAIR_IAM__LOGIN_ENABLED: "true"
+  AUTOAIR_SSO__AIRFLOW_PUBLIC_URL: http://localhost:${DEMO_AIRFLOW_PORT:-8080}
+  # --- deploy target: local DAG folder (default) or Gitea through a GitDagBundle (env/git.env)
+  AUTOAIR_STORAGE__MODE: ${DEMO_STORAGE_MODE:-local}
+  AUTOAIR_STORAGE__GIT__PROVIDER: gitea  # git CLI push + pull requests over Gitea's REST API
+  AUTOAIR_STORAGE__GIT__MODE: ${DEMO_GIT_MODE:-pr}
+  AUTOAIR_STORAGE__GIT__USE_AIRFLOW_BUNDLE: "true"
+  AUTOAIR_STORAGE__GIT__BUNDLE_NAME: gitea
+  AUTOAIR_STORAGE__GIT__SUBDIR: autoair
+  AUTOAIR_STORAGE__GIT__FETCH_INTERVAL: "5"
+  AUTOAIR_STORAGE__GIT__COMMITTER_NAME: AutoAir demo
+  AUTOAIR_STORAGE__GIT__COMMITTER_EMAIL: autoair@demo.invalid
+  # --- AI: off by default so the demo never incurs provider charges (profile ai / ollama)
+  AUTOAIR_AI__ENABLED: ${DEMO_AI_ENABLED:-false}
+  AUTOAIR_AI__PROVIDER: ${DEMO_AI_PROVIDER:-openai}
+  AUTOAIR_AI__MODEL: ${DEMO_AI_MODEL:-}
+  AUTOAIR_AI__API_KEY: ${DEMO_AI_API_KEY:-}
+  AUTOAIR_AI__BASE_URL: ${DEMO_AI_BASE_URL:-}
+  AUTOAIR_AI__SERVICE_URL: ${DEMO_AI_SERVICE_URL:-}
+  AUTOAIR_AI__SERVICE__SHARED_SECRET: ${DEMO_AI_SERVICE_SECRET:-local-demo-ai-hmac-secret}
+  # --- tracing (profile observability; needs autoair[otel], installed in the demo image)
+  AUTOAIR_OTEL_ENABLED: ${DEMO_OTEL_ENABLED:-false}
+  OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
+  OTEL_SERVICE_NAME: autoair
+  AUTOAIR_FEATURES__IDE_LANGUAGE_SERVER: "false"
+
+x-autoair-env-file: &autoair-env-file
+  # Optional per-checkout overrides (any AUTOAIR_* variable); lower precedence than above.
+  - path: ./autoair.env
+    required: false
+
+x-healthcheck-defaults: &hc
+  interval: 10s
+  timeout: 10s
+  retries: 30
+  start_period: 30s
+
+x-airflow: &airflow
+  image: ${DEMO_IMAGE:-autoair-demo:local}
+  build: *build
+  environment:
+    <<: [*airflow-env, *autoair-env]
+  env_file: *autoair-env-file
+  volumes:
+    - dags:/opt/airflow/dags
+    - logs:/opt/airflow/logs
+    - ./config/autoair.yaml:/etc/autoair/autoair.yaml:ro
+  depends_on: &airflow-depends
+    airflow-migrate:
+      condition: service_completed_successfully
+    autoair-migrate:
+      condition: service_completed_successfully
+    git-bootstrap:           # profile git: the connection must exist before startup
+      condition: service_completed_successfully
+      required: false
+  restart: unless-stopped
+
+x-autoair: &autoair
+  image: ${DEMO_IMAGE:-autoair-demo:local}
+  build: *build
+  environment: &autoair-replica-env
+    <<: [*airflow-env, *autoair-env]
+    AUTOAIR_SERVER__HOST: 0.0.0.0
+    AUTOAIR_SERVER__PORT: "8765"
+    # Inside the compose network only the load balancers forward to the replicas.
+    AUTOAIR_SERVER__FORWARDED_ALLOW_IPS: '["*"]'
+    AUTOAIR_SERVER__READY_CHECK_AIRFLOW: "true"
+  env_file: *autoair-env-file
+  entrypoint: [bash, /opt/autoair-demo/scripts/autoair-entrypoint.sh]
+  command: [autoair, serve]
+  volumes:
+    - dags:/opt/airflow/dags
+    - marketplace:/opt/airflow/marketplace:ro
+    - ./config/autoair.yaml:/etc/autoair/autoair.yaml:ro
+    - ./scripts:/opt/autoair-demo/scripts:ro
+  depends_on: &autoair-depends
+    autoair-migrate:
+      condition: service_completed_successfully
+    marketplace-seed:
+      condition: service_completed_successfully
+    airflow-apiserver:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+      required: false
+    git-bootstrap:
+      condition: service_completed_successfully
+      required: false
+  healthcheck:
+    <<: *hc
+    test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://localhost:8765/api/health', timeout=5)"]
+  restart: unless-stopped
+
+services:
+  # ==========================================================================================
+  # Core (always on)
+  # ==========================================================================================
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${DEMO_POSTGRES_PASSWORD:-postgres-demo-only}
+      POSTGRES_DB: postgres
+      # Read by initdb/001-databases.sh: one role + database each for Airflow and AutoAir.
+      DEMO_AIRFLOW_DB_PASSWORD: ${DEMO_AIRFLOW_DB_PASSWORD:-airflow-demo-only}
+      DEMO_AUTOAIR_DB_PASSWORD: ${DEMO_AUTOAIR_DB_PASSWORD:-autoair-demo-only}
+    volumes:
+      - postgres:/var/lib/postgresql/data
+      - ./initdb:/docker-entrypoint-initdb.d:ro
+    ports: ["127.0.0.1:${DEMO_POSTGRES_PORT:-5433}:5432"]
+    healthcheck:
+      # TCP check against the AutoAir database: only true once initdb has finished.
+      test: [CMD-SHELL, pg_isready -h 127.0.0.1 -U autoair -d autoair && pg_isready -h 127.0.0.1 -U airflow -d airflow]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    restart: unless-stopped
+
+  airflow-migrate:
+    image: ${DEMO_IMAGE:-autoair-demo:local}
+    build: *build
+    environment: *airflow-env
+    command: [db, migrate]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  autoair-migrate:
+    image: ${DEMO_IMAGE:-autoair-demo:local}
+    build: *build
+    environment: *autoair-env
+    env_file: *autoair-env-file
+    volumes:
+      - ./config/autoair.yaml:/etc/autoair/autoair.yaml:ro
+    entrypoint: [autoair]
+    command: [db, upgrade]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  # Signs examples/marketplace into a local, trusted template marketplace (see demo.sh).
+  marketplace-seed:
+    image: ${DEMO_IMAGE:-autoair-demo:local}
+    build: *build
+    user: "0:0"
+    environment:
+      AUTOAIR_FEATURES__MARKETPLACE: "true"
+    entrypoint: [bash, /opt/autoair-demo/scripts/seed-marketplace.sh]
+    volumes:
+      - marketplace:/opt/airflow/marketplace
+      - ../../examples/marketplace:/opt/autoair-demo/examples/marketplace:ro
+      - ./scripts:/opt/autoair-demo/scripts:ro
+    restart: "no"
+
+  airflow-apiserver:
+    <<: *airflow
+    command: [api-server]
+    ports: ["127.0.0.1:${DEMO_AIRFLOW_PORT:-8080}:8080"]
+    healthcheck:
+      <<: *hc
+      start_period: 60s
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://localhost:8080/api/v2/monitor/health', timeout=5)"]
+
+  airflow-scheduler:
+    <<: *airflow
+    command: [scheduler]
+    depends_on:
+      <<: *airflow-depends
+      airflow-apiserver:
+        condition: service_healthy
+    healthcheck:
+      <<: *hc
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://localhost:8974/health', timeout=5)"]
+
+  airflow-dag-processor:
+    <<: *airflow
+    command: [dag-processor]
+    healthcheck:
+      <<: *hc
+      test: [CMD-SHELL, 'airflow jobs check --job-type DagProcessorJob --hostname "$${HOSTNAME}"']
+
+  airflow-triggerer:
+    <<: *airflow
+    command: [triggerer]
+    healthcheck:
+      <<: *hc
+      test: [CMD-SHELL, 'airflow jobs check --job-type TriggererJob --hostname "$${HOSTNAME}"']
+
+  autoair-a:
+    <<: *autoair
+    environment:
+      <<: *autoair-replica-env
+      OTEL_SERVICE_NAME: autoair-a
+    ports: ["127.0.0.1:${DEMO_AUTOAIR_A_PORT:-8765}:8765"]
+
+  autoair-b:
+    <<: *autoair
+    environment:
+      <<: *autoair-replica-env
+      OTEL_SERVICE_NAME: autoair-b
+    ports: ["127.0.0.1:${DEMO_AUTOAIR_B_PORT:-8766}:8765"]
+
+  # Deploys the demo DAG specs in seed/specs through replica A's API (idempotent).
+  seed-dags:
+    image: ${DEMO_IMAGE:-autoair-demo:local}
+    build: *build
+    environment:
+      SEED_AUTOAIR_URL: http://autoair-a:8765
+      SEED_AIRFLOW_URL: http://airflow-apiserver:8080
+      SEED_ENABLED: ${DEMO_SEED_DAGS:-true}
+    entrypoint: [python, /opt/autoair-demo/scripts/seed_specs.py, /opt/autoair-demo/seed/specs]
+    volumes:
+      - ./scripts:/opt/autoair-demo/scripts:ro
+      - ./seed:/opt/autoair-demo/seed:ro
+    depends_on:
+      autoair-a:
+        condition: service_healthy
+    restart: "no"
+
+  # ==========================================================================================
+  # Profile lb: nginx round-robin in front of both replicas (WebSockets included)
+  # ==========================================================================================
+  lb:
+    profiles: [lb]
+    image: nginx:1.28-alpine
+    volumes:
+      - ./nginx/lb.conf:/etc/nginx/conf.d/default.conf:ro
+    ports: ["127.0.0.1:${DEMO_LB_PORT:-8780}:8080"]
+    depends_on:
+      autoair-a:
+        condition: service_healthy
+      autoair-b:
+        condition: service_healthy
+    healthcheck:
+      <<: *hc
+      test: [CMD, wget, -qO-, http://127.0.0.1:8081/healthz]
+    restart: unless-stopped
+
+  # ==========================================================================================
+  # Profile redis: collaboration fan-out through Redis pub/sub (use with env/redis.env)
+  # ==========================================================================================
+  redis:
+    profiles: [redis]
+    image: redis:7.4-alpine
+    command: [redis-server, --requirepass, "${DEMO_REDIS_PASSWORD:-redis-demo-only}", --save, ""]
+    healthcheck:
+      <<: *hc
+      test: [CMD-SHELL, 'redis-cli -a "$${REDIS_PASSWORD}" --no-auth-warning ping | grep -q PONG']
+    environment:
+      REDIS_PASSWORD: ${DEMO_REDIS_PASSWORD:-redis-demo-only}
+    restart: unless-stopped
+
+  # ==========================================================================================
+  # Profile ai: the separate AI service (autoair ai-serve), HMAC-signed by the replicas.
+  # Use with env/ai.env (+ a provider key) or env/ollama.env (+ profile ollama).
+  # ==========================================================================================
+  autoair-ai:
+    profiles: [ai]
+    image: ${DEMO_IMAGE:-autoair-demo:local}
+    build: *build
+    environment:
+      <<: [*airflow-env, *autoair-env]
+      AUTOAIR_AI__ENABLED: "true"
+      AUTOAIR_AI__SERVICE_URL: ""
+      OTEL_SERVICE_NAME: autoair-ai
+    env_file: *autoair-env-file
+    entrypoint: [autoair]
+    command: [ai-serve, --host, 0.0.0.0, --port, "8790"]
+    volumes:
+      - ./config/autoair.yaml:/etc/autoair/autoair.yaml:ro
+    ports: ["127.0.0.1:${DEMO_AI_PORT:-8790}:8790"]
+    depends_on:
+      autoair-migrate:
+        condition: service_completed_successfully
+      airflow-apiserver:
+        condition: service_healthy
+      ollama-pull:
+        condition: service_completed_successfully
+        required: false
+    healthcheck:
+      <<: *hc
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://localhost:8790/health', timeout=5)"]
+    restart: unless-stopped
+
+  # Profile ollama: a local model server, so the AI walkthrough costs nothing (CPU is slow).
+  ollama:
+    profiles: [ollama]
+    image: ollama/ollama:${DEMO_OLLAMA_VERSION:-latest}
+    volumes:
+      - ollama:/root/.ollama
+    ports: ["127.0.0.1:${DEMO_OLLAMA_PORT:-11434}:11434"]
+    healthcheck:
+      <<: *hc
+      test: [CMD, ollama, list]
+    restart: unless-stopped
+
+  ollama-pull:
+    profiles: [ollama]
+    image: ollama/ollama:${DEMO_OLLAMA_VERSION:-latest}
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+    entrypoint: [ollama]
+    command: [pull, "${DEMO_OLLAMA_MODEL:-qwen2.5:1.5b}"]
+    depends_on:
+      ollama:
+        condition: service_healthy
+    restart: "no"
+
+  # ==========================================================================================
+  # Profile git: Gitea as the deploy target, read back by an Airflow GitDagBundle.
+  # Use with env/git.env. AutoAir pushes one branch per DAG (PR mode); merge it in Gitea.
+  # ==========================================================================================
+  gitea:
+    profiles: [git]
+    image: gitea/gitea:${DEMO_GITEA_VERSION:-1.24-rootless}
+    environment:
+      GITEA__database__DB_TYPE: sqlite3
+      GITEA__security__INSTALL_LOCK: "true"
+      GITEA__server__ROOT_URL: http://localhost:${DEMO_GITEA_PORT:-3000}/
+      GITEA__server__HTTP_PORT: "3000"
+      GITEA__server__DISABLE_SSH: "true"
+      GITEA__service__DISABLE_REGISTRATION: "true"
+      GITEA__repository__DEFAULT_BRANCH: main
+      GITEA__log__LEVEL: Warn
+    volumes:
+      - gitea-data:/var/lib/gitea
+      - gitea-config:/etc/gitea
+    ports: ["127.0.0.1:${DEMO_GITEA_PORT:-3000}:3000"]
+    healthcheck:
+      <<: *hc
+      test: [CMD, curl, -fsS, http://localhost:3000/api/healthz]
+    restart: unless-stopped
+
+  # Creates the Gitea admin user (Gitea's CLI must run next to its data).
+  gitea-init:
+    profiles: [git]
+    image: gitea/gitea:${DEMO_GITEA_VERSION:-1.24-rootless}
+    environment:
+      GITEA_ADMIN_USER: ${DEMO_GITEA_USER:-autoair}
+      GITEA_ADMIN_PASSWORD: ${DEMO_GITEA_PASSWORD:-autoair-demo-only}
+    entrypoint: [sh, /opt/autoair-demo/scripts/gitea-init.sh]
+    volumes:
+      - gitea-data:/var/lib/gitea
+      - gitea-config:/etc/gitea
+      - ./scripts:/opt/autoair-demo/scripts:ro
+    depends_on:
+      gitea:
+        condition: service_healthy
+    restart: "no"
+
+  # Creates the repository and an access token, and stores the token ONLY in the Airflow
+  # connection DEMO_GIT_CONN_ID (metadata DB, Fernet-encrypted). Runs before Airflow and the
+  # replicas start, because the GitDagBundle and AutoAir's git target read that connection
+  # at startup. AutoAir never stores the token: it resolves the connection by conn_id.
+  git-bootstrap:
+    profiles: [git]
+    image: ${DEMO_IMAGE:-autoair-demo:local}
+    build: *build
+    environment:
+      <<: *airflow-env
+      GITEA_URL: http://gitea:3000
+      GITEA_ADMIN_USER: ${DEMO_GITEA_USER:-autoair}
+      GITEA_ADMIN_PASSWORD: ${DEMO_GITEA_PASSWORD:-autoair-demo-only}
+      GITEA_REPO: ${DEMO_GITEA_REPO:-dags}
+      GIT_CONN_ID: ${DEMO_GIT_CONN_ID:-gitea_dags}
+    entrypoint: [python, /opt/autoair-demo/scripts/git_bootstrap.py]
+    volumes:
+      - ./scripts:/opt/autoair-demo/scripts:ro
+    depends_on:
+      gitea-init:
+        condition: service_completed_successfully
+      airflow-migrate:
+        condition: service_completed_successfully
+    restart: "no"
+
+  # ==========================================================================================
+  # Profile tls: self-signed CA, an HTTPS reverse proxy, and a replica serving HTTPS itself
+  # (server.ssl_*) that reaches Airflow over HTTPS trusting the demo CA (outbound.ca_bundle).
+  # ==========================================================================================
+  certs-init:
+    profiles: [tls]
+    image: ${DEMO_IMAGE:-autoair-demo:local}
+    build: *build
+    user: "0:0"
+    entrypoint: [python, /opt/autoair-demo/scripts/gen_certs.py, /certs]
+    volumes:
+      - certs:/certs
+      - ./scripts:/opt/autoair-demo/scripts:ro
+    restart: "no"
+
+  tls-proxy:
+    profiles: [tls]
+    image: nginx:1.28-alpine
+    volumes:
+      - ./nginx/tls.conf:/etc/nginx/conf.d/default.conf:ro
+      - certs:/etc/nginx/certs:ro
+    ports:
+      - "127.0.0.1:${DEMO_TLS_PORT:-8443}:8443"            # AutoAir replicas over HTTPS
+      - "127.0.0.1:${DEMO_TLS_AIRFLOW_PORT:-9443}:9443"    # Airflow over HTTPS
+    depends_on:
+      certs-init:
+        condition: service_completed_successfully
+      autoair-a:
+        condition: service_healthy
+      autoair-b:
+        condition: service_healthy
+    healthcheck:
+      <<: *hc
+      test: [CMD, wget, -qO-, http://127.0.0.1:8081/healthz]
+    restart: unless-stopped
+
+  autoair-tls:
+    <<: *autoair
+    profiles: [tls]
+    environment:
+      <<: *autoair-replica-env
+      OTEL_SERVICE_NAME: autoair-tls
+      # Outbound: Airflow behind the TLS proxy, trusted through the demo CA only.
+      AUTOAIR_AIRFLOW_URL: https://tls-proxy:9443
+      AUTOAIR_SSO__AIRFLOW_PUBLIC_URL: https://localhost:${DEMO_TLS_AIRFLOW_PORT:-9443}
+      AUTOAIR_OUTBOUND__CA_BUNDLE: /certs/ca.pem
+      AUTOAIR_OUTBOUND__VERIFY: "true"
+      # Inbound: uvicorn terminates TLS itself.
+      AUTOAIR_SERVER__SSL_CERTFILE: /certs/server.pem
+      AUTOAIR_SERVER__SSL_KEYFILE: /certs/server.key
+      AUTOAIR_SERVER__SSL_MIN_VERSION: TLSv1.2
+      AUTOAIR_SERVER__PUBLIC_URL: https://localhost:${DEMO_TLS_AUTOAIR_PORT:-8445}
+      AUTOAIR_SERVER__HSTS_SECONDS: "300"
+      AUTOAIR_SERVER__COOKIE_SECURE: always
+    volumes:
+      - dags:/opt/airflow/dags
+      - marketplace:/opt/airflow/marketplace:ro
+      - certs:/certs:ro
+      - ./config/autoair.yaml:/etc/autoair/autoair.yaml:ro
+      - ./scripts:/opt/autoair-demo/scripts:ro
+    ports: ["127.0.0.1:${DEMO_TLS_AUTOAIR_PORT:-8445}:8765"]
+    depends_on:
+      <<: *autoair-depends
+      tls-proxy:
+        condition: service_healthy
+    healthcheck:
+      <<: *hc
+      test: [CMD, python, -c, "import ssl, urllib.request; urllib.request.urlopen('https://localhost:8765/api/health', timeout=5, context=ssl.create_default_context(cafile='/certs/ca.pem'))"]
+
+  # ==========================================================================================
+  # Profile observability: OpenTelemetry collector + Jaeger (use with env/observability.env)
+  # ==========================================================================================
+  otel-collector:
+    profiles: [observability]
+    image: otel/opentelemetry-collector-contrib:${DEMO_OTEL_COLLECTOR_VERSION:-0.116.1}
+    command: [--config=/etc/otelcol/config.yaml]
+    volumes:
+      - ./otel/collector.yaml:/etc/otelcol/config.yaml:ro
+    depends_on: [jaeger]
+    restart: unless-stopped
+
+  jaeger:
+    profiles: [observability]
+    image: jaegertracing/all-in-one:${DEMO_JAEGER_VERSION:-1.65.0}
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+    ports: ["127.0.0.1:${DEMO_JAEGER_PORT:-16686}:16686"]
+    restart: unless-stopped
+
+volumes:
+  postgres:
+  dags:
+  logs:
+  marketplace:
+  ollama:
+  gitea-data:
+  gitea-config:
+  certs:

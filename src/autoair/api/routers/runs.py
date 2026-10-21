@@ -1,0 +1,163 @@
+"""Test-run a task / DAG of a spec (code executes on the AutoAir host, in a subprocess)."""
+
+from __future__ import annotations
+
+from typing import Any
+
+from fastapi import APIRouter, HTTPException
+from fastapi.concurrency import run_in_threadpool
+from pydantic import BaseModel, Field
+
+from autoair.api.deps import ServicesDep
+from autoair.codegen import CodegenError, render
+from autoair.runner import (
+    DagTestMode,
+    DagTestResult,
+    TaskTestResult,
+    run_dag_test,
+    run_task_test,
+)
+from autoair.spec import CustomNode, DagSpec, OperatorNode, PythonTaskNode
+from autoair.validation import effective_task_id, policy_from_settings
+
+router = APIRouter(prefix="/runner", tags=["runner"])
+
+MAX_TIMEOUT = 86_400.0  # schema ceiling; AUTOAIR_RUNNER__MAX_TIMEOUT is enforced per request
+
+
+class TestTaskRequest(BaseModel):
+    spec: DagSpec
+    task_node_id: str
+    conf: dict[str, Any] = Field(default_factory=dict, description="dag_run.conf / params")
+    mock_xcoms: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Upstream node id -> value returned by xcom_pull "
+        "(use '<node_id>:<key>' for non-default XCom keys).",
+    )
+    timeout: float | None = Field(
+        default=None,
+        gt=0,
+        le=MAX_TIMEOUT,
+        description="Seconds (default AUTOAIR_RUNNER__DEFAULT_TASK_TIMEOUT, at most "
+        "AUTOAIR_RUNNER__MAX_TIMEOUT).",
+    )
+
+
+class TestDagRequest(BaseModel):
+    spec: DagSpec
+    conf: dict[str, Any] = Field(default_factory=dict)
+    mode: DagTestMode = Field(
+        default="memory",
+        description="memory: no metadata DB; db: dag.test() (writes a run to the DB); "
+        "auto: db with fallback to memory.",
+    )
+    timeout: float | None = Field(
+        default=None,
+        gt=0,
+        le=MAX_TIMEOUT,
+        description="Seconds (default AUTOAIR_RUNNER__DEFAULT_DAG_TIMEOUT, at most "
+        "AUTOAIR_RUNNER__MAX_TIMEOUT).",
+    )
+
+
+def _timeout(requested: float | None, default: float, services: ServicesDep) -> float:
+    limit = services.settings.runner.max_timeout
+    timeout = default if requested is None else requested
+    if timeout > limit:
+        raise HTTPException(
+            status_code=422,
+            detail=f"timeout must be at most {limit:g}s (AUTOAIR_RUNNER__MAX_TIMEOUT)",
+        )
+    return timeout
+
+
+def _enforce_policy(spec: DagSpec, services: ServicesDep) -> None:
+    policy = policy_from_settings(services.settings)
+    if spec.raw_code is not None:  # a raw code DAG runs its own Python
+        from autoair.validation.raw import blocked_operators
+
+        if not policy.allow_python_code:
+            raise HTTPException(
+                status_code=403,
+                detail="raw code DAGs are Python and are disabled by policy (allow_python_code)",
+            )
+        blocked = blocked_operators(spec.raw_code, policy)
+        if blocked:
+            raise HTTPException(status_code=403, detail=blocked[0])
+    for node in spec.task_nodes(include_disabled=False):
+        if isinstance(node, PythonTaskNode) and not policy.allow_python_code:
+            raise HTTPException(
+                status_code=403,
+                detail=f"node {node.id!r}: Python code tasks are disabled by policy",
+            )
+        if (
+            isinstance(node, OperatorNode)
+            and policy.is_privileged(node.operator)
+            and not policy.allow_privileged_operators
+        ):
+            raise HTTPException(
+                status_code=403,
+                detail=f"node {node.id!r}: {node.operator} is disabled by policy",
+            )
+
+
+def _render(spec: DagSpec, services: ServicesDep) -> str:
+    try:
+        return render(spec, services.registry, fmt=False)
+    except CodegenError as exc:
+        raise HTTPException(status_code=422, detail=f"codegen failed: {exc}") from exc
+    except Exception as exc:  # handler config errors
+        raise HTTPException(status_code=422, detail=f"codegen failed: {exc}") from exc
+
+
+@router.post("/test-task", operation_id="testTask")
+async def test_task(req: TestTaskRequest, services: ServicesDep) -> TaskTestResult:
+    spec = req.spec
+    nodes = spec.node_map()
+    node = nodes.get(req.task_node_id)
+    if node is None:
+        raise HTTPException(status_code=404, detail=f"node {req.task_node_id!r} not found")
+    if not isinstance(node, (OperatorNode, PythonTaskNode, CustomNode)):
+        raise HTTPException(status_code=422, detail=f"node {node.id!r} is not a task")
+    if node.disabled:
+        raise HTTPException(status_code=422, detail=f"node {node.id!r} is disabled")
+    _enforce_policy(spec, services)
+    task_id = effective_task_id(node, dict(nodes))
+    mocks: dict[str, Any] = {}
+    for key, value in req.mock_xcoms.items():
+        node_id, sep, xcom_key = key.partition(":")
+        target = nodes.get(node_id)
+        tid = (
+            effective_task_id(target, dict(nodes))
+            if isinstance(target, (OperatorNode, PythonTaskNode, CustomNode))
+            else node_id
+        )
+        mocks[f"{tid}{sep}{xcom_key}"] = value
+    source = await run_in_threadpool(_render, spec, services)
+    return await run_in_threadpool(
+        run_task_test,
+        source,
+        spec.dag_id,
+        task_id,
+        conf=req.conf,
+        timeout=_timeout(req.timeout, services.settings.runner.default_task_timeout, services),
+        mock_xcoms=mocks,
+        max_log=services.settings.runner.max_log_chars,
+        max_value=services.settings.runner.max_value_chars,
+    )
+
+
+@router.post("/test-dag", operation_id="testDag")
+async def test_dag(req: TestDagRequest, services: ServicesDep) -> DagTestResult:
+    _enforce_policy(req.spec, services)
+    source = await run_in_threadpool(_render, req.spec, services)
+    return await run_in_threadpool(
+        run_dag_test,
+        source,
+        req.spec.dag_id,
+        conf=req.conf,
+        timeout=_timeout(req.timeout, services.settings.runner.default_dag_timeout, services),
+        mode=req.mode,
+        max_log=services.settings.runner.max_log_chars,
+        max_value=services.settings.runner.max_value_chars,
+    )

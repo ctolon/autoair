@@ -1,0 +1,132 @@
+---
+title: Reviews and approvals
+description: Review DAG versions, enforce the four-eyes rule for live deploys with iam.require_approval, and audit who approved what.
+---
+
+AutoAir supports two review workflows:
+
+- **Pull request review** on git targets in PR mode. The pull request *is* the review, and it happens in your git host (GitHub, GitLab, Bitbucket, Azure DevOps or Gitea/Forgejo). AutoAir opens the pull request, requests the configured reviewers and records the deploy context in it. See [Deploy](/docs/user-guide/deploy#pull-request-or-direct-push).
+- **AutoAir reviews and four-eyes approvals** for deploys that go live directly: local folder, object storage, git push mode and direct pushes. Reviewers approve a specific version of the DAG in AutoAir. With `iam.require_approval`, a version cannot go live until **another** user has approved it.
+
+<Screenshot name="reviews" alt="The Reviews sub-tab of the Versions panel showing an approval count badge, a comment box with Approve, Request changes and Comment buttons, and a list of past reviews" caption="Versions → Reviews: approve or request changes on the saved version." />
+
+## Who can do what
+
+| Action | Permission | Built-in roles |
+|---|---|---|
+| See reviews and proposals | `spec:read` | Viewer and every role above it |
+| Approve, request changes, comment | `review` | Reviewer, Admin |
+| Propose a live deploy (stored for approval) | `spec:write` | Author, Deployer, Admin |
+| Deploy an approved proposal | `deploy` | Deployer, Admin |
+| See the audit trail | `audit:read` | Viewer and above |
+
+All of these also need Airflow access to the DAG: read access for viewing and reviewing, edit access for deploying. Role mapping is described in [IAM](/docs/admin/iam).
+
+## Turn on four-eyes approvals
+
+```bash
+AUTOAIR_IAM__REQUIRE_APPROVAL=true
+# optional
+AUTOAIR_IAM__PROPOSALS_URL=s3://acme-autoair/state/proposals   # shared by all replicas
+AUTOAIR_IAM__PROPOSAL_TTL_SECONDS=604800                        # 7 days
+```
+
+| Setting | Default | Description |
+|---|---|---|
+| `AUTOAIR_IAM__REQUIRE_APPROVAL` | `false` | A deploy that goes live needs an approval of that exact spec version by another user holding `review`. Pull requests are exempt. |
+| `AUTOAIR_IAM__PROPOSALS_URL` | `<state>/proposals` | Where proposals and reviews are stored (any fsspec URL). With several replicas on the file backend, it must be shared storage. With a SQL database backend, approvals are stored in the database. |
+| `AUTOAIR_IAM__PROPOSAL_TTL_SECONDS` | `604800` | Proposals and reviews older than this expire. |
+
+When AutoAir's authorization is switched off (`AUTOAIR_FEATURES__IAM=false`), `require_approval` is ignored and deploys go live directly.
+
+## Review a version
+
+Reviews are attached to a **saved version**, identified by its ETag, not to the editor's unsaved state.
+
+1. Open the DAG and go to the **Versions** tab in the bottom panel (or **Versions & Git → History…**), then the **Reviews** sub-tab.
+2. The badge shows **N approvals** for the version you have open. With `require_approval` on, it adds "Going live needs an approval by someone else."
+3. Optionally type a comment in **Optional comment…**.
+4. Click one of:
+   - **Approve**: approves this version.
+   - **Request changes**: withdraws any earlier approval of yours on this version.
+   - **Comment**: records a comment without changing your verdict. It needs comment text.
+
+**Approve** and **Request changes** are disabled while you have unsaved changes ("You have unsaved changes: reviews apply to the saved version."). A DAG that was never saved shows "Save the DAG first: reviews are attached to a saved version."
+
+Below the form, every review of the DAG is listed, newest first. Each shows its verdict badge (**approved**, **changes requested** or **comment**), the reviewer, the time and the comment. Reviews of other versions are dimmed and marked **older version**.
+
+### Rules
+
+- **Each reviewer's latest verdict counts.** A later **Request changes** withdraws that reviewer's earlier approval. Comments do not change a verdict.
+- **An approval covers one exact version.** Any change creates a new ETag and needs a new approval.
+- **You cannot approve your own work.** Approving your own deploy proposal is refused with HTTP 403 ("you cannot approve your own deploy proposal") and the refusal is audited. Self-approvals of stored versions are accepted but never count toward the four-eyes rule.
+- Up to 500 reviews are kept per DAG. They expire after `proposal_ttl_seconds`.
+
+## Deploy proposals
+
+With `require_approval` on, a deploy that would go live without an approval of that version by someone else is **not written**. Instead:
+
+1. The author deploys as usual. The deploy dialog warns "Going live needs an approval of this version by another reviewer."
+2. The server validates the spec. If it is valid, the server stores it as a **deploy proposal** and answers HTTP 202 with `status: "pending_approval"`. The editor shows **Not deployed** with the message "this version needs an approval by another reviewer: stored as a deploy proposal; once approved, anyone holding 'deploy' can deploy it". An invalid spec is not stored ("validation failed; no proposal was stored").
+   - Proposing only needs `spec:write`, so an Author can propose without holding `deploy`.
+   - Proposing the same version again keeps the first proposal and its author ("this version is already proposed (by X) and awaits an approval by another reviewer").
+3. A reviewer (not the author) approves the proposal's ETag with `POST /api/specs/{dag_id}/reviews`. The **Reviews** tab always reviews the *stored* version open in the editor. A proposal is not stored, so the tab cannot approve it.
+4. Then **anyone holding `deploy`, including the author**, deploys it, either with `POST /api/specs/{dag_id}/proposals/{etag}/deploy` or by deploying the identical version again from the editor. Because an approval by someone other than the author now exists, the deploy goes live directly. A deployed proposal is removed.
+
+If the proposal asked for a direct push, whoever deploys it also needs `deploy:direct_push`.
+
+:::note
+The editor does not yet list pending proposals or offer a button to deploy one. Administrators see all pending proposals and recent reviews in the **Approvals** tab of the [admin panel](/docs/admin/admin-panel) ("Four-eyes deploys: required / not required", **Pending proposals**, **Recent reviews**, refreshed every 30 s). Reviewers and deployers can use the API below.
+:::
+
+### Proposals through the API
+
+| Method and path | Permission | Purpose |
+|---|---|---|
+| `GET /api/specs/{dag_id}/proposals` | `spec:read` | Pending proposals, newest first: `etag`, `author`, `timestamp`, `expires_at`, `message`, `environment`, `base_etag`, `direct_push`, `approved_by`, `changes_requested_by`, `approved` |
+| `GET /api/specs/{dag_id}/proposals/{etag}` | `spec:read` | One proposal with the proposed `spec`, the stored `current_spec` and `current_etag` (the diff base), its `reviews`, and `stale` |
+| `POST /api/specs/{dag_id}/reviews` | `review` | `{"etag": "<etag>", "verdict": "approve" \| "request_changes" \| "comment", "comment": "…"}` |
+| `GET /api/specs/{dag_id}/reviews` | `spec:read` | Reviews of the DAG, newest first (up to 200) |
+| `POST /api/specs/{dag_id}/proposals/{etag}/deploy` | `deploy` | Deploy an approved proposal. Optional body `{"force": false, "message": "…"}`. |
+
+```bash
+# approve a proposal as bob
+curl -X POST "$AUTOAIR/api/specs/etl_daily/reviews" -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"etag": "9f8e7d6c5b4a…", "verdict": "approve", "comment": "LGTM"}'
+
+# deploy it as anyone holding "deploy"
+curl -X POST "$AUTOAIR/api/specs/etl_daily/proposals/9f8e7d6c5b4a…/deploy" \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' -d '{}'
+```
+
+`stale: true` means the stored DAG changed after the author started from it. Deploying such a proposal returns a conflict unless you pass `"force": true`, which overwrites the newer stored version. Prefer reviewing the difference (`spec` against `current_spec`) and asking the author to merge and propose again.
+
+Errors when deploying a proposal:
+
+| Status | Meaning |
+|---|---|
+| 404 | No pending proposal with that ETag. It was deployed, expired or never existed. |
+| 403 | "this proposal needs an approval by another user than its author", or you lack `deploy` or `deploy:direct_push`. |
+| 409 | The stored proposal is inconsistent, or a storage error occurred. |
+
+A successful proposal deploy can still end in `conflict`, `ejected` or `invalid`, exactly like an ordinary deploy. See [Versions and diff](/docs/user-guide/versions-and-diff#concurrent-changes-and-the-merge-dialog).
+
+## Auditing
+
+Every step is recorded in the audit trail, which you can view in the **Audit** tab of the bottom panel (columns **Time**, **Action**, **User**, **Details**, needs `audit:read`) or through `GET /api/specs/{dag_id}/audit`:
+
+| Action | Recorded when | Notable details |
+|---|---|---|
+| `propose` | A live deploy was stored for approval | user, environment, spec ETags, validation summary |
+| `review` | A review was submitted | `etag`, `verdict`, `comment`, whether it was a proposal, `proposed_by`, reviewer name and e-mail |
+| `deploy` | A deploy went live or opened a PR | `approved_by`, `reviewed_by`, `proposed_by`, `direct_push`, ETags before and after, validation, target, link |
+| `permission_denied` | A request was refused with 403, for example a self-approval | user, permission, method, path, roles (`AUTOAIR_IAM__AUDIT_DENIALS`, default `true`) |
+
+Live deploys also carry `Approved by:` in the governance context block and one `Approved-by:` git trailer per approver. That way the approval travels with the commit or stored version. See [Deploy](/docs/user-guide/deploy#governance-context-and-trailers) and [Audit](/docs/admin/audit).
+
+## Related
+
+- [IAM: four-eyes approvals and deploy proposals](/docs/admin/iam)
+- [Deploy](/docs/user-guide/deploy)
+- [Versions and diff](/docs/user-guide/versions-and-diff)

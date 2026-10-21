@@ -1,0 +1,81 @@
+---
+title: Human-in-the-loop
+description: Configure Airflow's human-in-the-loop operators in AutoAir with the dedicated editor for subject, body, options, defaults, branch mapping, assigned users, timeouts and input forms.
+sidebar_label: Human-in-the-loop
+---
+
+Human-in-the-loop (HITL) operators pause a task until a person responds in the Airflow UI: they approve, choose an option, pick a branch or fill in a form. They are part of Airflow's standard provider (Airflow 3.1 or later). AutoAir lists them in the palette like any operator and gives them a dedicated editor.
+
+## Supported operators
+
+AutoAir treats an operator as human-in-the-loop when its class name starts with `HITL`, when it is `ApprovalOperator`, or when it lives in a `hitl` module. With the standard provider installed this covers:
+
+| Operator | Purpose |
+|---|---|
+| `HITLOperator` | Ask a question with a set of options; the chosen option(s) are the task's output. |
+| `ApprovalOperator` | Approve or reject; rejecting skips the downstream tasks (or fails the task with `fail_on_reject`). |
+| `HITLBranchOperator` | Each option leads to a downstream task; the others are skipped. |
+| `HITLEntryOperator` | Collect input through a form defined with params. |
+
+In the palette and on the canvas, HITL operators have a person-with-check icon and a **Human-in-the-loop** marker. The **Parameters** tab shows a **human-in-the-loop** badge next to the provider. While a task waits for its answer, the run overlay shows the state **awaiting input**. See [Runs](/docs/user-guide/runs).
+
+## The human-in-the-loop editor
+
+Selecting a HITL task shows a **Human-in-the-loop** section at the top of the **Parameters** tab ("The task pauses until someone answers in the Airflow UI."). It only shows the fields the selected operator accepts; every other parameter (for example `ignore_downstream_trigger_rules` or `fail_on_reject` of `ApprovalOperator`, or `notifiers`) stays in the regular parameter form below it.
+
+| Field | Parameter | Notes |
+|---|---|---|
+| **Subject** | `subject` | Title of the request shown to the person who has to respond. Templated, with Jinja completion and preview. |
+| **Body (Markdown)** | `body` | Shown to the reviewer. Jinja is rendered. Edited with the Markdown editor. |
+| **Options** | `options` | The choices offered to the reviewer, one entry per option. Removing an option also removes it from the defaults. |
+| **Allow multiple choices** | `multiple` | The reviewer may select several options. |
+| **Default choice** | `defaults` | Checkboxes over the options (one, or several with multiple choices). Used when the request times out. |
+| **Option → downstream task** | `options_mapping` | `HITLBranchOperator` only. Which downstream task runs for each option. |
+| **Assigned users** | `assigned_users` | Only these users may respond; empty means anyone with access. Each user has a **user id** and a **name**. |
+| **Response timeout (s)** | `response_timeout` | Seconds to wait for a response; afterwards the defaults are used, or the task fails. Operators without this parameter show: "The response timeout is the task's execution timeout (Execution tab)." |
+| **Input form (params)** | `params` | A form the reviewer fills in, edited with the same editor as DAG params, including the trigger form preview. See [Params and trigger forms](/docs/user-guide/params-and-trigger-forms). |
+
+:::note
+**Response timeout (s)** is stored as a number of seconds and generated as a `timedelta`, because Airflow's `HITLOperator` adds it to the current time when the task starts: `HITLOperator(..., response_timeout=datetime.timedelta(seconds=3600))`. A timedelta value set in the spec JSON (`{"$type": "timedelta", "seconds": 3600}`), for example after a code-mode apply, is generated the same way and shown in the field as seconds. The same conversion applies to the other operator arguments that Airflow accepts only as a timedelta: `execution_timeout`, `sla` and `ExternalTaskSensor`'s `execution_delta`. Arguments that also accept a number, such as `retry_delay` or a sensor's `poke_interval` and `timeout`, are generated as given. YAML Dags cannot express a timedelta, so a HITL task with a response timeout is reported as an error in the YAML output.
+:::
+
+### Mapping options to branches
+
+For `HITLBranchOperator`, connect the candidate downstream tasks on the canvas first. **Option → downstream task** then shows one row per option with a drop-down of the directly downstream tasks (connecting to a task group targets its entry tasks).
+
+**Auto-fill from edges** fills the table in one step:
+
+- With no options defined yet, it creates one option per downstream task, named after the task.
+- With options defined, it maps each option to a downstream task of the same name (with or without the group prefix), else by position.
+
+Without downstream tasks the editor says **Connect downstream tasks to map options to them.**
+
+### Generated code
+
+The input form is stored as DAG-param definitions and generated as `Param` objects, exactly like DAG params:
+
+```python
+t_approve_release = HITLBranchOperator(
+    task_id="approve_release",
+    subject="Release {{ ds }}?",
+    body="Check the [staging report](https://reports.example.com/{{ ds }}) first.",
+    options=["ship", "hold"],
+    defaults="hold",
+    options_mapping={"ship": "deploy_prod", "hold": "notify_team"},
+    params={"reason": Param("", type="string", title="Reason")},
+)
+```
+
+## Validation
+
+HITL parameters are validated like other operator parameters: required parameters (`subject` and `options` for `HITLOperator`) are reported when missing, and Jinja in `subject` and `body` is checked. Problems in the HITL fields are shown under the field and in the Problems panel.
+
+## Responding
+
+Responses are given in Airflow's UI, not in AutoAir. The run overlay and the Runs tab show tasks waiting for input. See [Runs](/docs/user-guide/runs).
+
+## Related pages
+
+- [Operators and parameters](/docs/user-guide/operators-and-parameters)
+- [TaskFlow and loops: branching](/docs/user-guide/taskflow-and-loops#branching)
+- [Params and trigger forms](/docs/user-guide/params-and-trigger-forms)

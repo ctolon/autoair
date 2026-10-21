@@ -1,0 +1,198 @@
+---
+title: Sign-in, SSO and sessions
+sidebar_label: SSO and sessions
+description: How users sign in to AutoAir with their Airflow session, an Airflow username and password, or a token; how sessions are refreshed and ended; cookie and CSRF rules; and the sign-in rate limit.
+---
+
+AutoAir never stores users or passwords. Every session is an **Airflow** session: either Airflow's UI session cookie, or an Airflow access token that AutoAir obtained for the user or that the user pasted.
+
+What a signed-in user may do is decided separately, by [IAM](/docs/admin/iam).
+
+## Sign-in options at a glance
+
+| Deployment | How the user signs in | Refresh | Sign-out |
+|---|---|---|---|
+| **Plugin** (inside Airflow's API server) | Automatic: the browser sends Airflow's `_token` cookie to `/autoair/api` (same origin) and Airflow's `get_user` validates it | Airflow's own middleware refreshes the cookie on AutoAir's requests too | Signing out of Airflow deletes the cookie; the next AutoAir check fails and the sign-in panel links back to Airflow's login |
+| **Standalone, same host** (for example `https://data.example.com:8765` next to Airflow on `:8080`, or `/autoair` behind the same proxy) | Automatic: the host-only cookie reaches AutoAir, which verifies it against Airflow on every request (cached for `auth_cache_ttl` seconds, never past `exp`) | `POST /api/auth/refresh`: AutoAir calls Airflow with the cookie and relays a re-issued cookie | `POST /api/auth/logout` revokes the token at Airflow and clears the cookie, which signs the Airflow UI out as well (`sso.propagate_logout`). Signing out of Airflow is noticed by the UI's periodic `GET /api/auth/session` |
+| **Standalone, sibling sub-domain** (`autoair.example.com` and `airflow.example.com`) | Only when the proxy in front of Airflow widens the cookie to the parent domain (see [below](#sharing-the-cookie-across-sub-domains)); then as above | As above, but AutoAir cannot rewrite the widened cookie's domain, so a re-issued cookie lands on AutoAir's host. Prefer short-lived tokens with refresh handled in Airflow | As above |
+| **Standalone, another site** | No cookie can be shared. Users sign in with their Airflow **username and password** (proxied once to Airflow, never stored) or paste a token | Not possible without the password: the UI warns `sso.refresh_margin_seconds` before expiry | `POST /api/auth/logout` revokes the token |
+| **`autoair local`** | No sign-in, or the static token from `--token` / `AUTOAIR_LOCAL__TOKEN` | Not applicable | Not applicable |
+
+## What Airflow 3 provides
+
+Airflow 3 (checked against 3.3) keeps the UI session in a cookie:
+
+| Property | Value | Consequence |
+|---|---|---|
+| Name | `_token` | AutoAir's `sso.cookie_name` defaults to it |
+| Content | the Airflow JWT (the same token `POST /auth/token` returns) | AutoAir can verify it like a bearer token |
+| `HttpOnly` | yes | JavaScript (Airflow's or AutoAir's) can never read it; only a server can |
+| `SameSite` | `Lax` | Sent on same-site navigations and requests; not on cross-site sub-requests |
+| `Domain` | none (host-only) | Sent only to Airflow's **host**, but to **every port** of it |
+| `Path` | `[api] base_url`'s path, else `/` | AutoAir must be under that path to receive it |
+| `Secure` | when Airflow is reached over HTTPS | |
+| Refresh | `JWTRefreshMiddleware` re-issues the cookie on any Airflow request when the auth manager's `refresh_user` returns a user (Keycloak, FAB with refresh tokens); SimpleAuthManager never refreshes | AutoAir relays this refresh |
+| Logout | `GET /api/v2/auth/logout` revokes the cookie's and the bearer token (Airflow 3.2 and later) and deletes the cookie | AutoAir calls it and clears the cookie too |
+| Login return URL | `/auth/login?next=...` only accepts URLs on Airflow's own host and port, under its base path (`is_safe_url`) | Airflow cannot hand a token back to another origin |
+
+There is **no** endpoint that turns the UI session into a token for another origin (no OAuth authorization-code flow, no CORS on `/auth/token`). Every sign-in option below follows from that.
+
+## The sign-in panel
+
+The sign-in panel asks `GET /api/auth/config` what to offer:
+
+* **Plugin mode**: "Your Airflow session has ended. Sign in to Airflow again to continue." with a **Sign in to Airflow** button (Airflow's login, with the current page as `next`).
+* **Standalone**: **Sign in with Airflow** (when `sso.enabled`), the **Username** / **Password** form (when `iam.login_enabled`), and "or paste an access token" with an **Access token** field.
+* **`autoair local --token`**: only the token field ("This local server requires an access token (autoair local --token).").
+
+The title, logo and accent colour come from the `ui.*` branding settings, so the sign-in page carries your product name.
+
+<Screenshot name="login" width="narrow" alt="The AutoAir sign-in panel in standalone mode with the Sign in with Airflow button, the Username and Password form and the Access token field" caption="Standalone sign-in panel" />
+
+### Sign in with Airflow
+
+**Sign in with Airflow** (`GET /api/auth/sso/login`) opens Airflow's login page in a small window. When AutoAir is reachable under Airflow's host (`server.public_url` on the same host and port as `sso.airflow_public_url`, under its base path), the window returns to AutoAir through Airflow's `next=`. Otherwise the user signs in to Airflow and the AutoAir tab picks the session up as soon as the cookie is visible to it (it polls `GET /api/auth/session`). If the browser blocks the window, the panel says so: allow pop-ups, or open Airflow in another tab and sign in there.
+
+### Username and password (standalone)
+
+`POST /api/auth/login` takes `{"username": "...", "password": "..."}` and returns `{"access_token", "token_type": "bearer", "user", "expires_at"}`.
+
+* AutoAir forwards the credentials once to `POST {airflow_url}/auth/token` (SimpleAuthManager, FAB and Keycloak all serve it) and returns Airflow's JWT. The browser keeps it in `sessionStorage` of that tab, exactly like a pasted token.
+* The password is never stored or logged (`SecretStr`, no request logging), and the response has `Cache-Control: no-store`.
+* Airflow's token call times out after `iam.login_timeout` seconds (10).
+* Disable the form with `AUTOAIR_IAM__LOGIN_ENABLED=false`; the route then answers `404`. In plugin mode the route does not exist: Airflow's own login is used.
+
+### Pasting a token
+
+Any Airflow access token works, for example one obtained with `POST {airflow}/auth/token`. It is kept in `sessionStorage` of the tab and sent as `Authorization: Bearer`. API clients and scripts use the same header.
+
+## Login rate limiting
+
+Failed password sign-ins (Airflow answers `400`, `401` or `403`) are counted per client IP and per username (the username is hashed):
+
+* After `AUTOAIR_IAM__LOGIN_MAX_FAILURES` (5) failures within `AUTOAIR_IAM__LOGIN_WINDOW_SECONDS` (300), further attempts get **429** with `Retry-After`, and Airflow is not asked. The panel shows "Too many failed attempts. Try again in N s."
+* Each attempt is reserved before Airflow is asked, so concurrent requests cannot exceed the limit. The reservation is refunded when the sign-in succeeds or Airflow cannot be reached. A successful sign-in clears the username's counter.
+* At most `AUTOAIR_IAM__LOGIN_MAX_TRACKED_KEYS` (10000) IPs and usernames are tracked; the least recently used are forgotten first.
+* **Where the counters live**: with the file backend they are in memory, per process, so N replicas allow N times the limit; put a shared rate limiter in front of several replicas. With a SQL backend and `database.shared_rate_limit=true` (the default), failures are counted in the `login_failures` table and the limit holds across all replicas. See [Scaling](/docs/admin/scaling).
+* Behind a reverse proxy, the client IP is only the real one when the proxy is trusted: set `server.forwarded_allow_ips` (see [TLS and HTTP headers](/docs/admin/tls-and-headers#reverse-proxies-and-forwarded-headers)). Otherwise every user shares the proxy's IP counter.
+
+This limit is separate from the per-user API rate limits (`limits.*`), which apply after sign-in.
+
+## Sessions
+
+### Verification
+
+* **Plugin**: Airflow's `get_user` validates the cookie or bearer token on every request.
+* **Standalone**: a cookie or bearer token is accepted only after Airflow answers `GET /api/v2/dags?limit=1` with it. `exp` is checked locally first; verified tokens are cached for at most `AUTOAIR_AUTH_CACHE_TTL` seconds (60) and never past `exp`. Signing out through AutoAir drops the cache entry at once.
+* **Audience**: Airflow's JWT carries Airflow's audience (`[api_auth] jwt_audience`). AutoAir is a relying party that forwards the token to the same Airflow; it neither re-scopes nor re-signs tokens.
+
+### Refresh and expiry
+
+The UI runs a session watcher. It:
+
+* refreshes cookie sessions `sso.refresh_margin_seconds` (300) before `exp` through `POST /api/auth/refresh`;
+* warns before a bearer token (password or pasted) expires, since those cannot be refreshed without the password;
+* re-checks the session every `sso.session_check_seconds` (60) and when the tab becomes visible, so a sign-out in Airflow signs AutoAir out too (`0`: check only on API errors).
+
+When the session ends, the sign-in panel opens **over** the builder. Nothing is lost: the canvas stays, and drafts are kept locally anyway.
+
+Airflow's `[api_auth] jwt_expiration_time` (default 24 hours) bounds every session. Without an auth manager that refreshes (SimpleAuthManager never does), users sign in again when it ends.
+
+### Sign-out
+
+**Sign out** in the user menu (shown when password sign-in is enabled or the session is a bearer token) calls `POST /api/auth/logout`. It drops the token from AutoAir's verification cache and asks Airflow to revoke it (`GET /api/v2/auth/logout`, Airflow 3.2 and later). The response reports `revoked`, which is `true` only when Airflow answered `2xx` (a redirect to a login page is not a revocation). With a cookie session and `sso.propagate_logout=true`, the shared cookie is cleared too, which also signs the Airflow UI out. With `propagate_logout=false`, AutoAir signs out locally and leaves Airflow's session alone.
+
+Logout propagation is best effort: revocation needs Airflow 3.2 or later, and on another replica a verified token may stay trusted until its cache entry expires (at most `auth_cache_ttl`).
+
+## Endpoints
+
+All are under `/api/auth` in standalone mode.
+
+| Route | Auth | Purpose |
+|---|---|---|
+| `GET /api/auth/config` | public | What the sign-in page offers: password form, SSO, branding (`ui.*`) |
+| `GET /api/auth/session` | public (verifies what it gets) | The current session: `source` (`cookie`/`bearer`), user, `expires_in`, `refreshable`; `401` when there is none. This is how an Airflow sign-out reaches AutoAir |
+| `POST /api/auth/refresh` | cookie | Renews a cookie session through Airflow; `409` for bearer tokens, `401` (cookie cleared) when Airflow ended the session |
+| `GET /api/auth/sso/login?next=/ui/...` | public | Redirect (`307`) to Airflow's login, with a return URL only when Airflow will accept it; `next` must be a same-site path. `404` when `sso.enabled=false` |
+| `POST /api/auth/login` | public, rate-limited | Password sign-in |
+| `POST /api/auth/logout` | token or cookie | Revokes the token at Airflow; clears the cookie session |
+
+## Cookies
+
+AutoAir reads Airflow's session cookie and, in two cases, sets it: when it relays a refreshed cookie, and when it deletes the cookie on logout. Cookies AutoAir sets are:
+
+* `HttpOnly`;
+* `SameSite=` `server.cookie_samesite` (`lax` by default, or `strict`);
+* `Secure` according to `server.cookie_secure`: `auto` (default) when the request came over HTTPS, `always`, or `never`. Behind a TLS-terminating proxy, `auto` only works when the proxy is trusted for `X-Forwarded-Proto` (`server.proxy_headers` and `server.forwarded_allow_ips`).
+
+**The token never reaches JavaScript.** AutoAir does not copy the cookie into `sessionStorage`; the browser keeps sending the `HttpOnly` cookie, and AutoAir forwards it to Airflow as `Authorization: Bearer`. Pasted and password tokens live in `sessionStorage` of one tab.
+
+### Sharing the cookie across sub-domains
+
+A standalone AutoAir on a sibling sub-domain only receives Airflow's cookie when the proxy in front of Airflow widens it to the parent domain, for example with nginx:
+
+```nginx
+location / {
+    proxy_pass http://airflow-api-server:8080;
+    proxy_cookie_domain airflow.example.com .example.com;
+}
+```
+
+Traefik and Envoy have equivalent cookie rewrites. Widening Airflow's cookie sends the Airflow session to **every** sub-domain of `example.com`: only do it when all of them are trusted. Running AutoAir under Airflow's host (another port, or a path behind the same proxy) avoids the rewrite.
+
+## CSRF protection
+
+A cookie is sent automatically by the browser, so in standalone mode every state-changing request (`POST`, `PUT`, `PATCH`, `DELETE`) authenticated **by the cookie** must:
+
+* carry the `X-AutoAir-CSRF` header, which a foreign page cannot send without a CORS preflight that AutoAir refuses; and
+* when the browser sends `Origin`, come from the same origin or from an origin in `cors_origins`.
+
+Otherwise the request is refused with `403`. `SameSite=Lax` alone is not enough: other ports of the same host and sibling sites of the registrable domain are *same-site*. Bearer-token requests are exempt (browsers never attach them on their own). The rule is controlled by `sso.require_csrf_header` (default `true`). Plugin mode keeps Airflow's model: Airflow's own API relies on `SameSite=Lax`.
+
+## Open redirects
+
+`/api/auth/sso/login` only accepts same-site paths as `next` (no scheme, no `//host`, no backslashes) and only forwards a return URL that Airflow itself would accept.
+
+## Settings
+
+| Setting | Default | Description |
+|---|---|---|
+| `sso.enabled` | `true` | Standalone: accept the Airflow cookie and offer "Sign in with Airflow" (plugin mode always uses Airflow's session; `autoair local` turns it off) |
+| `sso.cookie_name` | `_token` | Airflow's session cookie |
+| `sso.airflow_public_url` | `airflow_url` | Airflow as browsers reach it; "Sign in with Airflow" opens `<airflow_public_url>/auth/login` |
+| `sso.require_csrf_header` | `true` | The CSRF rule above |
+| `sso.refresh_margin_seconds` | `300` | Refresh or warn this long before `exp` |
+| `sso.session_check_seconds` | `60` | Periodic session check (`0`: only on API errors) |
+| `sso.propagate_logout` | `true` | AutoAir logout revokes and clears the Airflow session |
+| `server.public_url` | unset | AutoAir's public URL (SSO return URL, links in commits) |
+| `server.cookie_secure`, `server.cookie_samesite` | `auto`, `lax` | Attributes of cookies AutoAir sets |
+| `iam.login_enabled` | `true` | Standalone password sign-in |
+| `iam.login_max_failures`, `iam.login_window_seconds`, `iam.login_max_tracked_keys`, `iam.login_timeout` | `5`, `300`, `10000`, `10` | Sign-in rate limit and Airflow token-call timeout |
+| `auth_cache_ttl`, `auth_timeout` | `60`, `10` | Standalone: verified-token cache and the verification call timeout |
+| `database.shared_rate_limit` | `true` | SQL backends: one sign-in limit for all replicas |
+
+Environment variables follow the usual pattern: `AUTOAIR_SSO__ENABLED`, `AUTOAIR_IAM__LOGIN_ENABLED`, `AUTOAIR_SERVER__COOKIE_SECURE`.
+
+## Example: standalone AutoAir next to Airflow behind one proxy
+
+```bash
+# Airflow at https://data.example.com/, AutoAir at https://data.example.com/autoair/
+AUTOAIR_AIRFLOW_URL=http://airflow-api-server:8080          # internal, for API calls
+AUTOAIR_SSO__AIRFLOW_PUBLIC_URL=https://data.example.com     # as browsers reach it
+AUTOAIR_SERVER__PUBLIC_URL=https://data.example.com/autoair
+AUTOAIR_SERVER__FORWARDED_ALLOW_IPS='["10.0.0.10"]'          # the proxy
+AUTOAIR_SERVER__COOKIE_SECURE=always
+```
+
+Airflow's `[api] base_url` path must cover `/autoair` for the cookie to be sent there; with Airflow at the root path (`/`) it is.
+
+## Troubleshooting
+
+| Symptom | Cause and fix |
+|---|---|
+| Users must sign in even though they are signed in to Airflow | AutoAir is not on Airflow's host, or not under the cookie's path. Use the same host (another port or a path), or widen the cookie at the proxy |
+| "Sign in with Airflow" opens Airflow but never returns | `server.public_url` is not on Airflow's host and port, so Airflow refuses the return URL. Sign in in the window; the AutoAir tab picks the session up by polling |
+| `403` on every save with a cookie session | The `X-AutoAir-CSRF` header is stripped by a proxy, or the `Origin` is not same-origin and not in `cors_origins` |
+| `429` for everyone after a few failures | The proxy is not trusted, so all users share its IP. Set `server.forwarded_allow_ips` |
+| Session ends after 24 hours despite activity | The auth manager does not refresh tokens (SimpleAuthManager). Raise Airflow's `jwt_expiration_time`, or use an auth manager with refresh |
+| Sign-out in AutoAir does not sign out of Airflow | Airflow is older than 3.2 (no revocation), or `sso.propagate_logout=false` |

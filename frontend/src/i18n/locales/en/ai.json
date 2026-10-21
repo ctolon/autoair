@@ -1,0 +1,289 @@
+{
+  "common": {
+    "close": "Close"
+  },
+  "menu": {
+    "chat": "Ask AI…",
+    "adminChat": "Admin assistant…",
+    "upgrade": "Airflow upgrade assistant…"
+  },
+  "commands": {
+    "group": "AI",
+    "chat": "Ask AI (chat)",
+    "chatAdmin": "Ask the admin assistant",
+    "upgrade": "Airflow upgrade assistant"
+  },
+  "modes": {
+    "label": "Assistant",
+    "adminDenied": "Needs the ai:admin or admin:panel permission",
+    "developer": {
+      "label": "Developer",
+      "title": "Developer assistant",
+      "intro": "Ask about the open DAG, operators, provider APIs, failed runs and their logs. Changes come back as a diff you review before applying."
+    },
+    "admin": {
+      "label": "Admin",
+      "title": "Admin assistant",
+      "intro": "Ask how this AutoAir is set up and used: configuration, feature flags, roles and permissions, audit trail, AI usage, replicas and deploy targets. Read-only."
+    }
+  },
+  "examples": {
+    "developer": {
+      "explain": "Explain what this DAG does and what could break in production.",
+      "retries": "Add sensible retries and timeouts to every task.",
+      "failure": "Why did the last run of this DAG fail?",
+      "sensor": "Which deferrable sensor should I use to wait for a file in S3?"
+    },
+    "admin": {
+      "deploy": "Why can't a Viewer deploy, and what would I change to allow it?",
+      "operators": "Which DAGs use BashOperator?",
+      "changes": "What changed last week?",
+      "usage": "How much did AI cost this month, per user?"
+    }
+  },
+  "chat": {
+    "title": "Ask AI",
+    "placeholder": "Ask anything… (Enter to send, Shift+Enter for a new line)",
+    "hint": "Answers may be wrong: check sources and review every change before applying it.",
+    "send": "Send",
+    "stop": "Stop",
+    "newChat": "New chat",
+    "expand": "Full screen",
+    "collapse": "Side panel",
+    "close": "Close the chat",
+    "thinking": "Thinking…",
+    "toolsUsed_one": "{{count}} tool call",
+    "toolsUsed_other": "{{count}} tool calls",
+    "sources": "Sources",
+    "copy": "Copy",
+    "copied": "Copied",
+    "copyCode": "Copy code",
+    "insert": "Insert into {{node}}",
+    "inserted": "Inserted into {{node}}",
+    "regenerate": "Regenerate",
+    "cancelled": "Stopped before an answer was given.",
+    "interrupted": "The connection dropped before the answer was complete.",
+    "stopped": "The answer is incomplete ({{reason}})."
+  },
+  "stage": {
+    "model": "Thinking…",
+    "compact": "Summarising the earlier conversation…",
+    "collect": "Reading the run and its logs…",
+    "analyze": "Analysing…",
+    "mcp": "Connecting tools…"
+  },
+  "threads": {
+    "title": "Conversations",
+    "empty": "No conversations yet.",
+    "messages_one": "{{count}} message",
+    "messages_other": "{{count}} messages",
+    "rename": "Rename",
+    "save": "Save",
+    "cancel": "Cancel",
+    "delete": "Delete",
+    "confirmDelete": "Delete the conversation “{{title}}”?",
+    "renameFailed": "Could not rename the conversation",
+    "deleteFailed": "Could not delete the conversation"
+  },
+  "proposal": {
+    "valid": "valid",
+    "invalid": "has problems",
+    "newDag": "A new DAG (nothing deployed to compare with).",
+    "problems_one": "{{count}} validation problem",
+    "problems_other": "{{count}} validation problems",
+    "showCode": "Show the code diff",
+    "hideCode": "Hide the code diff",
+    "codeDiff": "Generated code: before and after",
+    "apply": "Apply to the editor",
+    "reject": "Reject",
+    "deploy": "Deploy…",
+    "applied": "Applied to the editor",
+    "appliedHelp": "Review it on the canvas, then deploy through the usual deploy dialog.",
+    "needsWrite": "Applying a change needs the spec:write permission",
+    "failed": "The proposal could not be updated",
+    "snippetHelp": "A suggestion only: nothing was changed. Apply it to your configuration yourself.",
+    "markApplied": "Mark as applied",
+    "dismiss": "Dismiss",
+    "status": {
+      "proposed": "proposed",
+      "approved": "approved",
+      "applied": "applied",
+      "rejected": "rejected"
+    }
+  },
+  "troubleshoot": {
+    "button": "Analyze with AI",
+    "hint": "Find the root cause with AI and get a fix to review",
+    "selectRun": "Select a run first",
+    "unavailable": "AI analysis is not available (AI off, no model, or no airflow:read)",
+    "title": "Analyze with AI",
+    "try": "try {{n}}",
+    "scope": "What the agent may read",
+    "scopeHelp": "Logs, task states, the DAG spec and generated code are always included. Narrow or widen the rest; options your administrator disabled are greyed out.",
+    "notAllowed": "disabled by the administrator",
+    "roots": "Folders",
+    "scopes": {
+      "connections": "Connection metadata (type, host, extra keys; never secrets)",
+      "variables": "Variable keys (never values)",
+      "pools": "Pools and slot usage",
+      "xcom_keys": "XCom keys",
+      "xcom_values": "XCom values (truncated, scrubbed)",
+      "other_runs": "Other runs of this DAG",
+      "import_errors": "DAG import errors",
+      "airflow_config": "Airflow configuration (masked)",
+      "filesystem": "Log / DAG files (read-only sandbox)",
+      "research": "Docs and installed provider source",
+      "online": "Online documentation"
+    },
+    "mcp": "External tools (MCP servers)",
+    "mcpTools": "Click a tool to leave it out.",
+    "question": "Question (optional)",
+    "questionPlaceholder": "e.g. Why does load_orders time out only on Mondays?",
+    "previous": "Earlier analyses of this DAG",
+    "open": "Open",
+    "start": "Start analysis",
+    "rerun": "Run again",
+    "rerunScope": "Re-run with another scope",
+    "cancel": "Cancel",
+    "reject": "Reject",
+    "approveEditor": "Approve: open in editor",
+    "approveDeploy": "Approve and deploy…",
+    "rejected": "Proposal rejected: nothing was changed.",
+    "applied": "The fix is in the editor",
+    "appliedHelp": "Deploy it through the normal deploy dialog; the deployment is recorded with this analysis.",
+    "approvedNoSpec": "Approved. The change could not be applied automatically: follow the instructions.",
+    "decisionFailed": "The decision could not be recorded",
+    "noSummary": "The analysis ended without a summary.",
+    "hypotheses": "Root-cause hypotheses",
+    "remediation": "Remediation",
+    "specChanges": "Proposed DAG changes",
+    "configChanges": "Configuration changes",
+    "airflowActions": "In Airflow",
+    "actionsHelp": "Instructions only: AutoAir does not run them for you.",
+    "status": {
+      "proposed": "change proposed",
+      "no_change": "no change proposed",
+      "approved": "approved",
+      "rejected": "rejected",
+      "applied": "deployed"
+    },
+    "category": {
+      "spec": "DAG",
+      "code": "code",
+      "configuration": "configuration",
+      "infrastructure": "infrastructure",
+      "data": "data",
+      "dependency": "dependency",
+      "platform": "platform",
+      "unknown": "unknown"
+    },
+    "action": {
+      "clear": "clear",
+      "retry": "retry",
+      "clear_run": "clear run",
+      "mark_success": "mark success",
+      "mark_failed": "mark failed",
+      "mark_run_success": "mark run success",
+      "mark_run_failed": "mark run failed",
+      "fix_connection": "fix connection",
+      "adjust_pool": "adjust pool",
+      "other": "other"
+    },
+    "actionsMode": "Airflow actions",
+    "actionsModeHelp": "What may happen with the Airflow actions the analysis proposes. You can only choose a mode as strict as the server allows or stricter.",
+    "modes": {
+      "read_only": "Instructions only",
+      "hitl": "Run after my approval",
+      "apply": "Run automatically"
+    },
+    "modeBadge": {
+      "read_only": "read-only",
+      "hitl": "approval needed",
+      "apply": "automatic"
+    },
+    "modeHelp": {
+      "read_only": "Instructions only: AutoAir does not run them for you.",
+      "hitl": "Each action runs only when you click Execute. It uses your own Airflow permissions.",
+      "apply": "Allowed actions ran automatically after the analysis, with your own Airflow permissions."
+    },
+    "actionStatus": {
+      "instruction": "instruction",
+      "proposed": "ready",
+      "blocked": "blocked",
+      "rejected": "dismissed",
+      "running": "running",
+      "succeeded": "done",
+      "skipped": "skipped",
+      "failed": "failed"
+    },
+    "blocked": {
+      "not_allowed": "This action type is not allowed on this server.",
+      "other_dag": "Targets another DAG: only the analysed DAG is allowed.",
+      "other_run": "Targets another run: only the analysed run is allowed.",
+      "missing_task": "No task given.",
+      "upstream_not_allowed": "Clearing upstream tasks is not allowed.",
+      "downstream_not_allowed": "Clearing downstream tasks is not allowed.",
+      "limit": "Over the limit of actions per analysis.",
+      "duplicate": "Duplicate of another action.",
+      "permission": "You need the run:manage permission.",
+      "feature_off": "Run operations are switched off."
+    },
+    "execute": "Execute",
+    "dismiss": "Dismiss",
+    "executeConfirm": "Run “{{action}}” on {{target}} in Airflow now?",
+    "executed": "Action finished: {{status}}",
+    "executeFailed": "The action could not be run",
+    "actionLog": "Action log",
+    "actionAuto": "automatic",
+    "downstream": "+ downstream",
+    "upstream": "+ upstream",
+    "onlyFailed": "only failed",
+    "result": {
+      "ti_not_found": "Task instance not found in the run.",
+      "already_active": "Already {{states}}: not cleared again.",
+      "not_failed": "Not failed ({{states}}): nothing to retry.",
+      "not_started": "Not started yet: nothing to clear.",
+      "nothing_to_clear": "Nothing to clear.",
+      "over_limit": "Would clear {{count}} task instances, more than the limit of {{limit}} (ai.troubleshoot.max_cleared_task_instances).",
+      "cleared": "Cleared {{count}} task instance(s).",
+      "run_not_found": "Run not found.",
+      "run_active": "The run is already {{state}}: not cleared again.",
+      "already_state": "Already {{state}}.",
+      "marked": "Marked {{state}}.",
+      "run_already_state": "The run is already {{state}}.",
+      "run_marked": "Run marked {{state}}.",
+      "no_run": "The action has no DAG or run.",
+      "no_task": "The action has no task.",
+      "airflow_refused": "Airflow refused: {{detail}}",
+      "not_executable": "{{action}} cannot be executed.",
+      "error": "Execution failed unexpectedly; try again."
+    },
+    "busy": {
+      "action_running": "This action is already running: someone else approved it a moment ago.",
+      "action_rejected": "This action was dismissed."
+    }
+  },
+  "upgrade": {
+    "title": "Airflow upgrade assistant",
+    "description": "Finds Airflow 2 idioms (removed template variables, moved imports, deprecated operators) with ruff's AIR3 rules, AutoAir's rules and optionally AI, and proposes the upgrade as a diff.",
+    "target": {
+      "current": "The open DAG",
+      "all": "Every saved DAG"
+    },
+    "useAi": "Add an AI pass",
+    "run": "Analyse",
+    "running": "Analysing…",
+    "failed": "The upgrade analysis failed",
+    "findings_one": "{{count}} finding",
+    "findings_other": "{{count}} findings",
+    "fixable": "fixable",
+    "apply": "Apply the upgrade to the editor",
+    "applied": "Upgrade of {{dagId}} applied to the editor: review and deploy it."
+  },
+  "deployMessage": {
+    "generate": "Generate",
+    "hint": "Write the description from the changes since the deployed version",
+    "subject": "Subject: {{title}}",
+    "failed": "Could not generate a description"
+  }
+}

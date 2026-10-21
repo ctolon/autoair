@@ -1,0 +1,452 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  merge_group:
+  workflow_call:
+  workflow_dispatch:
+    inputs:
+      gitlab:
+        description: "Also run the live GitLab test (boots GitLab CE, ~5 min)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  FORCE_COLOR: "1"
+  UV_FROZEN: "1"
+  NODE_VERSION: "22"
+  PYTHON_VERSION: "3.12"
+
+jobs:
+  # ------------------------------------------------------------------------------ Python
+  lint:
+    name: Lint · Python
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - run: uv sync
+      - name: ruff check
+        run: uv run ruff check --output-format=github src tests deploy
+      - name: ruff format
+        run: uv run ruff format --check src tests deploy
+      - name: mypy
+        run: uv run mypy
+      - name: Hard-coded value audit (every finding triaged, no stale decision)
+        run: uv run python scripts/scan_hardcoded.py --check
+      - name: Hard-coded value report (.artifacts/hardcoded-audit.md)
+        run: uv run python scripts/scan_hardcoded.py --write
+      - name: Upload the hard-coded value report
+        uses: actions/upload-artifact@v4
+        with:
+          name: hardcoded-audit
+          path: .artifacts/hardcoded-audit.md
+          if-no-files-found: error
+      - name: Configuration reference drift (docs/configuration-reference.md)
+        run: uv run python scripts/gen_config_docs.py --check
+      - name: Shared frontend constants drift (frontend/src/lib/generated)
+        run: uv run python scripts/gen_shared_constants.py --check
+      - name: Version consistency (pyproject, __init__, frontend, website)
+        run: uv run python scripts/check_release.py
+
+  test:
+    name: Test · Python ${{ matrix.python }} · Airflow ${{ matrix.airflow }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Oldest supported Airflow on the oldest and newest Python it supports.
+          - { python: "3.10", airflow: "3.0.6" }
+          - { python: "3.12", airflow: "3.0.6" }
+          # Every minor in between (see noxfile.py AIRFLOW_VERSIONS).
+          - { python: "3.12", airflow: "3.1.8" }
+          - { python: "3.12", airflow: "3.2.2" }
+          # Latest Airflow on every supported Python.
+          - { python: "3.10", airflow: "3.3.2" }
+          - { python: "3.11", airflow: "3.3.2" }
+          - { python: "3.12", airflow: "3.3.2" }
+          - { python: "3.13", airflow: "3.3.2" }
+          - { python: "3.14", airflow: "3.3.2" }
+    env:
+      AIRFLOW__CORE__LOAD_EXAMPLES: "False"
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: ${{ matrix.python }}
+          enable-cache: true
+          cache-dependency-glob: |
+            pyproject.toml
+            uv.lock
+          cache-suffix: af${{ matrix.airflow }}
+      - name: Install AutoAir + Airflow ${{ matrix.airflow }}
+        run: |
+          uv venv --python "${{ matrix.python }}"
+          uv pip install -e ".[all]" \
+            "apache-airflow==${{ matrix.airflow }}" \
+            apache-airflow-providers-standard apache-airflow-providers-git \
+            apache-airflow-providers-common-messaging pytest
+      - name: pytest
+        run: |
+          export AIRFLOW_HOME="$RUNNER_TEMP/airflow"
+          .venv/bin/pytest -q -p no:cacheprovider \
+            --junitxml="$RUNNER_TEMP/junit.xml"
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: junit-py${{ matrix.python }}-af${{ matrix.airflow }}
+          path: ${{ runner.temp }}/junit.xml
+          retention-days: 14
+
+  test-prerelease:
+    name: Test · Airflow pre-release
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    continue-on-error: true   # pre-releases may break; tracked but not blocking
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          enable-cache: true
+      - run: uv run --only-group dev nox -s prerelease
+
+  postgres:
+    name: Test · PostgreSQL state backend
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_PASSWORD: test-only
+          POSTGRES_DB: autoair_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - run: uv sync --extra postgres --extra collab
+      - run: >-
+          uv run pytest -q tests/unit/test_persistence_contract.py
+          tests/integration/test_persistence_api.py tests/integration/test_collab_replicas.py
+        env:
+          AUTOAIR_TEST_POSTGRES_URL: postgresql+psycopg://postgres:test-only@localhost:5432/autoair_test
+
+  # ------------------------------------------------------------------------------ Frontend
+  frontend:
+    name: Frontend · lint, types, unit tests, build
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - uses: actions/setup-node@v5
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - name: Generated API client matches the backend OpenAPI
+        run: npm run codegen && git diff --exit-code -- openapi.json src/api/gen
+      - run: npm run typecheck
+      - run: npm run lint
+      - name: prettier
+        run: npm run format:check
+      - name: vitest
+        run: npm test
+      - run: npm run build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ui-bundles
+          path: |
+            src/autoair/static/plugin/
+            src/autoair/static/standalone/
+          if-no-files-found: error
+          retention-days: 7
+
+  visual:
+    name: Frontend · visual regression
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # Baselines are rendered on Linux/Chrome; font or Chrome updates can shift pixels.
+    # Tracked here, blocking once the baselines are proven stable on the hosted runners.
+    continue-on-error: true
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - run: uv sync
+        working-directory: .
+      - uses: actions/setup-node@v5
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - run: npx playwright install --with-deps chrome
+      - name: Visual suite (vite preview + `autoair serve --no-auth`, light and dark)
+        run: npm run test:visual
+        env:
+          AUTOAIR_VISUAL_DIR: ${{ runner.temp }}/visual
+      - uses: actions/upload-artifact@v4
+        if: ${{ failure() }}
+        with:
+          name: visual-diffs
+          path: ${{ runner.temp }}/visual/results/
+          retention-days: 14
+
+  e2e:
+    name: E2E · Playwright against Airflow + plugin
+    needs: frontend
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      AIRFLOW_URL: http://localhost:8080
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - uses: actions/setup-node@v5
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - uses: actions/download-artifact@v4
+        with:
+          name: ui-bundles
+          path: src/autoair/static/
+      - run: uv sync
+      - run: npm ci --no-audit --no-fund
+        working-directory: frontend
+      - run: npx playwright install --with-deps chrome
+        working-directory: frontend
+      - name: Start Airflow (standalone) with the AutoAir plugin
+        run: |
+          export AIRFLOW_HOME="$RUNNER_TEMP/airflow"
+          nohup ./scripts/dev-airflow.sh > "$RUNNER_TEMP/airflow.log" 2>&1 &
+          for _ in $(seq 1 120); do
+            curl -sf -o /dev/null "$AIRFLOW_URL/api/v2/version" && \
+              curl -sf -o /dev/null "$AIRFLOW_URL/autoair/api/health" && exit 0
+            sleep 3
+          done
+          echo "Airflow did not start"; tail -200 "$RUNNER_TEMP/airflow.log"; exit 1
+      - name: Playwright (everything except the 25-minute crawler)
+        working-directory: frontend
+        run: npx playwright test --grep-invert crawl --reporter=list,html
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: playwright-report
+          path: |
+            frontend/playwright-report/
+            frontend/e2e/.results/
+          retention-days: 14
+      - name: Airflow log
+        if: ${{ failure() }}
+        run: tail -300 "$RUNNER_TEMP/airflow.log"
+
+  # ------------------------------------------------------------------------------ Docs
+  website:
+    name: Website · typecheck + build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: website
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: website/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - run: npm run typecheck
+      - run: npm run build
+        env:
+          DOCS_GITHUB_OWNER: ${{ github.repository_owner }}
+      - name: llms.txt and llms-full.txt are generated
+        run: test -s build/llms.txt && test -s build/llms-full.txt
+
+  # ------------------------------------------------------------------------------ Packaging
+  package:
+    name: Package · sdist + wheel
+    needs: frontend
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - uses: actions/download-artifact@v4
+        with:
+          name: ui-bundles
+          path: src/autoair/static/
+      - run: uv build
+      - run: uvx twine check --strict dist/*
+      - name: Wheel ships the editor bundles, py.typed and the licence
+        run: uv run python scripts/check_release.py --artifacts
+      - name: Install the wheel in a clean venv and import the plugin
+        run: |
+          uv venv "$RUNNER_TEMP/wheel"
+          VIRTUAL_ENV="$RUNNER_TEMP/wheel" uv pip install "$(ls dist/*.whl)[standalone]"
+          "$RUNNER_TEMP/wheel/bin/autoair" --help > /dev/null
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+          if-no-files-found: error
+          retention-days: 7
+
+  docker:
+    name: Docker · image smoke test + demo compose config
+    needs: package
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/docker/Dockerfile
+          load: true
+          push: false
+          tags: autoair:ci
+          cache-from: type=gha,scope=autoair-image
+          cache-to: type=gha,mode=max,scope=autoair-image
+      - name: Smoke test the image
+        run: |
+          docker run --rm --entrypoint autoair autoair:ci --help > /dev/null
+          docker run --rm autoair:ci plugins --output json | tee plugins.json
+          grep -q '"autoair"' plugins.json
+          test "$(docker image inspect autoair:ci --format '{{.Config.User}}')" = airflow
+          docker image inspect autoair:ci --format '{{json .Config.Healthcheck}}' | grep -q healthcheck.py
+      - name: Standalone server answers its health check
+        run: |
+          docker run -d --name autoair-smoke -p 127.0.0.1:18765:8765 \
+            -e AUTOAIR_SERVER__HOST=0.0.0.0 --entrypoint autoair autoair:ci serve --no-auth
+          for _ in $(seq 1 60); do
+            status=$(docker inspect autoair-smoke --format '{{.State.Health.Status}}')
+            curl -sf http://127.0.0.1:18765/api/health && [ "$status" = healthy ] && exit 0
+            sleep 3
+          done
+          docker logs autoair-smoke; exit 1
+      - name: Demo compose file is valid for every profile
+        working-directory: deploy/compose
+        run: |
+          cp .env.example .env
+          base=(docker compose -f docker-compose.demo.yml --env-file .env)
+          "${base[@]}" config --quiet
+          "${base[@]}" --profile lb config --quiet
+          "${base[@]}" --env-file env/redis.env --profile redis config --quiet
+          "${base[@]}" --env-file env/ai.env --profile ai config --quiet
+          "${base[@]}" --env-file env/ollama.env --profile ai --profile ollama config --quiet
+          "${base[@]}" --env-file env/git.env --profile git config --quiet
+          "${base[@]}" --profile tls config --quiet
+          "${base[@]}" --env-file env/observability.env --profile observability config --quiet
+
+  # ------------------------------------------------------------------------------ Live
+  live-auth:
+    name: Live RBAC · ${{ matrix.manager }} auth manager
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    continue-on-error: true   # needs Docker images / network; tracked but not blocking
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { manager: fab, port: 8091 }
+          - { manager: keycloak, port: 8092 }
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - run: uv sync --all-extras
+      - run: ./scripts/live-auth-${{ matrix.manager }}.sh > live.log 2>&1 &
+      - run: |
+          for _ in $(seq 1 120); do curl -sf localhost:${{ matrix.port }}/api/v2/version && break; sleep 3; done
+          AUTOAIR_LIVE_AIRFLOW_URL=http://localhost:${{ matrix.port }} uv run pytest -m live tests/live/test_auth_managers.py
+      - if: ${{ failure() }}
+        run: tail -200 live.log
+
+  live-gitlab:
+    name: Live · GitLab deploy target
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.gitlab }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - run: uv sync --all-extras
+      - run: |
+          eval "$(./scripts/live-gitlab.sh)"
+          uv run pytest -m live tests/live/test_gitlab.py
+
+  # Single required check for branch protection.
+  ci-ok:
+    name: CI OK
+    if: ${{ always() }}
+    needs: [lint, test, postgres, frontend, e2e, website, package, docker]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Every required job succeeded
+        env:
+          RESULTS: ${{ toJSON(needs.*.result) }}
+        run: |
+          echo "$RESULTS"
+          echo "$RESULTS" | grep -Eq '"(failure|cancelled|skipped)"' && exit 1 || exit 0

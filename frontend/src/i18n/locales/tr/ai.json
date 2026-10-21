@@ -1,0 +1,289 @@
+{
+  "common": {
+    "close": "Kapat"
+  },
+  "menu": {
+    "chat": "Yapay zekâya sor…",
+    "adminChat": "Yönetici asistanı…",
+    "upgrade": "Airflow yükseltme asistanı…"
+  },
+  "commands": {
+    "group": "Yapay zekâ",
+    "chat": "Yapay zekâya sor (sohbet)",
+    "chatAdmin": "Yönetici asistanına sor",
+    "upgrade": "Airflow yükseltme asistanı"
+  },
+  "modes": {
+    "label": "Asistan",
+    "adminDenied": "ai:admin veya admin:panel izni gerekir",
+    "developer": {
+      "label": "Geliştirici",
+      "title": "Geliştirici asistanı",
+      "intro": "Açık DAG, operatörler, sağlayıcı API'leri, başarısız çalıştırmalar ve logları hakkında sorun. Değişiklikler, uygulamadan önce inceleyeceğiniz bir fark olarak gelir."
+    },
+    "admin": {
+      "label": "Yönetici",
+      "title": "Yönetici asistanı",
+      "intro": "Bu AutoAir'in nasıl kurulduğunu ve kullanıldığını sorun: yapılandırma, özellik bayrakları, roller ve izinler, denetim kaydı, yapay zekâ kullanımı, kopyalar ve dağıtım hedefleri. Salt okunur."
+    }
+  },
+  "examples": {
+    "developer": {
+      "explain": "Bu DAG'in ne yaptığını ve üretimde nelerin bozulabileceğini açıkla.",
+      "retries": "Her göreve makul yeniden deneme ve zaman aşımı ekle.",
+      "failure": "Bu DAG'in son çalıştırması neden başarısız oldu?",
+      "sensor": "S3'te bir dosyayı beklemek için hangi ertelenebilir sensörü kullanmalıyım?"
+    },
+    "admin": {
+      "deploy": "Viewer rolündeki biri neden dağıtım yapamıyor, izin vermek için neyi değiştirmeliyim?",
+      "operators": "Hangi DAG'ler BashOperator kullanıyor?",
+      "changes": "Geçen hafta neler değişti?",
+      "usage": "Bu ay yapay zekâ kullanıcı başına ne kadar tuttu?"
+    }
+  },
+  "chat": {
+    "title": "Yapay zekâya sor",
+    "placeholder": "Bir şey sorun… (göndermek için Enter, yeni satır için Shift+Enter)",
+    "hint": "Yanıtlar hatalı olabilir: kaynakları kontrol edin ve her değişikliği uygulamadan önce inceleyin.",
+    "send": "Gönder",
+    "stop": "Durdur",
+    "newChat": "Yeni sohbet",
+    "expand": "Tam ekran",
+    "collapse": "Yan panel",
+    "close": "Sohbeti kapat",
+    "thinking": "Düşünüyor…",
+    "toolsUsed_one": "{{count}} araç çağrısı",
+    "toolsUsed_other": "{{count}} araç çağrısı",
+    "sources": "Kaynaklar",
+    "copy": "Kopyala",
+    "copied": "Kopyalandı",
+    "copyCode": "Kodu kopyala",
+    "insert": "{{node}} içine ekle",
+    "inserted": "{{node}} içine eklendi",
+    "regenerate": "Yeniden oluştur",
+    "cancelled": "Yanıt verilmeden durduruldu.",
+    "interrupted": "Yanıt tamamlanmadan bağlantı koptu.",
+    "stopped": "Yanıt eksik ({{reason}})."
+  },
+  "stage": {
+    "model": "Düşünüyor…",
+    "compact": "Önceki konuşma özetleniyor…",
+    "collect": "Çalıştırma ve logları okunuyor…",
+    "analyze": "Analiz ediliyor…",
+    "mcp": "Araçlara bağlanılıyor…"
+  },
+  "threads": {
+    "title": "Sohbetler",
+    "empty": "Henüz sohbet yok.",
+    "messages_one": "{{count}} mesaj",
+    "messages_other": "{{count}} mesaj",
+    "rename": "Yeniden adlandır",
+    "save": "Kaydet",
+    "cancel": "Vazgeç",
+    "delete": "Sil",
+    "confirmDelete": "“{{title}}” sohbeti silinsin mi?",
+    "renameFailed": "Sohbet yeniden adlandırılamadı",
+    "deleteFailed": "Sohbet silinemedi"
+  },
+  "proposal": {
+    "valid": "geçerli",
+    "invalid": "sorunlu",
+    "newDag": "Yeni bir DAG (karşılaştırılacak dağıtılmış sürüm yok).",
+    "problems_one": "{{count}} doğrulama sorunu",
+    "problems_other": "{{count}} doğrulama sorunu",
+    "showCode": "Kod farkını göster",
+    "hideCode": "Kod farkını gizle",
+    "codeDiff": "Üretilen kod: önce ve sonra",
+    "apply": "Düzenleyiciye uygula",
+    "reject": "Reddet",
+    "deploy": "Dağıt…",
+    "applied": "Düzenleyiciye uygulandı",
+    "appliedHelp": "Tuvalde inceleyin, ardından olağan dağıtım penceresiyle dağıtın.",
+    "needsWrite": "Değişiklik uygulamak için spec:write izni gerekir",
+    "failed": "Öneri güncellenemedi",
+    "snippetHelp": "Yalnızca bir öneri: hiçbir şey değiştirilmedi. Yapılandırmanıza kendiniz uygulayın.",
+    "markApplied": "Uygulandı olarak işaretle",
+    "dismiss": "Kapat",
+    "status": {
+      "proposed": "önerildi",
+      "approved": "onaylandı",
+      "applied": "uygulandı",
+      "rejected": "reddedildi"
+    }
+  },
+  "troubleshoot": {
+    "button": "Yapay zekâ ile analiz et",
+    "hint": "Kök nedeni yapay zekâ ile bulun ve inceleyeceğiniz bir düzeltme alın",
+    "selectRun": "Önce bir çalıştırma seçin",
+    "unavailable": "Yapay zekâ analizi kullanılamıyor (yapay zekâ kapalı, model yok veya airflow:read yok)",
+    "title": "Yapay zekâ ile analiz",
+    "try": "{{n}}. deneme",
+    "scope": "Ajanın okuyabilecekleri",
+    "scopeHelp": "Loglar, görev durumları, DAG tanımı ve üretilen kod her zaman dahildir. Diğerlerini daraltın veya genişletin; yöneticinizin kapattıkları gri görünür.",
+    "notAllowed": "yönetici tarafından kapatıldı",
+    "roots": "Klasörler",
+    "scopes": {
+      "connections": "Bağlantı meta verisi (tür, sunucu, ek alan adları; asla gizli bilgiler)",
+      "variables": "Değişken anahtarları (asla değerler)",
+      "pools": "Havuzlar ve slot kullanımı",
+      "xcom_keys": "XCom anahtarları",
+      "xcom_values": "XCom değerleri (kısaltılmış, temizlenmiş)",
+      "other_runs": "Bu DAG'in diğer çalıştırmaları",
+      "import_errors": "DAG içe aktarma hataları",
+      "airflow_config": "Airflow yapılandırması (maskeli)",
+      "filesystem": "Log / DAG dosyaları (salt okunur korumalı alan)",
+      "research": "Belgeler ve kurulu sağlayıcı kaynak kodu",
+      "online": "Çevrimiçi belgeler"
+    },
+    "mcp": "Harici araçlar (MCP sunucuları)",
+    "mcpTools": "Hariç tutmak için bir araca tıklayın.",
+    "question": "Soru (isteğe bağlı)",
+    "questionPlaceholder": "ör. load_orders neden yalnızca pazartesileri zaman aşımına uğruyor?",
+    "previous": "Bu DAG'in önceki analizleri",
+    "open": "Aç",
+    "start": "Analizi başlat",
+    "rerun": "Yeniden çalıştır",
+    "rerunScope": "Başka kapsamla yeniden çalıştır",
+    "cancel": "İptal",
+    "reject": "Reddet",
+    "approveEditor": "Onayla: düzenleyicide aç",
+    "approveDeploy": "Onayla ve dağıt…",
+    "rejected": "Öneri reddedildi: hiçbir şey değiştirilmedi.",
+    "applied": "Düzeltme düzenleyicide",
+    "appliedHelp": "Olağan dağıtım penceresiyle dağıtın; dağıtım bu analizle birlikte kaydedilir.",
+    "approvedNoSpec": "Onaylandı. Değişiklik otomatik uygulanamadı: talimatları izleyin.",
+    "decisionFailed": "Karar kaydedilemedi",
+    "noSummary": "Analiz özet olmadan bitti.",
+    "hypotheses": "Kök neden hipotezleri",
+    "remediation": "Çözüm adımları",
+    "specChanges": "Önerilen DAG değişiklikleri",
+    "configChanges": "Yapılandırma değişiklikleri",
+    "airflowActions": "Airflow'da",
+    "actionsHelp": "Yalnızca talimat: AutoAir bunları sizin yerinize çalıştırmaz.",
+    "status": {
+      "proposed": "değişiklik önerildi",
+      "no_change": "değişiklik önerilmedi",
+      "approved": "onaylandı",
+      "rejected": "reddedildi",
+      "applied": "dağıtıldı"
+    },
+    "category": {
+      "spec": "DAG",
+      "code": "kod",
+      "configuration": "yapılandırma",
+      "infrastructure": "altyapı",
+      "data": "veri",
+      "dependency": "bağımlılık",
+      "platform": "platform",
+      "unknown": "bilinmiyor"
+    },
+    "action": {
+      "clear": "temizle",
+      "retry": "yeniden dene",
+      "clear_run": "çalıştırmayı temizle",
+      "mark_success": "başarılı işaretle",
+      "mark_failed": "başarısız işaretle",
+      "mark_run_success": "çalıştırmayı başarılı işaretle",
+      "mark_run_failed": "çalıştırmayı başarısız işaretle",
+      "fix_connection": "bağlantıyı düzelt",
+      "adjust_pool": "havuzu ayarla",
+      "other": "diğer"
+    },
+    "actionsMode": "Airflow eylemleri",
+    "actionsModeHelp": "Analizin önerdiği Airflow eylemlerine ne olabileceği. Yalnızca sunucunun izin verdiği kadar veya daha kısıtlı bir mod seçebilirsiniz.",
+    "modes": {
+      "read_only": "Yalnızca talimat",
+      "hitl": "Onayımdan sonra çalıştır",
+      "apply": "Otomatik çalıştır"
+    },
+    "modeBadge": {
+      "read_only": "salt okunur",
+      "hitl": "onay gerekli",
+      "apply": "otomatik"
+    },
+    "modeHelp": {
+      "read_only": "Yalnızca talimat: AutoAir bunları sizin yerinize çalıştırmaz.",
+      "hitl": "Her eylem yalnızca Çalıştır'a tıkladığınızda çalışır. Kendi Airflow yetkilerinizi kullanır.",
+      "apply": "İzin verilen eylemler analizden sonra kendi Airflow yetkilerinizle otomatik olarak çalıştı."
+    },
+    "actionStatus": {
+      "instruction": "talimat",
+      "proposed": "hazır",
+      "blocked": "engellendi",
+      "rejected": "yok sayıldı",
+      "running": "çalışıyor",
+      "succeeded": "tamamlandı",
+      "skipped": "atlandı",
+      "failed": "başarısız"
+    },
+    "blocked": {
+      "not_allowed": "Bu eylem türüne bu sunucuda izin verilmiyor.",
+      "other_dag": "Başka bir DAG'i hedefliyor: yalnızca analiz edilen DAG'e izin verilir.",
+      "other_run": "Başka bir çalıştırmayı hedefliyor: yalnızca analiz edilen çalıştırmaya izin verilir.",
+      "missing_task": "Görev belirtilmemiş.",
+      "upstream_not_allowed": "Üst akış görevlerini temizlemeye izin verilmiyor.",
+      "downstream_not_allowed": "Alt akış görevlerini temizlemeye izin verilmiyor.",
+      "limit": "Analiz başına eylem sınırı aşıldı.",
+      "duplicate": "Başka bir eylemin tekrarı.",
+      "permission": "run:manage yetkisi gerekir.",
+      "feature_off": "Çalıştırma işlemleri kapalı."
+    },
+    "execute": "Çalıştır",
+    "dismiss": "Yok say",
+    "executeConfirm": "“{{action}}” eylemi {{target}} üzerinde Airflow'da şimdi çalıştırılsın mı?",
+    "executed": "Eylem bitti: {{status}}",
+    "executeFailed": "Eylem çalıştırılamadı",
+    "actionLog": "Eylem günlüğü",
+    "actionAuto": "otomatik",
+    "downstream": "+ alt akış",
+    "upstream": "+ üst akış",
+    "onlyFailed": "yalnızca başarısızlar",
+    "result": {
+      "ti_not_found": "Görev örneği çalıştırmada bulunamadı.",
+      "already_active": "Zaten {{states}} durumunda: yeniden temizlenmedi.",
+      "not_failed": "Başarısız değil ({{states}}): yeniden denenecek bir şey yok.",
+      "not_started": "Henüz başlamadı: temizlenecek bir şey yok.",
+      "nothing_to_clear": "Temizlenecek bir şey yok.",
+      "over_limit": "{{count}} görev örneği temizlenecekti; bu, {{limit}} sınırından fazla (ai.troubleshoot.max_cleared_task_instances).",
+      "cleared": "{{count}} görev örneği temizlendi.",
+      "run_not_found": "Çalıştırma bulunamadı.",
+      "run_active": "Çalıştırma zaten {{state}} durumunda: yeniden temizlenmedi.",
+      "already_state": "Zaten {{state}} durumunda.",
+      "marked": "{{state}} olarak işaretlendi.",
+      "run_already_state": "Çalıştırma zaten {{state}} durumunda.",
+      "run_marked": "Çalıştırma {{state}} olarak işaretlendi.",
+      "no_run": "Eylemin DAG'i veya çalıştırması yok.",
+      "no_task": "Eylemin görevi yok.",
+      "airflow_refused": "Airflow reddetti: {{detail}}",
+      "not_executable": "{{action}} çalıştırılamaz.",
+      "error": "Çalıştırma beklenmedik şekilde başarısız oldu; yeniden deneyin."
+    },
+    "busy": {
+      "action_running": "Bu eylem zaten çalışıyor: az önce başka biri onayladı.",
+      "action_rejected": "Bu eylem yok sayıldı."
+    }
+  },
+  "upgrade": {
+    "title": "Airflow yükseltme asistanı",
+    "description": "Airflow 2 kalıplarını (kaldırılan şablon değişkenleri, taşınan içe aktarmalar, kullanımdan kalkan operatörler) ruff AIR3 kuralları, AutoAir kuralları ve isteğe bağlı yapay zekâ ile bulur, yükseltmeyi fark olarak önerir.",
+    "target": {
+      "current": "Açık DAG",
+      "all": "Kaydedilmiş tüm DAG'ler"
+    },
+    "useAi": "Yapay zekâ geçişi ekle",
+    "run": "Analiz et",
+    "running": "Analiz ediliyor…",
+    "failed": "Yükseltme analizi başarısız oldu",
+    "findings_one": "{{count}} bulgu",
+    "findings_other": "{{count}} bulgu",
+    "fixable": "düzeltilebilir",
+    "apply": "Yükseltmeyi düzenleyiciye uygula",
+    "applied": "{{dagId}} yükseltmesi düzenleyiciye uygulandı: inceleyip dağıtın."
+  },
+  "deployMessage": {
+    "generate": "Oluştur",
+    "hint": "Açıklamayı dağıtılmış sürümden bu yana yapılan değişikliklerden yaz",
+    "subject": "Konu: {{title}}",
+    "failed": "Açıklama oluşturulamadı"
+  }
+}

@@ -1,0 +1,27 @@
+{
+  "spec_version": 2,
+  "dag_id": "loops_34",
+  "description": "Airflow 3.4 task loop: refine an estimate until it converges",
+  "schedule": {"type": "none"},
+  "start_date": "2026-01-01T00:00:00Z",
+  "nodes": [
+    {"kind": "operator", "id": "start", "task_id": "start",
+     "operator": "airflow.providers.standard.operators.empty.EmptyOperator"},
+    {"kind": "task_group", "id": "g", "group_id": "refine",
+     "loop": {"max_iterations": 8, "until_name": "accurate_enough",
+              "until_code": "return abs(loop.result - 2 ** 0.5) < 1e-6"}},
+    {"kind": "python_task", "id": "improve", "task_id": "improve", "parent_group": "g",
+     "function_name": "improve", "uses_loop_context": true,
+     "code": "x = 1.0 if loop.index == 0 else loop.previous\nreturn (x + 2 / x) / 2"},
+    {"kind": "python_task", "id": "evaluate", "task_id": "evaluate", "parent_group": "g",
+     "function_name": "evaluate", "arguments": {"x": {"$type": "xcom", "node": "improve"}},
+     "code": "return x"},
+    {"kind": "python_task", "id": "report", "task_id": "report", "function_name": "report",
+     "is_result": true, "code": "return 'converged'"}
+  ],
+  "edges": [
+    {"source": "start", "target": "g"},
+    {"source": "improve", "target": "evaluate"},
+    {"source": "g", "target": "report"}
+  ]
+}

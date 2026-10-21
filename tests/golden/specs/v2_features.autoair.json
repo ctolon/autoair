@@ -1,0 +1,257 @@
+{
+  "spec_version": 2,
+  "dag_id": "v2_features",
+  "description": "Exercises AutoAir spec v2 features",
+  "schedule": {
+    "type": "assets_or_time",
+    "time": {
+      "type": "cron",
+      "expression": "0 3 * * *",
+      "timezone": "Europe/Istanbul"
+    },
+    "expression": {
+      "op": "any",
+      "items": [
+        {
+          "op": "asset",
+          "asset": {
+            "name": "orders",
+            "uri": "s3://lake/orders"
+          }
+        },
+        {
+          "op": "alias",
+          "name": "late_data"
+        }
+      ]
+    }
+  },
+  "start_date": "2026-01-01T00:00:00Z",
+  "tags": [
+    "autoair",
+    "v2"
+  ],
+  "fail_fast": false,
+  "max_consecutive_failed_dag_runs": 5,
+  "owner_links": {
+    "data": "mailto:data@example.com"
+  },
+  "params": {
+    "region": {
+      "default": "eu",
+      "type": "string",
+      "enum": [
+        "eu",
+        "us"
+      ],
+      "values_display": {
+        "eu": "Europe",
+        "us": "United States"
+      },
+      "section": "Target"
+    },
+    "limit": {
+      "default": 10,
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 1000
+    },
+    "run_date": {
+      "default": "2026-01-01",
+      "type": "string",
+      "format": "date"
+    }
+  },
+  "callbacks": {
+    "on_failure": [
+      {
+        "notifier": "airflow.providers.smtp.notifications.smtp.SmtpNotifier",
+        "params": {
+          "to": "oncall@example.com",
+          "subject": "{{ dag.dag_id }} failed"
+        }
+      }
+    ]
+  },
+  "deadlines": [
+    {
+      "name": "finish_in_2h",
+      "reference": "dagrun_queued_at",
+      "interval_seconds": 7200,
+      "callback": {
+        "notifier": "airflow.providers.smtp.notifications.smtp.SmtpNotifier",
+        "params": {
+          "to": "oncall@example.com"
+        }
+      }
+    }
+  ],
+  "environments": {
+    "prod": {
+      "schedule": {
+        "type": "cron",
+        "expression": "0 2 * * *"
+      },
+      "is_paused_upon_creation": false
+    }
+  },
+  "nodes": [
+    {
+      "kind": "note",
+      "id": "note1",
+      "text": "## Notes\nOrders pipeline.",
+      "include_in_docs": true
+    },
+    {
+      "kind": "operator",
+      "id": "setup",
+      "task_id": "create_tmp",
+      "is_setup": true,
+      "operator": "airflow.providers.standard.operators.bash.BashOperator",
+      "params": {
+        "bash_command": "mkdir -p /tmp/v2"
+      }
+    },
+    {
+      "kind": "python_task",
+      "id": "choose",
+      "task_id": "choose",
+      "decorator": "branch",
+      "function_name": "choose",
+      "arguments": {
+        "region": "{{ params.region }}"
+      },
+      "code": "return 'load_eu' if region == 'eu' else 'load_us'"
+    },
+    {
+      "kind": "operator",
+      "id": "eu",
+      "task_id": "load_eu",
+      "operator": "airflow.providers.standard.operators.empty.EmptyOperator",
+      "retry_policy": {
+        "rules": [
+          {
+            "exception": "builtins.ConnectionError",
+            "action": "retry",
+            "retry_delay_seconds": 30
+          },
+          {
+            "exception": "builtins.ValueError",
+            "action": "fail"
+          }
+        ]
+      },
+      "callbacks": {
+        "on_retry": [
+          {
+            "notifier": "airflow.providers.smtp.notifications.smtp.SmtpNotifier",
+            "params": {
+              "to": "x@example.com"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "kind": "operator",
+      "id": "us",
+      "task_id": "load_us",
+      "operator": "airflow.providers.standard.operators.empty.EmptyOperator"
+    },
+    {
+      "kind": "operator",
+      "id": "skipme",
+      "task_id": "legacy_step",
+      "disabled": true,
+      "operator": "airflow.providers.standard.operators.empty.EmptyOperator"
+    },
+    {
+      "kind": "python_task",
+      "id": "pairs",
+      "task_id": "pairs",
+      "function_name": "pairs",
+      "code": "return [{'x': i, 'y': i * 2} for i in range(3)]"
+    },
+    {
+      "kind": "python_task",
+      "id": "add",
+      "task_id": "add",
+      "function_name": "add",
+      "code": "return x + y",
+      "trigger_rule": "none_failed_min_one_success",
+      "mapping": {
+        "expand_kwargs": {
+          "$type": "xcom",
+          "node": "pairs"
+        },
+        "map_index_template": "{{ task.op_kwargs }}"
+      },
+      "extra_parameters": [
+        "x",
+        "y"
+      ]
+    },
+    {
+      "kind": "python_task",
+      "id": "check",
+      "task_id": "is_ready",
+      "decorator": "short_circuit",
+      "function_name": "is_ready",
+      "code": "return True"
+    },
+    {
+      "kind": "operator",
+      "id": "teardown",
+      "task_id": "drop_tmp",
+      "is_teardown": true,
+      "operator": "airflow.providers.standard.operators.bash.BashOperator",
+      "params": {
+        "bash_command": "rm -rf /tmp/v2"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "source": "setup",
+      "target": "choose"
+    },
+    {
+      "source": "choose",
+      "target": "eu",
+      "label": "eu"
+    },
+    {
+      "source": "choose",
+      "target": "us",
+      "label": "us"
+    },
+    {
+      "source": "eu",
+      "target": "skipme"
+    },
+    {
+      "source": "skipme",
+      "target": "pairs"
+    },
+    {
+      "source": "us",
+      "target": "pairs"
+    },
+    {
+      "source": "pairs",
+      "target": "add"
+    },
+    {
+      "source": "add",
+      "target": "check"
+    },
+    {
+      "source": "check",
+      "target": "teardown"
+    },
+    {
+      "source": "setup",
+      "target": "teardown"
+    }
+  ]
+}

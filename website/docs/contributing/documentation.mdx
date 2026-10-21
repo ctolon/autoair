@@ -1,0 +1,169 @@
+---
+title: Documentation
+description: How the AutoAir documentation site is built - Docusaurus layout, generated reference pages, the API reference, screenshots and videos, checks, versioning and publishing.
+sidebar_label: Documentation
+---
+
+The documentation site lives in `website/` and is built with Docusaurus 3. Most pages are hand-written Markdown; the configuration reference, the REST API reference and the DagSpec JSON Schema are generated from the code so they cannot drift from it.
+
+## Where documentation lives
+
+Each topic is written in one place, and the other place links to it instead of repeating it.
+
+| Place | Audience | Content |
+|---|---|---|
+| `website/docs/` (this site) | Users and operators | Installation, getting started, user guide, administration, deployment, AI, extending, security, troubleshooting, contributing |
+| `docs/` in the repository (read on GitHub) | Contributors and reviewers | The generated configuration reference, configuration mechanics, architecture (`docs/architecture/`), the IAM and SSO model, policy rules, MCP and AI internals, live test suites |
+
+Site pages link to a repository document with a GitHub URL (`https://github.com/ctolon/autoair/blob/main/docs/<file>.md`). The configuration reference is the exception: it is synced into the site (see [Generated reference pages](#generated-reference-pages)) and linked as `/docs/reference/configuration`.
+
+## Layout
+
+| Path | Content |
+|---|---|
+| `website/docs/` | Documentation pages (`.md`, or `.mdx` when a page uses components) |
+| `website/docs/reference/configuration.md` | **Generated**, do not edit (see below) |
+| `website/blog/` | Release notes |
+| `website/sidebars.ts` | Sidebar structure; every page must be listed |
+| `website/docusaurus.config.ts` | Site configuration (navbar, Mermaid, local search, versioning) |
+| `website/site.config.ts` | Where the site is published; overridable with `DOCS_GITHUB_OWNER`, `DOCS_GITHUB_REPO`, `DOCS_EDIT_BRANCH`, `DOCS_URL`, `DOCS_BASE_URL` |
+| `website/src/pages/api.tsx` | The [API reference](/api) page, rendering `static/openapi.json` |
+| `website/src/components/` | `Screenshot` and `Video` components, available in every `.mdx` page without import |
+| `website/static/openapi.json`, `static/schemas/dag-spec.schema.json` | Exported API document and spec schema (committed) |
+| `website/static/img/screens/`, `static/video/` | Captured screenshots and videos |
+| `website/scripts/` | `sync-reference.mjs`, `export-api.mjs`, `check-mdx.mjs`, `check-site.mjs`, `llms-txt.mjs`, `capture/` |
+
+## Build and preview
+
+```bash
+cd website
+npm ci
+npm start            # dev server with live reload (runs `npm run sync` first)
+npm run build        # production build into website/build (runs `npm run sync` first)
+npm run serve        # serve the production build
+npm run typecheck    # TypeScript check of the site's own code
+```
+
+The build is strict: `onBrokenLinks`, `onBrokenAnchors`, `onBrokenMarkdownLinks` and `onBrokenMarkdownImages` are all `throw`. A link to a page that does not exist, or to a heading anchor that does not exist, fails the build.
+
+From the repository root, the Makefile wraps the same commands:
+
+| Target | Runs |
+|---|---|
+| `make docs` | `cd website && npm ci && npm run build` |
+| `make docs-serve` | `cd website && npm ci && npm start` (live reload on `http://localhost:3000/autoair/`) |
+| `make docs-capture` | `cd website && npm run capture` (needs Airflow on port 8080) |
+
+## Writing pages
+
+- One file per page: `docs/<section>/<page>.md`. The doc id is the path without extension; do not set `id` in front matter.
+- Front matter: `title`, a one-sentence `description`, optionally `sidebar_label`.
+- Add the page to `sidebars.ts`.
+- Link to other pages with site routes, `/docs/admin/iam` or `/docs/admin/iam#some-heading`, without the `.md` extension. Anchors are the heading text lower-cased, with spaces turned into `-` and punctuation dropped. Link to the API reference with `/api`.
+- `.md` files are parsed as CommonMark plus GFM (tables, task lists); they cannot contain JSX. Use `.mdx` when a page needs `<Screenshot>` or `<Video>`. In `.mdx`, `{`, `}` and `<` in prose are JSX: put them in code spans or code blocks, or escape them.
+- Admonitions: `:::note`, `:::tip`, `:::info`, `:::warning`, `:::danger`. Diagrams: fenced `mermaid` code blocks.
+- Use the exact UI labels from `frontend/src/i18n/locales/en/*.json`, setting names and environment variables from the configuration reference, and API paths from the routers. Do not document a setting, flag or endpoint you cannot find in the code.
+
+### Screenshots and videos
+
+```mdx
+<Screenshot name="canvas-dag" alt="A DAG with five tasks on the canvas" caption="Optional caption" />
+<Screenshot name="deploy-dialog" alt="The deploy dialog" width="narrow" />
+<Video name="build-dag" title="Building a DAG on the canvas" />
+```
+
+`Screenshot` shows `static/img/screens/<name>-light.png` in light mode and `<name>-dark.png` in dark mode; both must exist. `width` is `full` (default), `wide` or `narrow` (dialogs and menus). `Video` plays `static/video/<name>.webm` with an optional `<name>.jpg` poster.
+
+## Generated reference pages
+
+`npm run sync` (`scripts/sync-reference.mjs`, run automatically before `start` and `build`) copies one generated document from the repository's `docs/` folder into the site:
+
+| Source | Generated by | Site page |
+|---|---|---|
+| `docs/configuration-reference.md` | `uv run python scripts/gen_config_docs.py` (from the `Settings` model) | [Configuration reference](/docs/reference/configuration) |
+
+The script adds front matter and an "edit the code, not this page" notice, drops the H1 and rewrites links between repository docs to site routes. A link to a repository document without a known route fails the sync; add the mapping to `LINKS` in the script.
+
+A unit test and CI fail when it is stale (`gen_config_docs.py --check`). To change a setting's documentation, edit its `description` in `src/autoair`, regenerate, and commit both files.
+
+The hard-coded values report (`scripts/scan_hardcoded.py --write`) is not part of the site. It is a contributor tool: it writes `.artifacts/hardcoded-audit.md` at the repository root, which is gitignored; the committed source of truth is `scripts/hardcoded_decisions.json`.
+
+## llms.txt and llms-full.txt
+
+Every `npm run build` also writes two files for language models and coding agents to the site root, following [llmstxt.org](https://llmstxt.org):
+
+| File | Content |
+|---|---|
+| [`llms.txt`](pathname:///llms.txt) | The index: the project title, a one-paragraph summary, then one section per top-level sidebar category with a link and a one-line description (the page's `description` front matter) for every page |
+| [`llms-full.txt`](pathname:///llms-full.txt) | The full text of every docs page in sidebar order, as Markdown: front matter, MDX syntax and admonition markers are removed, `<Screenshot>` becomes `[Screenshot: <alt> (<caption>)]` and `<Video>` becomes `[Video: <title>]` |
+
+`scripts/llms-txt.mjs` is a local Docusaurus plugin (registered in `docusaurus.config.ts`): it reads the order, titles and descriptions from the docs plugin's loaded content and writes both files in its `postBuild` hook. A new page appears in both files once it is listed in `sidebars.ts`; write a good `description`, because it becomes the page's line in `llms.txt`. The footer links to both files.
+
+## API reference and spec schema
+
+```bash
+cd website
+npm run export-api     # needs uv and the repository's Python environment
+```
+
+`scripts/export-api.mjs` runs `uv run autoair export-openapi --output static/openapi.json` and `uv run autoair export-schema --output static/schemas/dag-spec.schema.json`. The outputs are committed, so building the site does not need Python. Re-export after changing API routes or models, or the spec models.
+
+## Screenshots and videos capture
+
+Captures are taken from a real AutoAir instance at 1440x900, in light and dark mode, with Playwright:
+
+```bash
+cd website
+npm run capture            # screenshots (light and dark), then videos
+npm run capture:screens    # screenshots only
+npm run capture:videos     # videos only
+node scripts/capture/run.mjs --flow showcase,ai --modes light   # selected flows and modes
+```
+
+Prerequisites: an Airflow 3 API server on `$AIRFLOW_URL` (default `http://localhost:8080`) whose `/auth/token` hands out tokens (`scripts/dev-airflow.sh` or `scripts/demo.sh`), the repository's Python environment (`.venv` or `.venv-allproviders`) and Chromium for Playwright (`npx playwright install chromium`).
+
+`scripts/capture/run.mjs`:
+
+1. starts `server.sh` from a clean `scripts/capture/.state` (the UI bundle and the signed demo marketplace are kept; `--rebuild` rebuilds the UI, `--fresh` restarts an already running capture server), first in git push mode to seed the demo DAGs, then in PR mode;
+2. runs the screen flows once per color mode at 1440x900 into `static/img/screens/<name>-<light|dark>.png`;
+3. records the videos into `static/video/<name>.webm` with a `<name>.jpg` poster;
+4. quantizes the PNGs (Pillow through `uv run --with pillow`);
+5. stops the servers it started.
+
+`scripts/capture/server.sh` starts a private AutoAir for capturing, built from the working tree: a scripted OpenAI-compatible LLM (`scripts/e2e_fake_llm.py`, port 8869), `autoair serve` with a git target in PR mode on a scratch bare repository (port 8860) and the standalone UI served by `vite preview` (port 8861). Ports can be changed with `CAPTURE_API_PORT`, `CAPTURE_UI_PORT` and `CAPTURE_LLM_PORT`. The shared Airflow is only read.
+
+`node scripts/check-mdx.mjs` reports missing captures for every `<Screenshot>` and `<Video>` used in the docs.
+
+## Checks
+
+```bash
+cd website
+node scripts/check-mdx.mjs                      # every page
+node scripts/check-mdx.mjs docs/deployment/*.md # some pages
+npm run build                                   # links and anchors
+```
+
+`check-mdx.mjs` compiles `.mdx` files with MDX and `.md` files as CommonMark, flags `.md` files that use components, and lists missing captures. It is fast and needs no build, but only `npm run build` checks links and anchors.
+
+After a build, `npm run check:site` (`scripts/check-site.mjs`) serves `build/` on a private port (`CHECK_SITE_PORT`, default 8868), opens a set of pages at 1280, 1440 and 1920 px and at phone width, in light and dark mode, and fails on horizontal overflow, console errors, failed same-origin requests and images that did not load. Screenshots of every checked page land in `.artifacts/check-site/` at the repository root (gitignored; override with `CHECK_SITE_OUT`) for review. Pass routes to check specific pages: `npm run check:site -- /docs/intro`.
+
+## Versioning
+
+The site starts unversioned. To freeze the docs for a release:
+
+```bash
+cd website
+npm run docs:version -- 0.1
+```
+
+This creates `versions.json`, `versioned_docs/version-0.1/` and `versioned_sidebars/`. Once `versions.json` exists, the navbar shows a version dropdown; `docs/` remains the "next" (unreleased) version. Generated reference pages are copied into the snapshot as they were at that moment.
+
+## Publishing
+
+`.github/workflows/pages.yml` builds the site on every pull request (`npm ci`, `npm run typecheck && npm run build`) and deploys `website/build` to GitHub Pages on pushes to `main`. `DOCS_GITHUB_OWNER` is set from the repository owner, so forks publish under their own account. For a custom domain set `DOCS_URL` and `DOCS_BASE_URL=/`.
+
+## Related pages
+
+- [Development](/docs/contributing/development)
+- [Configuration reference](/docs/reference/configuration)
+- [API reference](/api)

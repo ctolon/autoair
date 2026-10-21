@@ -1,0 +1,95 @@
+---
+title: Multi-team
+description: Assign DAGs to teams, give each team its own deploy target, scope connection, pool and Variable pickers, and enforce team prefixes.
+---
+
+Several teams can share one AutoAir installation. A DAG declares the **team** that owns it. That choice decides:
+
+- **where the DAG is deployed**: each team can have its own repository, bundle or folder,
+- **which Airflow connections, pools and Variables the pickers offer**: global ones plus the team's own, following Airflow 3's multi-team model,
+- **which naming and policy rules apply**: an optional `<team>_` prefix on DAG ids, and policy rules matched by team.
+
+Alternatively, each team can run its own AutoAir deployment with `AUTOAIR_TEAM` set. Both approaches can be combined.
+
+## Assign a DAG to a team
+
+Open **DAG settings → General** and fill in **Team**: "Multi-team Airflow (3.2+): the team owning this DAG; pickers then show its connections, pools and variables." Team names use lowercase letters, digits, `_` and `-`. The team is stored in the spec (`"team": "payments"`) and is not written into the generated DAG file.
+
+Changing the team of a deployed DAG changes where its **next** deploy goes: deploys always write to the target of the team in the spec. AutoAir does not move or remove the copy in the previous target, so after the change the DAG exists in two targets:
+
+- If Airflow reads both targets, it sees two files with the same `dag_id`.
+- Reading the DAG (**File → Open…**, `GET /api/specs/{dag_id}`) and **Delete** use the first target that holds it, checking the default target first and then the team targets in the order of `AUTOAIR_TEAM_STORAGE`. The stale copy can therefore be the one that opens, and a delete removes only one of the two copies.
+
+To move a DAG to another team cleanly, delete it from its current target first (which removes it from the target that holds it), then change **Team** and deploy again. If the change has already been deployed, remove the old copy from the previous target by hand (for example with a pull request in the old repository).
+
+## Per-team deploy targets
+
+`AUTOAIR_TEAM_STORAGE` maps a team name to a complete [deploy target](/docs/user-guide/deploy#deploy-targets) definition, using the same fields as the [`storage`](/docs/reference/configuration#storage) settings, with a nested `git` object for the [`storage.git`](/docs/reference/configuration#storagegit) fields:
+
+```bash
+AUTOAIR_TEAM_STORAGE='{
+  "payments":  {"mode": "git", "git": {"provider": "github", "repo": "acme/payments-dags", "mode": "pr"}},
+  "marketing": {"mode": "git", "git": {"provider": "gitlab", "repo": "marketing/dags", "direct_push_roles": []}},
+  "sandbox":   {"mode": "local"}
+}'
+```
+
+| Behaviour | Detail |
+|---|---|
+| Deploy, delete, validation, proposals | A DAG whose `team` appears in `team_storage` uses that target. Every other DAG, including those without a team, uses the default target (the `storage` settings, or the target chosen in the UI). |
+| Local team targets | Default to a `<team>` sub-folder of the output folder. |
+| Git settings | Each team's `git` block has its own mode, credentials, templates, `commit_author` and `direct_push_roles`. A team can therefore require pull requests while another allows direct pushes. |
+| **File → Open…** | Lists DAGs from the default target and every team target. |
+| Promotion | Always uses the default target. Teams with their own target cannot be promoted through the UI yet. See [Environments](/docs/user-guide/environments#promote-between-environments). |
+| Secrets | Fields such as tokens inside `team_storage` are masked in the configuration view. |
+
+## Scoped pickers
+
+When a DAG has a team, the connection, pool and Variable pickers (and the Jinja `conn.` / `var.` completions) ask AutoAir with `?team=<team>`. AutoAir passes that to Airflow and keeps only:
+
+- global objects (no team), and
+- objects that belong to that team.
+
+This mirrors Airflow 3's multi-team feature (experimental since Airflow 3.2), where connections, pools and Variables can be assigned to a team. On Airflow versions or deployments without teams, every object is global and the filter has no effect. See [Connections](/docs/user-guide/connections).
+
+**Minimum Airflow version: 3.2.0.** Team assignments exist from Airflow 3.2.0 on (`[core] multi_team`, experimental), and only from then does Airflow's REST API return a `team_name` for connections, pools and Variables. AutoAir detects the feature from the responses rather than from the version number: an object with a `team_name` belongs to that team, an object without one is global. On Airflow 3.0 and 3.1 (or with `[core] multi_team` off) no object has a `team_name`, so every object counts as global and the pickers show everything.
+
+The `team` field, per-team deploy targets, team prefixes and team policy rules are AutoAir features and work with any supported Airflow version (3.0 or later); only the picker filtering needs Airflow 3.2.0 or later with multi-team enabled. AutoAir does not check Airflow's patch level: follow Airflow's release notes for multi-team fixes in your version.
+
+## Team prefixes and policy
+
+| Setting | Default | Effect |
+|---|---|---|
+| `AUTOAIR_TEAM_DAG_ID_PREFIX` | `false` | Every DAG with a team must have a `dag_id` that starts with `<team>_`. Otherwise validation reports "dag_id must start with the team prefix '&lt;team&gt;_'" and the deploy is blocked. |
+| `AUTOAIR_TEAM` | unset | This deployment's team. It is used as the default team for deploy rights in `GET /api/me`, as the AI memory scope `team`, and as the `${team}` variable in AI prompts. |
+
+[Policy rules](/docs/admin/policy) can target teams: `match.teams` (fnmatch patterns on the DAG's team) limits a rule to some teams, and `tags_include.team: true` requires the team name as a DAG tag.
+
+## Access control
+
+AutoAir has no team-scoped roles: AutoAir permissions such as `spec:write` and `deploy` apply to every DAG a user can reach. Team isolation comes from **Airflow**:
+
+- Every route about a single DAG also checks Airflow's DAG access (`requires_access_dag`) for that `dag_id`. In plugin mode this goes through Airflow's auth manager, including its multi-team rules. A user who cannot edit a team's DAG in Airflow cannot deploy it through AutoAir, whatever their AutoAir role.
+- Calls that AutoAir proxies to Airflow (pickers, runs, logs, connections) use the user's own credentials, so Airflow filters them.
+- Per-team git targets can have different credentials (`credentials_mode`, `forced_conn_id`) and different `direct_push_roles`.
+
+`GET /api/me?team=<name>` reports the caller's deploy rights (`can_deploy_live`, `direct_push`, `default_opens_pr`) on that team's target. Without `team`, it uses `AUTOAIR_TEAM`.
+
+:::note
+In standalone mode, AutoAir cannot ask Airflow about per-DAG permissions locally. Airflow enforces them only on the calls AutoAir proxies. For strict team separation, run AutoAir as an Airflow plugin, or run one standalone deployment per team with its own `AUTOAIR_TEAM`, storage and credentials. See [IAM](/docs/admin/iam).
+:::
+
+## Patterns
+
+| Setup | How |
+|---|---|
+| One AutoAir, one repository per team | Set `team` on every DAG, and give `AUTOAIR_TEAM_STORAGE` an entry per team. Optionally set `AUTOAIR_TEAM_DAG_ID_PREFIX=true`. |
+| One AutoAir per team | Set `AUTOAIR_TEAM`, the [`storage` settings](/docs/reference/configuration#storage) and the state store per deployment, and set `team` in the DAGs so the pickers are scoped. |
+| Shared repository, separate folders | Use team targets with the same repository and a different `git.subdir` per team. |
+
+## Related
+
+- [Deploy](/docs/user-guide/deploy)
+- [IAM](/docs/admin/iam)
+- [Policy](/docs/admin/policy)
+- [Configuration reference](/docs/reference/configuration#top-level)

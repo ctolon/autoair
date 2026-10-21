@@ -1,0 +1,551 @@
+"""Shared state while turning a :class:`DagSpec` into a Python AST."""
+
+from __future__ import annotations
+
+import ast
+import datetime
+import keyword
+import math
+import re
+import sys
+from dataclasses import dataclass, field
+from typing import Any
+
+from autoair._compat import sdk_symbol_module
+from autoair.spec import (
+    AssetAliasLeaf,
+    AssetCombination,
+    AssetExpr,
+    AssetLeaf,
+    AssetRef,
+    CallbackRef,
+    Callbacks,
+    DagSpec,
+    FileAsset,
+    InlineFunction,
+    NoteNode,
+    OutputModel,
+    PythonRef,
+    PythonTaskNode,
+    RetryPolicySpec,
+    TaskGroupNode,
+    TaskNode,
+    ToolsetSpec,
+)
+
+SDK = "airflow.sdk"
+COMMON_AI_TOOLSETS = {
+    "sql": ("airflow.providers.common.ai.toolsets.sql", "SQLToolset", "db_conn_id"),
+    "mcp": ("airflow.providers.common.ai.toolsets.mcp", "MCPToolset", "mcp_conn_id"),
+}
+MESSAGE_QUEUE_TRIGGER = (
+    "airflow.providers.common.messaging.triggers.msg_queue",
+    "MessageQueueTrigger",
+)
+
+
+class CodegenError(ValueError):
+    """Raised when a spec cannot be turned into code (should be caught by validation)."""
+
+    def __init__(self, message: str, node_id: str | None = None) -> None:
+        super().__init__(message)
+        self.node_id = node_id
+
+
+def _sanitize(name: str) -> str:
+    ident = re.sub(r"\W", "_", name)
+    if not ident or ident[0].isdigit():
+        ident = f"_{ident}"
+    if keyword.iskeyword(ident):
+        ident = f"{ident}_"
+    return ident
+
+
+MATERIALIZE_TEMPLATE = '''
+def {name}(name: str, content: str) -> str:
+    """Write a script embedded in this DAG to a content-addressed file; return its path.
+
+    Runs when the DAG is parsed (on every worker), so the file exists wherever tasks run.
+    """
+    digest = hashlib.sha256(content.encode()).hexdigest()[:16]
+    path = os.path.join(tempfile.gettempdir(), "airflow-scripts", {dag_id!r}, digest, name)
+    if not os.path.exists(path):
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        tmp = f"{{path}}.{{os.getpid()}}.tmp"
+        with open(tmp, "w", encoding="utf-8") as fh:
+            fh.write(content)
+        os.chmod(tmp, 0o755)
+        os.replace(tmp, path)
+    return path
+'''
+
+
+def parse_inline_function(
+    source: str,
+) -> tuple[ast.FunctionDef | ast.AsyncFunctionDef, list[ast.stmt]]:
+    """``(def, imports)`` of an inline function; anything else at top level is rejected."""
+    try:
+        tree = ast.parse(source)
+    except SyntaxError as exc:
+        raise CodegenError(f"inline function: line {exc.lineno}: {exc.msg}") from exc
+    imports: list[ast.stmt] = []
+    funcs: list[ast.FunctionDef | ast.AsyncFunctionDef] = []
+    for stmt in tree.body:
+        if isinstance(stmt, (ast.Import, ast.ImportFrom)):
+            imports.append(stmt)
+        elif isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            funcs.append(stmt)
+        elif isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Constant):
+            continue  # docstring / comment string
+        else:
+            raise CodegenError(
+                "an inline function may only contain imports and one `def` at top level"
+            )
+    if len(funcs) != 1:
+        raise CodegenError(f"an inline function needs exactly one `def` (found {len(funcs)})")
+    return funcs[0], imports
+
+
+@dataclass
+class CodegenContext:
+    spec: DagSpec
+    airflow_version: tuple[int, int, int] | None = None
+    # module -> {name -> local alias}
+    _from_imports: dict[str, dict[str, str]] = field(default_factory=dict)
+    _plain_imports: set[str] = field(default_factory=set)
+    _used_names: set[str] = field(default_factory=lambda: {"dag", "datetime"})
+    _node_vars: dict[str, str] = field(default_factory=dict)
+    # Tasks defined inside a loop group's @task_group function: the group is implicit.
+    in_loop_body: set[str] = field(default_factory=set)
+    # Module-level statements emitted before ``with DAG`` (inline functions, helpers).
+    module_defs: list[ast.stmt] = field(default_factory=list)
+    _inline_functions: dict[str, str] = field(default_factory=dict)  # source -> name
+    _output_models: dict[str, str] = field(default_factory=dict)  # model json -> class name
+    _module_imports: set[str] = field(default_factory=set)
+    _materialize: str | None = None
+
+    # ----------------------------------------------------------------- names
+    def _reserve(self, base: str) -> str:
+        name, i = base, 2
+        while name in self._used_names or keyword.iskeyword(name):
+            name = f"{base}_{i}"
+            i += 1
+        self._used_names.add(name)
+        return name
+
+    def import_name(self, module: str, name: str) -> ast.Name:
+        """Return a reference to ``module.name``, adding ``from module import name``."""
+        aliases = self._from_imports.setdefault(module, {})
+        if name not in aliases:
+            aliases[name] = self._reserve(name)
+        return ast.Name(id=aliases[name], ctx=ast.Load())
+
+    def import_module(self, module: str) -> ast.Name:
+        self._plain_imports.add(module)
+        return ast.Name(id=module, ctx=ast.Load())
+
+    def sdk(self, name: str) -> ast.Name:
+        """Authoring symbol, imported from where the target Airflow version defines it."""
+        return self.import_name(sdk_symbol_module(name, self.airflow_version), name)
+
+    def node_var(self, node_id: str) -> str:
+        if node_id not in self._node_vars:
+            node = self.spec.node_map()[node_id]
+            prefix = "g" if isinstance(node, TaskGroupNode) else "t"
+            if isinstance(node, TaskGroupNode):
+                key = node.group_id
+            elif isinstance(node, NoteNode):
+                raise CodegenError("notes are not part of the generated DAG", node_id)
+            else:
+                key = node.task_id
+            self._node_vars[node_id] = self._reserve(f"{prefix}_{_sanitize(key)}")
+        return self._node_vars[node_id]
+
+    def reserve_function_name(self, base: str) -> str:
+        return self._reserve(_sanitize(base))
+
+    def import_statements(self) -> list[ast.stmt]:
+        stmts: list[ast.stmt] = [
+            ast.Import(names=[ast.alias(name=m)]) for m in sorted(self._plain_imports)
+        ]
+        for module in sorted(self._from_imports, key=lambda m: (m != SDK, m)):
+            names = self._from_imports[module]
+            stmts.append(
+                ast.ImportFrom(
+                    module=module,
+                    names=[
+                        ast.alias(name=n, asname=None if a == n else a)
+                        for n, a in sorted(names.items())
+                    ],
+                    level=0,
+                )
+            )
+        return stmts
+
+    # ----------------------------------------------------------------- values
+    def xcom_expr(self, node_id: str, key: str | None) -> ast.expr:
+        node = self.spec.node_map().get(node_id)
+        if node is None or isinstance(node, TaskGroupNode):
+            raise CodegenError(f"XCom reference to unknown task node {node_id!r}")
+        base: ast.expr = ast.Name(id=self.node_var(node_id), ctx=ast.Load())
+        if not isinstance(node, PythonTaskNode):
+            base = ast.Attribute(value=base, attr="output", ctx=ast.Load())
+        if key is not None:
+            base = ast.Subscript(value=base, slice=ast.Constant(key), ctx=ast.Load())
+        return base
+
+    def timedelta(self, seconds: float) -> ast.expr:
+        mod = self.import_module("datetime")
+        return ast.Call(
+            func=ast.Attribute(value=mod, attr="timedelta", ctx=ast.Load()),
+            args=[],
+            keywords=[ast.keyword(arg="seconds", value=ast.Constant(_num(seconds)))],
+        )
+
+    def datetime_in(self, value: datetime.datetime, tz: str | None) -> ast.expr:
+        """A DAG date: with a DAG timezone, ``pendulum.datetime(..., tz=...)`` holding the
+        wall-clock time in that zone (aware values are converted to it first)."""
+        if not tz:
+            return self.datetime(value)
+        import zoneinfo
+
+        if value.tzinfo is not None:
+            value = value.astimezone(zoneinfo.ZoneInfo(tz))
+        parts = [value.year, value.month, value.day, value.hour, value.minute, value.second]
+        while len(parts) > 3 and parts[-1] == 0:
+            parts.pop()
+        return ast.Call(
+            func=ast.Attribute(
+                value=self.import_module("pendulum"), attr="datetime", ctx=ast.Load()
+            ),
+            args=[ast.Constant(p) for p in parts],
+            keywords=[ast.keyword(arg="tz", value=ast.Constant(tz))],
+        )
+
+    def datetime(self, value: datetime.datetime) -> ast.expr:
+        mod = self.import_module("datetime")
+        parts = [value.year, value.month, value.day, value.hour, value.minute, value.second]
+        if value.microsecond:
+            parts.append(value.microsecond)
+        while len(parts) > 3 and parts[-1] == 0:
+            parts.pop()
+        keywords: list[ast.keyword] = []
+        if value.tzinfo is not None:
+            offset = value.utcoffset() or datetime.timedelta(0)
+            tz_mod = ast.Attribute(value=mod, attr="timezone", ctx=ast.Load())
+            tz: ast.expr
+            if offset == datetime.timedelta(0):
+                tz = ast.Attribute(value=tz_mod, attr="utc", ctx=ast.Load())
+            else:
+                tz = ast.Call(
+                    func=tz_mod, args=[self.timedelta(offset.total_seconds())], keywords=[]
+                )
+            keywords.append(ast.keyword(arg="tzinfo", value=tz))
+        return ast.Call(
+            func=ast.Attribute(value=mod, attr="datetime", ctx=ast.Load()),
+            args=[ast.Constant(p) for p in parts],
+            keywords=keywords,
+        )
+
+    def value(self, value: Any) -> ast.expr:
+        """Convert a JSON (+tagged) parameter value to a *literal* AST expression."""
+        if value is None or isinstance(value, (bool, str)):
+            return ast.Constant(value)
+        if isinstance(value, (int, float)):
+            if isinstance(value, float) and not math.isfinite(value):
+                raise CodegenError(f"non-finite number {value!r} is not allowed")
+            return ast.Constant(value)
+        if isinstance(value, list):
+            return ast.List(elts=[self.value(v) for v in value], ctx=ast.Load())
+        if isinstance(value, dict):
+            tag = value.get("$type")
+            if tag == "xcom":
+                return self.xcom_expr(str(value["node"]), value.get("key"))
+            if tag == "timedelta":
+                return self.timedelta(float(value["seconds"]))
+            if tag == "datetime":
+                dt = value["value"]
+                if isinstance(dt, str):
+                    dt = datetime.datetime.fromisoformat(dt)
+                return self.datetime(dt)
+            if tag == "import":
+                ref = PythonRef.model_validate(value)  # identifier path: no injection
+                return self.import_name(ref.module, ref.name)
+            if tag == "function":
+                return self.inline_function(InlineFunction.model_validate(value).source)
+            if tag == "file":
+                return self.file_asset(FileAsset.model_validate(value))
+            if tag == "output_model":
+                return self.output_model(OutputModel.model_validate(value))
+            if tag == "toolset":
+                return self.toolset(ToolsetSpec.model_validate(value))
+            if tag is not None:
+                raise CodegenError(f"unknown tagged value type {tag!r}")
+            keys: list[ast.expr | None] = []
+            for k in value:
+                if not isinstance(k, str):
+                    raise CodegenError("dictionary keys must be strings")
+                keys.append(ast.Constant(k))
+            return ast.Dict(keys=keys, values=[self.value(v) for v in value.values()])
+        if isinstance(value, datetime.datetime):
+            return self.datetime(value)
+        raise CodegenError(f"unsupported value of type {type(value).__name__}")
+
+    # ----------------------------------------------------------- inline code
+    def inline_function(self, source: str) -> ast.Name:
+        """Emit ``source`` (imports + one ``def``) at module level; returns its name."""
+        if source in self._inline_functions:
+            return ast.Name(id=self._inline_functions[source], ctx=ast.Load())
+        func, imports = parse_inline_function(source)
+        for stmt in imports:
+            key = ast.dump(stmt)
+            if key not in self._module_imports:
+                self._module_imports.add(key)
+                self.module_defs.insert(0, stmt)
+        func.name = self._reserve(func.name if func.name.isidentifier() else "fn")
+        self.module_defs.append(func)
+        self._inline_functions[source] = func.name
+        return ast.Name(id=func.name, ctx=ast.Load())
+
+    def output_model(self, model: OutputModel) -> ast.Name:
+        """``class <Name>(BaseModel)`` at module level (common.ai ``output_type``): the
+        class must be importable from the DAG module for XCom deserialization. Annotations
+        come from a closed set of types and every text is a constant: no user code."""
+        key = model.model_dump_json()
+        if key in self._output_models:
+            return ast.Name(id=self._output_models[key], ctx=ast.Load())
+        base = self.import_name("pydantic", "BaseModel")
+        field_fn = self.import_name("pydantic", "Field")
+        body: list[ast.stmt] = []
+        if model.description:
+            body.append(ast.Expr(value=ast.Constant(model.description)))
+        for f in model.fields:
+            annotation: ast.expr
+            if f.choices:
+                literal = self.import_name("typing", "Literal")
+                elts: list[ast.expr] = [ast.Constant(c) for c in f.choices]
+                annotation = ast.Subscript(
+                    value=literal,
+                    slice=elts[0] if len(elts) == 1 else ast.Tuple(elts=elts, ctx=ast.Load()),
+                    ctx=ast.Load(),
+                )
+            else:
+                annotation = ast.parse(f.type, mode="eval").body  # closed Literal set
+            if not f.required:
+                annotation = ast.BinOp(left=annotation, op=ast.BitOr(), right=ast.Constant(None))
+            kws: list[ast.keyword] = []
+            if not f.required:
+                kws.append(ast.keyword(arg="default", value=ast.Constant(None)))
+            if f.description:
+                kws.append(ast.keyword(arg="description", value=ast.Constant(f.description)))
+            default: ast.expr | None = (
+                ast.Call(func=field_fn, args=[], keywords=kws) if kws else None
+            )
+            body.append(
+                ast.AnnAssign(
+                    target=ast.Name(id=f.name, ctx=ast.Store()),
+                    annotation=annotation,
+                    value=default,
+                    simple=1,
+                )
+            )
+        name = self._reserve(model.name)
+        cls = ast.ClassDef(
+            name=name, bases=[base], keywords=[], body=body or [ast.Pass()], decorator_list=[]
+        )
+        if sys.version_info >= (3, 12):
+            cls.type_params = []
+        self.module_defs.append(cls)
+        self._output_models[key] = name
+        return ast.Name(id=name, ctx=ast.Load())
+
+    def toolset(self, spec: ToolsetSpec) -> ast.expr:
+        """``SQLToolset(db_conn_id=...)`` / ``MCPToolset(mcp_conn_id=...)``."""
+        module, cls, conn_arg = COMMON_AI_TOOLSETS[spec.kind]
+        kws = [ast.keyword(arg=conn_arg, value=ast.Constant(spec.conn_id))]
+        options: dict[str, Any] = {
+            "allowed_tables": spec.allowed_tables,
+            "schema": spec.db_schema,
+            "allow_writes": spec.allow_writes or None,
+            "max_rows": spec.max_rows,
+            "tool_prefix": spec.tool_prefix,
+        }
+        kws += [
+            ast.keyword(arg=k, value=self.value(v)) for k, v in options.items() if v is not None
+        ]
+        return ast.Call(func=self.import_name(module, cls), args=[], keywords=kws)
+
+    def file_asset(self, asset: FileAsset) -> ast.expr:
+        """``<helper>(name, content)`` → path of the script, materialised at parse time."""
+        helper = self._materializer()
+        call: ast.expr = ast.Call(
+            func=ast.Name(id=helper, ctx=ast.Load()),
+            args=[ast.Constant(asset.name), ast.Constant(asset.content)],
+            keywords=[],
+        )
+        if asset.run_with:  # "<interpreter> <path> " (trailing space: not a template file)
+            call = ast.BinOp(
+                left=ast.BinOp(left=ast.Constant(f"{asset.run_with} "), op=ast.Add(), right=call),
+                op=ast.Add(),
+                right=ast.Constant(" "),
+            )
+        return call
+
+    def _materializer(self) -> str:
+        if self._materialize:
+            return self._materialize
+        name = self._reserve("_script_file")
+        for module in ("hashlib", "os", "tempfile"):
+            self.import_module(module)
+        template = MATERIALIZE_TEMPLATE.format(name=name, dag_id=self.spec.dag_id)
+        self.module_defs.append(ast.parse(template).body[0])
+        self._materialize = name
+        return name
+
+    def call(self, func: ast.expr, *args: ast.expr, **kwargs: ast.expr) -> ast.Call:
+        return ast.Call(
+            func=func,
+            args=list(args),
+            keywords=[ast.keyword(arg=k, value=v) for k, v in kwargs.items()],
+        )
+
+    def import_path(self, fqn: str) -> ast.Name:
+        module, _, name = fqn.rpartition(".")
+        return self.import_name(module, name)
+
+    def asset(self, ref: AssetRef) -> ast.expr:
+        kws = [
+            ast.keyword(arg=k, value=ast.Constant(v))
+            for k, v in (("name", ref.name), ("uri", ref.uri), ("group", ref.group))
+            if v is not None
+        ]
+        if ref.extra:
+            kws.append(ast.keyword(arg="extra", value=self.value(ref.extra)))
+        if ref.watchers:
+            trigger_cls = self.import_name(*MESSAGE_QUEUE_TRIGGER)
+            watchers: list[ast.expr] = [
+                self.call(
+                    self.sdk("AssetWatcher"),
+                    name=ast.Constant(w.name),
+                    trigger=ast.Call(
+                        func=trigger_cls,
+                        args=[],
+                        keywords=[
+                            ast.keyword(arg="scheme", value=ast.Constant(w.scheme)),
+                            *(ast.keyword(arg=k, value=self.value(v)) for k, v in w.kwargs.items()),
+                        ],
+                    ),
+                )
+                for w in ref.watchers
+            ]
+            kws.append(ast.keyword(arg="watchers", value=ast.List(elts=watchers, ctx=ast.Load())))
+        return ast.Call(func=self.sdk("Asset"), args=[], keywords=kws)
+
+    def asset_expr(self, expr: AssetExpr) -> ast.expr:
+        if isinstance(expr, AssetLeaf):
+            return self.asset(expr.asset)
+        if isinstance(expr, AssetAliasLeaf):
+            return self.call(self.sdk("AssetAlias"), ast.Constant(expr.name))
+        assert isinstance(expr, AssetCombination)
+        if len(expr.items) == 1:
+            return self.asset_expr(expr.items[0])
+        func = self.sdk("AssetAll" if expr.op == "all" else "AssetAny")
+        return ast.Call(func=func, args=[self.asset_expr(i) for i in expr.items], keywords=[])
+
+    # ----------------------------------------------------------------- tasks
+    def task_kwargs(self, node: TaskNode, *, include_task_id: bool = True) -> list[ast.keyword]:
+        """Keyword arguments shared by every task kind."""
+        kws: list[ast.keyword] = []
+
+        def add(arg: str, value: ast.expr) -> None:
+            kws.append(ast.keyword(arg=arg, value=value))
+
+        if include_task_id:
+            add("task_id", ast.Constant(node.task_id))
+        if node.parent_group and node.id not in self.in_loop_body:
+            add("task_group", ast.Name(id=self.node_var(node.parent_group), ctx=ast.Load()))
+        if node.trigger_rule:
+            add("trigger_rule", ast.Constant(node.trigger_rule))
+        if node.retries is not None:
+            add("retries", ast.Constant(node.retries))
+        if node.retry_delay_seconds is not None:
+            add("retry_delay", self.timedelta(node.retry_delay_seconds))
+        if node.execution_timeout_seconds is not None:
+            add("execution_timeout", self.timedelta(node.execution_timeout_seconds))
+        for attr in ("pool", "pool_slots", "queue", "owner", "doc_md"):
+            val = getattr(node, attr)
+            if val is not None:
+                add(attr, ast.Constant(val))
+        if node.outlets:
+            add("outlets", ast.List(elts=[self.asset(a) for a in node.outlets], ctx=ast.Load()))
+        if node.inlets:
+            add("inlets", ast.List(elts=[self.asset(a) for a in node.inlets], ctx=ast.Load()))
+        for attr in (
+            "priority_weight",
+            "weight_rule",
+            "task_display_name",
+            "executor",
+            "max_active_tis_per_dagrun",
+            "depends_on_past",
+            "retry_exponential_backoff",
+        ):
+            val = getattr(node, attr)
+            if val is not None:
+                add(attr, ast.Constant(val))
+        if node.executor_config is not None:
+            add("executor_config", self.value(node.executor_config))
+        if node.mapping and node.mapping.map_index_template:
+            add("map_index_template", ast.Constant(node.mapping.map_index_template))
+        if node.retry_policy is not None:
+            add("retry_policy", self.retry_policy(node.retry_policy))
+        kws.extend(self.callback_kwargs(node.callbacks))
+        return kws
+
+    # ----------------------------------------------------------------- behaviours
+    def notifier(self, ref: CallbackRef) -> ast.expr:
+        return ast.Call(
+            func=self.import_path(ref.notifier),
+            args=[],
+            keywords=[ast.keyword(arg=k, value=self.value(v)) for k, v in ref.params.items()],
+        )
+
+    def callback_kwargs(self, callbacks: Callbacks) -> list[ast.keyword]:
+        out: list[ast.keyword] = []
+        for name in ("on_success", "on_failure", "on_retry", "on_execute", "on_skipped"):
+            refs: list[CallbackRef] = getattr(callbacks, name)
+            if refs:
+                out.append(
+                    ast.keyword(
+                        arg=f"{name}_callback",
+                        value=ast.List(elts=[self.notifier(r) for r in refs], ctx=ast.Load()),
+                    )
+                )
+        return out
+
+    def retry_policy(self, policy: RetryPolicySpec) -> ast.expr:
+        action = self.sdk("RetryAction")
+
+        def act(name: str) -> ast.expr:
+            return ast.Attribute(value=action, attr=name.upper(), ctx=ast.Load())
+
+        rules: list[ast.expr] = []
+        for rule in policy.rules:
+            kws: dict[str, ast.expr] = {
+                "exception": ast.Constant(rule.exception),
+                "action": act(rule.action),
+            }
+            if rule.retry_delay_seconds is not None:
+                kws["retry_delay"] = self.timedelta(rule.retry_delay_seconds)
+            if rule.reason:
+                kws["reason"] = ast.Constant(rule.reason)
+            if not rule.match_subclasses:
+                kws["match_subclasses"] = ast.Constant(False)
+            rules.append(self.call(self.sdk("RetryRule"), **kws))
+        kwargs: dict[str, ast.expr] = {"rules": ast.List(elts=rules, ctx=ast.Load())}
+        if policy.default != "default":
+            kwargs["default"] = act(policy.default)
+        return self.call(self.sdk("ExceptionRetryPolicy"), **kwargs)
+
+
+def _num(value: float) -> int | float:
+    return int(value) if float(value).is_integer() else value

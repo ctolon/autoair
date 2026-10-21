@@ -1,0 +1,3685 @@
+{
+  "rules": [
+    {
+      "match": "::kwarg::(HTTPException|HTTPError|JSONResponse|HTMLResponse|Response|StreamingResponse|RedirectResponse|post|put|get|delete|patch)\\(status_code=\\)::",
+      "decision": "keep",
+      "reason": "HTTP status code (protocol)"
+    },
+    {
+      "match": "::number::[0-9a-f]+::(400|401|403|404|409|412|422|428|500|501|502|503|504|300|304|200|201|202|204)$",
+      "decision": "keep",
+      "reason": "HTTP status code / status class boundary (protocol)"
+    },
+    {
+      "match": "::kwarg::(dumps|model_dump_json|dump)\\(indent=\\)::",
+      "decision": "keep",
+      "reason": "JSON output formatting of files/CLI output (stable diffs)"
+    },
+    {
+      "match": "::kwarg::(lru_cache|cache)\\(maxsize=\\)::",
+      "decision": "keep",
+      "reason": "in-process memoisation size (internal, no user-visible effect)"
+    },
+    {
+      "match": "^autoair/(settings|sections)\\.py::kwarg::Field\\(",
+      "decision": "config",
+      "setting": "(default / validation bound of the setting declared here)"
+    },
+    {
+      "match": "^autoair/storage/config\\.py::kwarg::Field\\(",
+      "decision": "config",
+      "setting": "(default / validation bound of the storage.* setting declared here)"
+    },
+    {
+      "match": "^autoair/spec/models\\.py::(kwarg::Field|regex::pattern|constant::(KEY_PATTERN|KEY_RE|IDENT_PATTERN|FQN_PATTERN|PYTHON_PATH_PATTERN|FILE_NAME_PATTERN|SPEC_VERSION))",
+      "decision": "keep",
+      "reason": "DAG spec schema (protocol shared with the frontend and the exported JSON Schema; Airflow's own identifier rules). Organisation naming rules: policy.dag_id_pattern / policy.task_id_pattern"
+    },
+    {
+      "match": "^autoair/api/routers/[a-z_]+\\.py::path::",
+      "decision": "keep",
+      "reason": "AutoAir API route (public API contract; drives the generated client)"
+    },
+    {
+      "match": "^autoair/api/app\\.py::path::",
+      "decision": "keep",
+      "reason": "mount point of the API/UI/static files (the frontend bundles and Airflow plugin URLs rely on it)"
+    },
+    {
+      "match": "^autoair/gateway/__init__\\.py::path::",
+      "decision": "keep",
+      "reason": "Airflow REST API v2 endpoint path (protocol)"
+    },
+    {
+      "match": "^autoair/storage/git/(github|gitlab|bitbucket|azure)\\.py::path::",
+      "decision": "keep",
+      "reason": "git host REST API endpoint path (protocol); the base URL is storage.git.api_url"
+    },
+    {
+      "match": "^autoair/api/routers/[a-z_]+\\.py::kwarg::Query\\((ge|le)=\\)::",
+      "decision": "keep",
+      "reason": "API paging bounds (API contract; clients pass limit)"
+    },
+    {
+      "match": "^autoair/api/routers/[a-z_]+\\.py::default::limit::",
+      "decision": "keep",
+      "reason": "API query parameter default (clients pass limit)"
+    },
+    {
+      "match": "::default::(limit|max_count)::",
+      "decision": "keep",
+      "reason": "page size default of an internal call; API callers pass their own limit"
+    },
+    {
+      "match": "::default::map_index::-1",
+      "decision": "keep",
+      "reason": "Airflow's 'not mapped' map_index sentinel (protocol)"
+    },
+    {
+      "match": "::default::try_number::1",
+      "decision": "keep",
+      "reason": "Airflow's first try number (protocol)"
+    },
+    {
+      "match": "::default::depth::0",
+      "decision": "keep",
+      "reason": "recursion start value (internal)"
+    },
+    {
+      "match": "::kwarg::Field\\((ge|gt|le|min_length)=\\)::(0|1|0\\.0)$",
+      "decision": "keep",
+      "reason": "type-level bound (non-negative / non-empty), not a tunable"
+    },
+    {
+      "match": "::kwarg::Field\\(default=\\)::0\\.0$",
+      "decision": "keep",
+      "reason": "zero initial value of a result field"
+    },
+    {
+      "match": "::kwarg::ImportFrom\\(level=\\)::0",
+      "decision": "keep",
+      "reason": "Python AST: absolute import (syntax)"
+    },
+    {
+      "match": "::kwarg::replace\\(microsecond=\\)::0",
+      "decision": "keep",
+      "reason": "truncates a timestamp to seconds (semantics)"
+    },
+    {
+      "match": "::kwarg::SimpleNamespace\\(clear_number=\\)::0",
+      "decision": "keep",
+      "reason": "Airflow task-instance attribute of a first run (protocol)"
+    },
+    {
+      "match": "::kwarg::CatalogData\\(build_seconds=\\)::0\\.0",
+      "decision": "keep",
+      "reason": "initial value, measured afterwards"
+    },
+    {
+      "match": "^autoair/api/platform\\.py::path::",
+      "decision": "keep",
+      "reason": "API route templates mapped to rate-limit groups (limits.rate_limits sets the numbers)"
+    },
+    {
+      "match": "^autoair/governance\\.py::number::[0-9a-f]+::(100|128)$",
+      "decision": "keep",
+      "reason": "length cap of one context/trailer line (keeps forged or huge user values out of commits; not a tunable)"
+    },
+    {
+      "match": "^autoair/api/routers/(specs|vcs)\\.py::kwarg::(Field|Query)\\(max_length=\\)::",
+      "decision": "keep",
+      "reason": "request field size bound (input validation; server.max_body_bytes caps whole bodies)"
+    },
+    {
+      "match": "^autoair/lsp/config\\.py::kwarg::Field\\(",
+      "decision": "config",
+      "setting": "(default / validation bound of the lsp.* setting declared here)"
+    },
+    {
+      "match": "autoair/api/routers/airflow\\.py::regex::",
+      "decision": "keep",
+      "reason": "Airflow semantic-version parsing grammar; not an operator policy."
+    },
+    {
+      "match": "autoair/gateway/__init__\\.py::number::.*::405$",
+      "decision": "keep",
+      "reason": "HTTP Method Not Allowed status; protocol constant."
+    },
+    {
+      "match": "autoair/policy_rules\\.py::",
+      "decision": "keep",
+      "reason": "Persisted policy-rule schema bounds and identifier grammar; rule expressions and messages are configurable."
+    },
+    {
+      "match": "autoair/policy_rules\\.py::url::",
+      "decision": "keep",
+      "reason": "Allowed HTTP transport schemes for the configurable OPA endpoint."
+    },
+    {
+      "match": "autoair/registry/__init__\\.py::constant::(ICON_PATTERN|COLOR_PATTERN)",
+      "decision": "keep",
+      "reason": "Custom-node metadata schema: icon identifiers and six-digit CSS colours."
+    },
+    {
+      "match": "autoair/registry/__init__\\.py::url::",
+      "decision": "keep",
+      "reason": "Require HTTPS for plugin documentation links."
+    },
+    {
+      "match": "autoair/spec/env_mapping\\.py::constant::",
+      "decision": "keep",
+      "reason": "Syntax grammar for explicit Jinja environment references; alias maps are configurable per environment."
+    },
+    {
+      "match": "^autoair/kb/config\\.py::",
+      "decision": "config",
+      "setting": "(default / validation bound / pattern of the kb.* setting declared here)"
+    }
+  ],
+  "decisions": {
+    "autoair/_compat.py::<module>::constant::LATEST_KNOWN": {
+      "decision": "keep",
+      "reason": "newest Airflow version this release knows (feature gating data); target_airflow_version selects the validated version"
+    },
+    "autoair/_compat.py::<module>::constant::_SYMBOL_LOCATIONS": {
+      "decision": "keep",
+      "reason": "where Airflow symbols live per Airflow version (compatibility data)"
+    },
+    "autoair/admin.py::<module>::constant::CSV_FIELDS": {
+      "decision": "keep",
+      "reason": "admin panel scan bound / export limit (bounded work per request)"
+    },
+    "autoair/admin.py::<module>::constant::USAGE_SCAN_LIMIT": {
+      "decision": "config",
+      "setting": "admin.usage_scan_limit (this constant is the fallback for callers without settings)"
+    },
+    "autoair/admin.py::<module>::constant::USER_SEEN_INTERVAL": {
+      "decision": "keep",
+      "reason": "admin panel scan bound / export limit (bounded work per request)"
+    },
+    "autoair/admin.py::SeenUser::kwarg::Field(default=)": {
+      "decision": "keep",
+      "reason": "admin panel scan bound / export limit (bounded work per request)"
+    },
+    "autoair/admin.py::SeenUser::kwarg::Field(default=)#1": {
+      "decision": "keep",
+      "reason": "admin panel scan bound / export limit (bounded work per request)"
+    },
+    "autoair/admin.py::SeenUsers.due::number::05fbf24c": {
+      "decision": "keep",
+      "reason": "admin panel scan bound / export limit (bounded work per request)"
+    },
+    "autoair/admin.py::SeenUsers.due::number::8a12a315": {
+      "decision": "keep",
+      "reason": "admin panel scan bound / export limit (bounded work per request)"
+    },
+    "autoair/api/app.py::<module>::constant::STATIC_DIR": {
+      "decision": "keep",
+      "reason": "location of the packaged frontend"
+    },
+    "autoair/api/app.py::<module>::constant::_HASHED": {
+      "decision": "keep",
+      "reason": "content-hash naming of the frontend build (decides cache headers)"
+    },
+    "autoair/api/app.py::_feature_gate.gated::number::ff1eb8bd": {
+      "decision": "keep",
+      "reason": "WebSocket close code 1008 (policy violation; protocol)"
+    },
+    "autoair/api/app.py::_index_html::kwarg::sub(count=)": {
+      "decision": "keep",
+      "reason": "replace only the first <title>"
+    },
+    "autoair/api/app.py::_index_html::regex::re.sub:38746402": {
+      "decision": "keep",
+      "reason": "HTML <title> element of the built index page (ui.title replaces its text)"
+    },
+    "autoair/api/deps.py::http_error::number::15aa0c7e": {
+      "decision": "keep",
+      "reason": "HTTP status code (protocol)"
+    },
+    "autoair/api/deps.py::http_error::number::ab7f7b95": {
+      "decision": "keep",
+      "reason": "message truncation / HTTP status class boundary (presentation/protocol)"
+    },
+    "autoair/api/routers/admin.py::<module>::kwarg::Query(max_length=)": {
+      "decision": "keep",
+      "reason": "admin panel scan bound / export limit (bounded work per request)"
+    },
+    "autoair/api/routers/admin.py::<module>::path::492924f5": {
+      "decision": "keep",
+      "reason": "admin panel scan bound / export limit (bounded work per request)"
+    },
+    "autoair/api/routers/admin.py::_iso::kwarg::HTTPException(status_code=)": {
+      "decision": "keep",
+      "reason": "admin panel scan bound / export limit (bounded work per request)"
+    },
+    "autoair/api/routers/admin.py::admin_ai_usage::default::days": {
+      "decision": "keep",
+      "reason": "admin panel scan bound / export limit (bounded work per request)"
+    },
+    "autoair/api/routers/admin.py::admin_ai_usage::kwarg::Query(ge=)": {
+      "decision": "keep",
+      "reason": "admin panel scan bound / export limit (bounded work per request)"
+    },
+    "autoair/api/routers/admin.py::admin_ai_usage::kwarg::Query(le=)": {
+      "decision": "keep",
+      "reason": "admin panel scan bound / export limit (bounded work per request)"
+    },
+    "autoair/api/routers/admin.py::admin_ai_usage::path::321e24c9": {
+      "decision": "keep",
+      "reason": "admin panel scan bound / export limit (bounded work per request)"
+    },
+    "autoair/api/routers/admin.py::admin_audit::default::limit": {
+      "decision": "keep",
+      "reason": "admin panel scan bound / export limit (bounded work per request)"
+    },
+    "autoair/api/routers/admin.py::admin_audit::default::offset": {
+      "decision": "keep",
+      "reason": "API default (first page)"
+    },
+    "autoair/api/routers/admin.py::admin_audit::kwarg::Query(ge=)": {
+      "decision": "keep",
+      "reason": "admin panel scan bound / export limit (bounded work per request)"
+    },
+    "autoair/api/routers/admin.py::admin_audit::kwarg::Query(ge=)#1": {
+      "decision": "keep",
+      "reason": "admin panel scan bound / export limit (bounded work per request)"
+    },
+    "autoair/api/routers/admin.py::admin_audit::kwarg::Query(le=)": {
+      "decision": "keep",
+      "reason": "admin panel scan bound / export limit (bounded work per request)"
+    },
+    "autoair/api/routers/admin.py::admin_audit::kwarg::Query(le=)#1": {
+      "decision": "keep",
+      "reason": "admin panel scan bound / export limit (bounded work per request)"
+    },
+    "autoair/api/routers/admin.py::admin_audit::path::dfb97ee0": {
+      "decision": "keep",
+      "reason": "admin panel scan bound / export limit (bounded work per request)"
+    },
+    "autoair/api/routers/admin.py::admin_audit_csv::kwarg::Query(ge=)": {
+      "decision": "keep",
+      "reason": "admin panel scan bound / export limit (bounded work per request)"
+    },
+    "autoair/api/routers/admin.py::admin_audit_csv::number::9f9af029": {
+      "decision": "keep",
+      "reason": "admin panel scan bound / export limit (bounded work per request)"
+    },
+    "autoair/api/routers/admin.py::admin_audit_csv::path::bdb2a474": {
+      "decision": "keep",
+      "reason": "admin panel scan bound / export limit (bounded work per request)"
+    },
+    "autoair/api/routers/admin.py::admin_caches::path::9d249759": {
+      "decision": "keep",
+      "reason": "admin panel scan bound / export limit (bounded work per request)"
+    },
+    "autoair/api/routers/admin.py::admin_clear_cache::kwarg::HTTPException(status_code=)": {
+      "decision": "keep",
+      "reason": "admin panel scan bound / export limit (bounded work per request)"
+    },
+    "autoair/api/routers/admin.py::admin_clear_cache::path::1b1e7df0": {
+      "decision": "keep",
+      "reason": "admin panel scan bound / export limit (bounded work per request)"
+    },
+    "autoair/api/routers/admin.py::admin_database::path::dbc9bb45": {
+      "decision": "keep",
+      "reason": "admin panel scan bound / export limit (bounded work per request)"
+    },
+    "autoair/api/routers/admin.py::admin_database_upgrade::kwarg::HTTPException(status_code=)": {
+      "decision": "keep",
+      "reason": "admin panel scan bound / export limit (bounded work per request)"
+    },
+    "autoair/api/routers/admin.py::admin_database_upgrade::path::74fbd81d": {
+      "decision": "keep",
+      "reason": "admin panel scan bound / export limit (bounded work per request)"
+    },
+    "autoair/api/routers/admin.py::admin_delete_template::kwarg::HTTPException(status_code=)": {
+      "decision": "keep",
+      "reason": "admin panel scan bound / export limit (bounded work per request)"
+    },
+    "autoair/api/routers/admin.py::admin_delete_template::kwarg::HTTPException(status_code=)#1": {
+      "decision": "keep",
+      "reason": "admin panel scan bound / export limit (bounded work per request)"
+    },
+    "autoair/api/routers/admin.py::admin_delete_template::path::d547c3ba": {
+      "decision": "keep",
+      "reason": "admin panel scan bound / export limit (bounded work per request)"
+    },
+    "autoair/api/routers/admin.py::admin_overview::path::f5f032b1": {
+      "decision": "keep",
+      "reason": "admin panel scan bound / export limit (bounded work per request)"
+    },
+    "autoair/api/routers/admin.py::admin_proposals::path::3ed0a7db": {
+      "decision": "keep",
+      "reason": "admin panel scan bound / export limit (bounded work per request)"
+    },
+    "autoair/api/routers/admin.py::admin_templates::path::1e32c6a2": {
+      "decision": "keep",
+      "reason": "admin panel scan bound / export limit (bounded work per request)"
+    },
+    "autoair/api/routers/admin.py::admin_users::path::e6ef7307": {
+      "decision": "keep",
+      "reason": "admin panel scan bound / export limit (bounded work per request)"
+    },
+    "autoair/api/routers/admin.py::proposals_overview::number::9f9af029": {
+      "decision": "keep",
+      "reason": "admin panel scan bound / export limit (bounded work per request)"
+    },
+    "autoair/api/routers/admin.py::proposals_overview::number::9f9af029#1": {
+      "decision": "keep",
+      "reason": "admin panel scan bound / export limit (bounded work per request)"
+    },
+    "autoair/api/routers/admin_ai.py::<module>::constant::_NAME": {
+      "decision": "keep",
+      "reason": "MCP server id format (same as ai.mcp_client.servers[].name; tool-name prefix)"
+    },
+    "autoair/api/routers/admin_features.py::FeatureOverrideRequest::kwarg::Field(max_length=)": {
+      "decision": "keep",
+      "reason": "input bound of the runtime feature-override request (validation)"
+    },
+    "autoair/api/routers/admin_features.py::FeatureOverrideRequest::kwarg::Field(min_length=)": {
+      "decision": "keep",
+      "reason": "input bound of the runtime feature-override request (validation)"
+    },
+    "autoair/api/routers/admin_features.py::admin_set_feature::kwarg::Path(max_length=)": {
+      "decision": "keep",
+      "reason": "input bound of the runtime feature-override request (validation)"
+    },
+    "autoair/api/routers/ai_assistants.py::<module>::constant::_SHARED": {
+      "decision": "keep",
+      "reason": "tools shared with the other agents, to which the role allow-list (ai.guardrails.tool_allowlist) applies"
+    },
+    "autoair/api/routers/ai_assistants.py::ActionDecision::kwarg::Field(max_length=)": {
+      "decision": "keep",
+      "reason": "request validation bound (decision comment)"
+    },
+    "autoair/api/routers/ai_assistants.py::AnalysisDecision::kwarg::Field(max_length=)": {
+      "decision": "keep",
+      "reason": "request validation bound (decision comment)"
+    },
+    "autoair/api/routers/ai_assistants.py::ProposalDecision::kwarg::Field(max_length=)": {
+      "decision": "keep",
+      "reason": "request validation bound (decision comment)"
+    },
+    "autoair/api/routers/ai_assistants.py::ThreadRename::kwarg::Field(max_length=)": {
+      "decision": "keep",
+      "reason": "request validation bound (thread title)"
+    },
+    "autoair/api/routers/ai_assistants.py::TroubleshootOptions::kwarg::Field(default=)": {
+      "decision": "keep",
+      "reason": "response model default; the value comes from ai.troubleshoot.max_actions"
+    },
+    "autoair/api/routers/ai_assistants.py::_audit_decision::number::310b86e0": {
+      "decision": "keep",
+      "reason": "bounded list of sources kept in one audit record"
+    },
+    "autoair/api/routers/ai_assistants.py::list_analyses::kwarg::Query(max_length=)": {
+      "decision": "keep",
+      "reason": "request validation bound (DAG id)"
+    },
+    "autoair/api/routers/airflow.py::<module>::constant::T": {
+      "decision": "keep",
+      "reason": "typing helper / runtime object, not a value"
+    },
+    "autoair/api/routers/airflow.py::<module>::constant::_CODE_TYPES": {
+      "decision": "keep",
+      "reason": "spec value tags ($type) that hold code (spec protocol)"
+    },
+    "autoair/api/routers/airflow.py::BackfillRequest::kwarg::Field(default=)": {
+      "decision": "keep",
+      "reason": "API request default (backfill max_active_runs / next-run preview count); clients send their own"
+    },
+    "autoair/api/routers/airflow.py::NextRunsRequest::kwarg::Field(default=)": {
+      "decision": "keep",
+      "reason": "API request default (backfill max_active_runs / next-run preview count); clients send their own"
+    },
+    "autoair/api/routers/airflow.py::NextRunsRequest::kwarg::Field(le=)": {
+      "decision": "keep",
+      "reason": "API bound of the next-run preview count"
+    },
+    "autoair/api/routers/deploy_target.py::get_git_credentials::kwarg::Query(max_length=)": {
+      "decision": "keep",
+      "reason": "team name length bound of an input parameter (same bound as other team/connection id inputs)"
+    },
+    "autoair/api/routers/icons.py::<module>::constant::MAX_UPLOAD_CEILING": {
+      "decision": "keep",
+      "reason": "schema ceiling; the effective limit is icons.max_upload_bytes"
+    },
+    "autoair/api/routers/icons.py::<module>::constant::_CUSTOM": {
+      "decision": "keep",
+      "reason": "feature-flag dependency object (features.*), not a value"
+    },
+    "autoair/api/routers/icons.py::<module>::constant::_SAFE_HEADERS": {
+      "decision": "keep",
+      "reason": "security headers of served icon files (CSP, nosniff)"
+    },
+    "autoair/api/routers/icons.py::IconUpload::kwarg::Field(max_length=)": {
+      "decision": "keep",
+      "reason": "icon display-name length (slugified into a file name)"
+    },
+    "autoair/api/routers/icons.py::IconUpload::number::dd7c1a3d": {
+      "decision": "keep",
+      "reason": "allowance for a data-URL prefix in base64 bodies"
+    },
+    "autoair/api/routers/icons.py::get_icon::number::9f9af029": {
+      "decision": "keep",
+      "reason": "display truncation of messages/summaries (presentation)"
+    },
+    "autoair/api/routers/icons.py::upload_icon::number::12835113": {
+      "decision": "keep",
+      "reason": "bytes -> KB unit conversion"
+    },
+    "autoair/api/routers/icons.py::upload_icon::number::dd7c1a3d": {
+      "decision": "keep",
+      "reason": "allowance for a data-URL prefix in base64 bodies"
+    },
+    "autoair/api/routers/interchange.py::<module>::constant::MAX_SOURCE": {
+      "decision": "keep",
+      "reason": "schema ceiling; the effective limit is interchange.max_source_chars"
+    },
+    "autoair/api/routers/interchange.py::<module>::constant::_IMPORTS": {
+      "decision": "keep",
+      "reason": "feature-flag dependency object (features.*), not a value"
+    },
+    "autoair/api/routers/interchange.py::CodeSyncBody::kwarg::Field(max_length=)": {
+      "decision": "keep",
+      "reason": "dag_id length bound (Airflow's DAG id limit, schema)"
+    },
+    "autoair/api/routers/interchange.py::SourceBody::regex::pattern:aeeabf7e": {
+      "decision": "keep",
+      "reason": "uploaded file name safety (no paths)"
+    },
+    "autoair/api/routers/interchange.py::sync_python_code::regex::re.sub:e9e20dd3": {
+      "decision": "keep",
+      "reason": "file-name sanitising of the temporary import file (internal)"
+    },
+    "autoair/api/routers/kb.py::<module>::constant::_FILTER": {
+      "decision": "keep",
+      "reason": "request validation bound of the /api/kb routes (schema; result counts are capped by kb.search.max_results)"
+    },
+    "autoair/api/routers/kb.py::<module>::constant::_ID": {
+      "decision": "keep",
+      "reason": "request validation bound of the /api/kb routes (schema; result counts are capped by kb.search.max_results)"
+    },
+    "autoair/api/routers/kb.py::<module>::path::e2662f96": {
+      "decision": "keep",
+      "reason": "request validation bound of the /api/kb routes (schema; result counts are capped by kb.search.max_results)"
+    },
+    "autoair/api/routers/kb.py::<module>::path::e2662f96#1": {
+      "decision": "keep",
+      "reason": "request validation bound of the /api/kb routes (schema; result counts are capped by kb.search.max_results)"
+    },
+    "autoair/api/routers/kb.py::RefreshRequest::kwarg::Field(max_length=)": {
+      "decision": "keep",
+      "reason": "request validation bound of the /api/kb routes (schema; result counts are capped by kb.search.max_results)"
+    },
+    "autoair/api/routers/kb.py::cancel::path::e084085b": {
+      "decision": "keep",
+      "reason": "request validation bound of the /api/kb routes (schema; result counts are capped by kb.search.max_results)"
+    },
+    "autoair/api/routers/kb.py::export::kwarg::Query(max_length=)": {
+      "decision": "keep",
+      "reason": "request validation bound of the /api/kb routes (schema; result counts are capped by kb.search.max_results)"
+    },
+    "autoair/api/routers/kb.py::export::number::9f9af029": {
+      "decision": "keep",
+      "reason": "request validation bound of the /api/kb routes (schema; result counts are capped by kb.search.max_results)"
+    },
+    "autoair/api/routers/kb.py::export::path::572be6e2": {
+      "decision": "keep",
+      "reason": "request validation bound of the /api/kb routes (schema; result counts are capped by kb.search.max_results)"
+    },
+    "autoair/api/routers/kb.py::import_bundle::kwarg::HTTPException(status_code=)": {
+      "decision": "keep",
+      "reason": "request validation bound of the /api/kb routes (schema; result counts are capped by kb.search.max_results)"
+    },
+    "autoair/api/routers/kb.py::import_bundle::kwarg::HTTPException(status_code=)#1": {
+      "decision": "keep",
+      "reason": "request validation bound of the /api/kb routes (schema; result counts are capped by kb.search.max_results)"
+    },
+    "autoair/api/routers/kb.py::import_bundle::kwarg::HTTPException(status_code=)#2": {
+      "decision": "keep",
+      "reason": "request validation bound of the /api/kb routes (schema; result counts are capped by kb.search.max_results)"
+    },
+    "autoair/api/routers/kb.py::import_bundle::kwarg::HTTPException(status_code=)#3": {
+      "decision": "keep",
+      "reason": "request validation bound of the /api/kb routes (schema; result counts are capped by kb.search.max_results)"
+    },
+    "autoair/api/routers/kb.py::import_bundle::path::0728eddc": {
+      "decision": "keep",
+      "reason": "request validation bound of the /api/kb routes (schema; result counts are capped by kb.search.max_results)"
+    },
+    "autoair/api/routers/kb.py::put_source::kwarg::HTTPException(status_code=)": {
+      "decision": "keep",
+      "reason": "request validation bound of the /api/kb routes (schema; result counts are capped by kb.search.max_results)"
+    },
+    "autoair/api/routers/kb.py::put_source::kwarg::HTTPException(status_code=)#1": {
+      "decision": "keep",
+      "reason": "request validation bound of the /api/kb routes (schema; result counts are capped by kb.search.max_results)"
+    },
+    "autoair/api/routers/kb.py::put_source::path::88a0933d": {
+      "decision": "keep",
+      "reason": "request validation bound of the /api/kb routes (schema; result counts are capped by kb.search.max_results)"
+    },
+    "autoair/api/routers/kb.py::refresh::kwarg::HTTPException(status_code=)": {
+      "decision": "keep",
+      "reason": "request validation bound of the /api/kb routes (schema; result counts are capped by kb.search.max_results)"
+    },
+    "autoair/api/routers/kb.py::refresh::kwarg::HTTPException(status_code=)#1": {
+      "decision": "keep",
+      "reason": "request validation bound of the /api/kb routes (schema; result counts are capped by kb.search.max_results)"
+    },
+    "autoair/api/routers/kb.py::refresh::kwarg::post(status_code=)": {
+      "decision": "keep",
+      "reason": "request validation bound of the /api/kb routes (schema; result counts are capped by kb.search.max_results)"
+    },
+    "autoair/api/routers/kb.py::refresh::path::ab67e325": {
+      "decision": "keep",
+      "reason": "request validation bound of the /api/kb routes (schema; result counts are capped by kb.search.max_results)"
+    },
+    "autoair/api/routers/kb.py::reset_source::kwarg::HTTPException(status_code=)": {
+      "decision": "keep",
+      "reason": "request validation bound of the /api/kb routes (schema; result counts are capped by kb.search.max_results)"
+    },
+    "autoair/api/routers/kb.py::reset_source::path::0eca2ce8": {
+      "decision": "keep",
+      "reason": "request validation bound of the /api/kb routes (schema; result counts are capped by kb.search.max_results)"
+    },
+    "autoair/api/routers/kb.py::search::default::limit": {
+      "decision": "keep",
+      "reason": "request validation bound of the /api/kb routes (schema; result counts are capped by kb.search.max_results)"
+    },
+    "autoair/api/routers/kb.py::search::kwarg::HTTPException(status_code=)": {
+      "decision": "keep",
+      "reason": "request validation bound of the /api/kb routes (schema; result counts are capped by kb.search.max_results)"
+    },
+    "autoair/api/routers/kb.py::search::kwarg::Query(ge=)": {
+      "decision": "keep",
+      "reason": "request validation bound of the /api/kb routes (schema; result counts are capped by kb.search.max_results)"
+    },
+    "autoair/api/routers/kb.py::search::kwarg::Query(le=)": {
+      "decision": "keep",
+      "reason": "request validation bound of the /api/kb routes (schema; result counts are capped by kb.search.max_results)"
+    },
+    "autoair/api/routers/kb.py::search::kwarg::Query(max_length=)": {
+      "decision": "keep",
+      "reason": "request validation bound of the /api/kb routes (schema; result counts are capped by kb.search.max_results)"
+    },
+    "autoair/api/routers/kb.py::search::kwarg::Query(max_length=)#1": {
+      "decision": "keep",
+      "reason": "request validation bound of the /api/kb routes (schema; result counts are capped by kb.search.max_results)"
+    },
+    "autoair/api/routers/kb.py::search::kwarg::Query(min_length=)": {
+      "decision": "keep",
+      "reason": "request validation bound of the /api/kb routes (schema; result counts are capped by kb.search.max_results)"
+    },
+    "autoair/api/routers/kb.py::search::path::e3319f35": {
+      "decision": "keep",
+      "reason": "request validation bound of the /api/kb routes (schema; result counts are capped by kb.search.max_results)"
+    },
+    "autoair/api/routers/kb.py::sources::path::be308c2b": {
+      "decision": "keep",
+      "reason": "request validation bound of the /api/kb routes (schema; result counts are capped by kb.search.max_results)"
+    },
+    "autoair/api/routers/kb.py::status::path::af24ddb2": {
+      "decision": "keep",
+      "reason": "request validation bound of the /api/kb routes (schema; result counts are capped by kb.search.max_results)"
+    },
+    "autoair/api/routers/lsp_ws.py::<module>::constant::FEATURE": {
+      "decision": "keep",
+      "reason": "name of the feature flag guarding the routes (features.ide_language_server)"
+    },
+    "autoair/api/routers/lsp_ws.py::<module>::constant::TICKET_TTL": {
+      "decision": "keep",
+      "reason": "lifetime of the one-shot ticket exchanged right before the WebSocket opens (protocol-internal; sessions themselves follow lsp.idle_timeout)"
+    },
+    "autoair/api/routers/lsp_ws.py::_deny::kwarg::close(code=)": {
+      "decision": "keep",
+      "reason": "WebSocket close code 1008 policy violation (protocol)"
+    },
+    "autoair/api/routers/lsp_ws.py::lsp_socket::kwarg::close(code=)": {
+      "decision": "keep",
+      "reason": "WebSocket close code 1000 normal closure (protocol)"
+    },
+    "autoair/api/routers/lsp_ws.py::lsp_socket::number::775bc5c3": {
+      "decision": "keep",
+      "reason": "WebSocket close-reason truncation (RFC 6455 limits the reason to 123 bytes)"
+    },
+    "autoair/api/routers/meta.py::get_me::kwarg::Query(max_length=)": {
+      "decision": "keep",
+      "reason": "API bound of a team name query parameter"
+    },
+    "autoair/api/routers/ops.py::<module>::constant::DEPLOYS": {
+      "decision": "keep",
+      "reason": "Prometheus metric definition (metric names/labels are a monitoring contract)"
+    },
+    "autoair/api/routers/ops.py::<module>::constant::LATENCY": {
+      "decision": "keep",
+      "reason": "Prometheus metric definition (names/buckets are a monitoring contract)"
+    },
+    "autoair/api/routers/ops.py::<module>::constant::REGISTRY": {
+      "decision": "keep",
+      "reason": "Prometheus registry object"
+    },
+    "autoair/api/routers/ops.py::<module>::constant::REQUESTS": {
+      "decision": "keep",
+      "reason": "Prometheus metric definition (metric names/labels are a monitoring contract)"
+    },
+    "autoair/api/routers/runs.py::<module>::constant::MAX_TIMEOUT": {
+      "decision": "keep",
+      "reason": "schema ceiling; the effective limit is runner.max_timeout"
+    },
+    "autoair/api/routers/specs.py::ProposalDeployRequest::kwarg::Field(max_length=)": {
+      "decision": "keep",
+      "reason": "API bound of a commit message (same as review comments)"
+    },
+    "autoair/api/routers/specs.py::ReviewRequest::kwarg::Field(max_length=)": {
+      "decision": "keep",
+      "reason": "API bounds of a review (etag length, comment length)"
+    },
+    "autoair/api/routers/specs.py::ReviewRequest::kwarg::Field(max_length=)#1": {
+      "decision": "keep",
+      "reason": "API bounds of a review (etag length, comment length)"
+    },
+    "autoair/api/routers/specs.py::list_reviews::number::9f9af029": {
+      "decision": "keep",
+      "reason": "display truncation of messages/summaries (presentation)"
+    },
+    "autoair/api/routers/tools.py::generate_code::kwarg::Query(max_length=)": {
+      "decision": "keep",
+      "reason": "schema bound of an environment name (input validation); environments come from the spec"
+    },
+    "autoair/api/routers/vcs.py::<module>::constant::CURRENT": {
+      "decision": "keep",
+      "reason": "API sentinel naming the current version"
+    },
+    "autoair/audit.py::<module>::constant::OTEL_SCOPE": {
+      "decision": "keep",
+      "reason": "OpenTelemetry instrumentation scope name of audit spans (protocol: documented attribute namespace)"
+    },
+    "autoair/audit.py::<module>::constant::_OTEL_WARNED": {
+      "decision": "keep",
+      "reason": "warn-once flag (internal state)"
+    },
+    "autoair/audit.py::FileAuditRepository.query::default::offset": {
+      "decision": "keep",
+      "reason": "API default (first page)"
+    },
+    "autoair/catalog/discovery.py::<module>::constant::PROVIDER_ENTRY_POINT_GROUP": {
+      "decision": "keep",
+      "reason": "Airflow's provider entry point group (protocol)"
+    },
+    "autoair/catalog/discovery.py::<module>::constant::_AIRFLOW_REQ": {
+      "decision": "keep",
+      "reason": "PEP 508 requirement on Airflow: what makes a distribution an Airflow library (others: extra_operator_distributions)"
+    },
+    "autoair/catalog/discovery.py::<module>::constant::_APPLY_LOCK": {
+      "decision": "keep",
+      "reason": "process state (lock), not a value"
+    },
+    "autoair/catalog/discovery.py::<module>::constant::_CLASS_RE": {
+      "decision": "keep",
+      "reason": "Python class-definition syntax (pre-filter)"
+    },
+    "autoair/catalog/discovery.py::<module>::constant::_FILTERS": {
+      "decision": "keep",
+      "reason": "compiled discovery.* settings, not a value"
+    },
+    "autoair/catalog/discovery.py::<module>::constant::_RECORDING": {
+      "decision": "keep",
+      "reason": "thread-local collector of discovery skips (catalog diagnostics)"
+    },
+    "autoair/catalog/discovery.py::<module>::constant::_REGISTERED": {
+      "decision": "keep",
+      "reason": "process state, not a value"
+    },
+    "autoair/catalog/discovery.py::_norm::regex::re.sub:edbd6dad": {
+      "decision": "keep",
+      "reason": "PEP 503 distribution-name normalisation"
+    },
+    "autoair/catalog/discovery.py::airflow_folders::path::80a72ec4": {
+      "decision": "keep",
+      "reason": "Airflow's own AIRFLOW_HOME default"
+    },
+    "autoair/catalog/importer.py::<module>::constant::_MARKER": {
+      "decision": "keep",
+      "reason": "framing of the introspection subprocess output"
+    },
+    "autoair/catalog/importer.py::introspect_in_subprocess::default::timeout": {
+      "decision": "config",
+      "setting": "catalog_fallback_timeout (passed by the catalog)"
+    },
+    "autoair/catalog/importer.py::introspect_module::number::ab7f7b95": {
+      "decision": "keep",
+      "reason": "message truncation / HTTP status class boundary (presentation/protocol)"
+    },
+    "autoair/catalog/introspection.py::<module>::constant::_CONN_RE": {
+      "decision": "config",
+      "setting": "catalog.connection_param_patterns (this is the built-in default the build re-evaluates)"
+    },
+    "autoair/catalog/introspection.py::<module>::constant::_RENDERER_HINTS": {
+      "decision": "keep",
+      "reason": "Airflow template_fields_renderers names -> editor modes"
+    },
+    "autoair/catalog/introspection.py::<module>::constant::_SKIP_PARAMS": {
+      "decision": "keep",
+      "reason": "Python signature mechanics (self/args/kwargs)"
+    },
+    "autoair/catalog/introspection.py::parse_param_docs::regex::re.match:56255333": {
+      "decision": "keep",
+      "reason": "Sphinx docstring syntax (:param)"
+    },
+    "autoair/catalog/introspection.py::summarize_doc::number::e26973e6": {
+      "decision": "keep",
+      "reason": "message truncation / HTTP status class boundary (presentation/protocol)"
+    },
+    "autoair/catalog/metadata.py::<module>::constant::CODE_WIDGETS": {
+      "decision": "keep",
+      "reason": "the code-editor widgets of the param override schema (API contract)"
+    },
+    "autoair/catalog/metadata.py::<module>::constant::METADATA_ENTRY_POINT_GROUP": {
+      "decision": "keep",
+      "reason": "public extension point name (entry point group packages declare)"
+    },
+    "autoair/catalog/metadata.py::<module>::constant::METADATA_FILES": {
+      "decision": "keep",
+      "reason": "public extension point: file names packages ship (docs/extending.md)"
+    },
+    "autoair/catalog/metadata.py::<module>::constant::_URL": {
+      "decision": "keep",
+      "reason": "docs_url validation (http/https links only)"
+    },
+    "autoair/catalog/metadata.py::OperatorMetadata::kwarg::Field(max_length=)": {
+      "decision": "keep",
+      "reason": "package metadata schema bound (format of autoair.yaml; whole file capped by catalog.metadata_max_bytes)"
+    },
+    "autoair/catalog/metadata.py::OperatorMetadata::kwarg::Field(max_length=)#1": {
+      "decision": "keep",
+      "reason": "package metadata schema bound (format of autoair.yaml; whole file capped by catalog.metadata_max_bytes)"
+    },
+    "autoair/catalog/metadata.py::PackageMetadata::kwarg::Field(default=)": {
+      "decision": "keep",
+      "reason": "package metadata format version"
+    },
+    "autoair/catalog/metadata.py::PackageMetadata::kwarg::Field(max_length=)": {
+      "decision": "keep",
+      "reason": "package metadata schema bound (format of autoair.yaml; whole file capped by catalog.metadata_max_bytes)"
+    },
+    "autoair/catalog/models.py::CatalogMetadataSource::kwarg::Field(default=)": {
+      "decision": "keep",
+      "reason": "diagnostics counter initial value"
+    },
+    "autoair/catalog/models.py::CatalogMetadataSource::kwarg::Field(default=)#1": {
+      "decision": "keep",
+      "reason": "diagnostics counter initial value"
+    },
+    "autoair/catalog/models.py::CatalogSourceInfo::kwarg::Field(default=)": {
+      "decision": "keep",
+      "reason": "diagnostics counter initial value"
+    },
+    "autoair/catalog/models.py::OperatorExample::kwarg::Field(max_length=)": {
+      "decision": "keep",
+      "reason": "package metadata schema bound (format of autoair.yaml; whole file capped by catalog.metadata_max_bytes)"
+    },
+    "autoair/catalog/models.py::OperatorExample::kwarg::Field(max_length=)#1": {
+      "decision": "keep",
+      "reason": "package metadata schema bound (format of autoair.yaml; whole file capped by catalog.metadata_max_bytes)"
+    },
+    "autoair/catalog/providers.py::<module>::constant::PROVIDER_ENTRY_POINT_GROUP": {
+      "decision": "keep",
+      "reason": "Airflow's provider entry point group (protocol)"
+    },
+    "autoair/catalog/providers.py::_normalize::regex::re.sub:edbd6dad": {
+      "decision": "keep",
+      "reason": "PEP 503/508 parsing of distribution names and Airflow requirements"
+    },
+    "autoair/catalog/providers.py::_requires_airflow::regex::re.match:580268a0": {
+      "decision": "keep",
+      "reason": "PEP 503/508 parsing of distribution names and Airflow requirements"
+    },
+    "autoair/catalog/providers.py::_requires_airflow::regex::re.match:e7738d9d": {
+      "decision": "keep",
+      "reason": "PEP 503/508 parsing of distribution names and Airflow requirements"
+    },
+    "autoair/catalog/service.py::<module>::constant::KNOWN_QUEUE_SCHEMES": {
+      "decision": "keep",
+      "reason": "Airflow common.messaging queue schemes and their providers (protocol data)"
+    },
+    "autoair/catalog/service.py::<module>::constant::SOURCE_ENTRY_POINT_GROUP": {
+      "decision": "keep",
+      "reason": "AutoAir catalog-source entry point group (public extension contract)"
+    },
+    "autoair/catalog/service.py::<module>::constant::TASKFLOW_EQUIVALENTS": {
+      "decision": "keep",
+      "reason": "maps Python-callable operators to TaskFlow nodes (code generation semantics)"
+    },
+    "autoair/catalog/service.py::<module>::constant::_PROBE_CACHE": {
+      "decision": "keep",
+      "reason": "process state, not a value"
+    },
+    "autoair/catalog/service.py::<module>::constant::_TMP_MAX_AGE": {
+      "decision": "keep",
+      "reason": "age after which a crashed writer's temp file is garbage (housekeeping; any value above a write's duration works)"
+    },
+    "autoair/catalog/service.py::<module>::constant::_TRIGGER_SKIP": {
+      "decision": "keep",
+      "reason": "Python/Airflow trigger signature mechanics"
+    },
+    "autoair/catalog/service.py::OperatorCatalog.__init__::default::fallback_timeout": {
+      "decision": "config",
+      "setting": "catalog_fallback_timeout"
+    },
+    "autoair/catalog/service.py::_Builder.preparse::kwarg::map(chunksize=)": {
+      "decision": "keep",
+      "reason": "process-pool batching (internal); parallelism is discovery.workers / discovery.parallel_threshold"
+    },
+    "autoair/catalog/service.py::_Builder.static_record::number::ab7f7b95": {
+      "decision": "keep",
+      "reason": "message truncation / HTTP status class boundary (presentation/protocol)"
+    },
+    "autoair/catalog/service.py::_first_sentence::number::9f9af029": {
+      "decision": "keep",
+      "reason": "display truncation of messages/summaries (presentation)"
+    },
+    "autoair/catalog/service.py::_first_sentence::regex::re.search:fa7be45d": {
+      "decision": "keep",
+      "reason": "docstring summary / connection-param name parsing"
+    },
+    "autoair/catalog/service.py::_logic_files::path::140a83af": {
+      "decision": "keep",
+      "reason": "source files hashed into the catalog logic fingerprint"
+    },
+    "autoair/catalog/service.py::_logic_files::path::1f3ecaa7": {
+      "decision": "keep",
+      "reason": "source files hashed into the catalog logic fingerprint"
+    },
+    "autoair/catalog/service.py::_logic_files::path::b8f2062a": {
+      "decision": "keep",
+      "reason": "packaged logo manifest (resource)"
+    },
+    "autoair/catalog/service.py::_prune::default::max_files": {
+      "decision": "config",
+      "setting": "discovery.cache_max_files"
+    },
+    "autoair/catalog/service.py::probe_imports::default::timeout": {
+      "decision": "config",
+      "setting": "discovery.probe_timeout"
+    },
+    "autoair/catalog/static.py::<module>::constant::CANONICAL": {
+      "decision": "keep",
+      "reason": "Python typing names / Airflow class model used by static analysis (semantics)"
+    },
+    "autoair/catalog/static.py::<module>::constant::PYTHON_REF": {
+      "decision": "keep",
+      "reason": "JSON Schema extension key shared with the frontend (protocol)"
+    },
+    "autoair/catalog/static.py::<module>::constant::_ANY": {
+      "decision": "keep",
+      "reason": "Python typing names / Airflow class model used by static analysis (semantics)"
+    },
+    "autoair/catalog/static.py::<module>::constant::_ARRAYS": {
+      "decision": "keep",
+      "reason": "Python typing names / Airflow class model used by static analysis (semantics)"
+    },
+    "autoair/catalog/static.py::<module>::constant::_CALLABLE": {
+      "decision": "keep",
+      "reason": "Python typing names / Airflow class model used by static analysis (semantics)"
+    },
+    "autoair/catalog/static.py::<module>::constant::_CLASS_ATTRS": {
+      "decision": "keep",
+      "reason": "Python typing names / Airflow class model used by static analysis (semantics)"
+    },
+    "autoair/catalog/static.py::<module>::constant::_FALLBACK_BASE_PARAMS": {
+      "decision": "keep",
+      "reason": "Python typing names / Airflow class model used by static analysis (semantics)"
+    },
+    "autoair/catalog/static.py::<module>::constant::_KNOWN_NON_ROOT": {
+      "decision": "keep",
+      "reason": "Python typing names / Airflow class model used by static analysis (semantics)"
+    },
+    "autoair/catalog/static.py::<module>::constant::_MISSING": {
+      "decision": "keep",
+      "reason": "Python typing names / Airflow class model used by static analysis (semantics)"
+    },
+    "autoair/catalog/static.py::<module>::constant::_NOTSET": {
+      "decision": "keep",
+      "reason": "Python typing names / Airflow class model used by static analysis (semantics)"
+    },
+    "autoair/catalog/static.py::<module>::constant::_OBJECTS": {
+      "decision": "keep",
+      "reason": "Python typing names / Airflow class model used by static analysis (semantics)"
+    },
+    "autoair/catalog/static.py::<module>::constant::_PRIMITIVES": {
+      "decision": "keep",
+      "reason": "Python typing names / Airflow class model used by static analysis (semantics)"
+    },
+    "autoair/catalog/static.py::<module>::constant::_ROOT_NAMES": {
+      "decision": "keep",
+      "reason": "Python typing names / Airflow class model used by static analysis (semantics)"
+    },
+    "autoair/catalog/static.py::<module>::constant::_TRANSPARENT": {
+      "decision": "keep",
+      "reason": "Python typing names / Airflow class model used by static analysis (semantics)"
+    },
+    "autoair/catalog/static.py::StaticAnalyzer._eval_value::regex::re.fullmatch:b248f493": {
+      "decision": "keep",
+      "reason": "Python syntax / Airflow naming used by static analysis"
+    },
+    "autoair/catalog/static.py::StaticAnalyzer._eval_value::regex::re.fullmatch:b640abec": {
+      "decision": "keep",
+      "reason": "Python syntax / Airflow naming used by static analysis"
+    },
+    "autoair/catalog/static.py::_class_info::number::9f9af029": {
+      "decision": "keep",
+      "reason": "display truncation of messages/summaries (presentation)"
+    },
+    "autoair/catalog/static.py::_class_info::regex::re.fullmatch:a7a76cbd": {
+      "decision": "keep",
+      "reason": "Python syntax / Airflow naming used by static analysis"
+    },
+    "autoair/catalog/static.py::looks_like_task_class::regex::re.search:62c57412": {
+      "decision": "keep",
+      "reason": "Python syntax / Airflow naming used by static analysis"
+    },
+    "autoair/catalog/static.py::short_annotation::regex::re.sub:cf7d8def": {
+      "decision": "keep",
+      "reason": "Python syntax / Airflow naming used by static analysis"
+    },
+    "autoair/catalog/static.py::short_annotation::regex::re.sub:deafbb4b": {
+      "decision": "keep",
+      "reason": "Python syntax / Airflow naming used by static analysis"
+    },
+    "autoair/cli.py::ai_serve::default::port": {
+      "decision": "keep",
+      "reason": "CLI option default of the AI/MCP commands (AI area; overridable per invocation)"
+    },
+    "autoair/cli.py::export_openapi::path::aa135df9": {
+      "decision": "keep",
+      "reason": "`autoair export-openapi` output default (development workflow)"
+    },
+    "autoair/cli.py::local::default::port": {
+      "decision": "config",
+      "setting": "server.port (default of `autoair local --port`, same as autoair serve)"
+    },
+    "autoair/cli.py::marketplace_keygen::number::b741f252": {
+      "decision": "keep",
+      "reason": "0o600: private key files must be owner-only (ssh/signing keys)"
+    },
+    "autoair/cli.py::mcp_serve::default::port": {
+      "decision": "keep",
+      "reason": "CLI option default of the AI/MCP commands (AI area; overridable per invocation)"
+    },
+    "autoair/cli.py::mcp_serve::path::b6dd5207": {
+      "decision": "keep",
+      "reason": "CLI option default of the AI/MCP commands (AI area; overridable per invocation)"
+    },
+    "autoair/cli.py::mcp_server::default::port": {
+      "decision": "keep",
+      "reason": "CLI option default of the AI/MCP commands (AI area; overridable per invocation)"
+    },
+    "autoair/codegen/__init__.py::<module>::constant::RAW_HEADER": {
+      "decision": "keep",
+      "reason": "ownership header of deployed raw code files (format constant; carries the marker deploy targets look for)"
+    },
+    "autoair/codegen/__init__.py::<module>::constant::_MARKER": {
+      "decision": "keep",
+      "reason": "ownership marker deploy targets look for (storage.base.GENERATED_MARKER); changing it orphans deployed files"
+    },
+    "autoair/codegen/builder.py::<module>::constant::HEADER": {
+      "decision": "keep",
+      "reason": "generated-file header; carries the ownership marker storage relies on"
+    },
+    "autoair/codegen/builder.py::<module>::constant::_DEADLINE_REFS": {
+      "decision": "keep",
+      "reason": "Airflow DeadlineReference names (Airflow API)"
+    },
+    "autoair/codegen/builder.py::<module>::constant::_LINEAGE_MODULE": {
+      "decision": "keep",
+      "reason": "OpenLineage provider module path (Airflow API)"
+    },
+    "autoair/codegen/builder.py::<module>::constant::_MAPPERS": {
+      "decision": "keep",
+      "reason": "Airflow partition-mapper class names (Airflow API)"
+    },
+    "autoair/codegen/context.py::<module>::constant::COMMON_AI_TOOLSETS": {
+      "decision": "keep",
+      "reason": "import paths and connection keyword of the common.ai provider's toolset classes (provider API)"
+    },
+    "autoair/codegen/context.py::<module>::constant::MATERIALIZE_TEMPLATE": {
+      "decision": "keep",
+      "reason": "generated helper code"
+    },
+    "autoair/codegen/context.py::<module>::constant::MESSAGE_QUEUE_TRIGGER": {
+      "decision": "keep",
+      "reason": "Airflow common.messaging trigger import path (Airflow API)"
+    },
+    "autoair/codegen/context.py::<module>::constant::SDK": {
+      "decision": "keep",
+      "reason": "Airflow Task SDK import path (Airflow API)"
+    },
+    "autoair/codegen/context.py::CodegenContext.output_model::kwarg::AnnAssign(simple=)": {
+      "decision": "keep",
+      "reason": "Python AST flag (plain-name annotation), not a tunable"
+    },
+    "autoair/codegen/context.py::_sanitize::regex::re.sub:dd763376": {
+      "decision": "keep",
+      "reason": "Python identifier sanitising (syntax)"
+    },
+    "autoair/codegen/timedeltas.py::<module>::constant::_ANY_OPERATOR": {
+      "decision": "keep",
+      "reason": "BaseOperator arguments Airflow types as timedelta-only (Airflow API contract)"
+    },
+    "autoair/codegen/timedeltas.py::<module>::constant::_BY_OPERATOR": {
+      "decision": "keep",
+      "reason": "operator arguments Airflow types as timedelta-only (HITL response_timeout, ExternalTaskSensor execution_delta: Airflow API contract)"
+    },
+    "autoair/codegen/yaml_dag.py::<module>::constant::HEADER": {
+      "decision": "keep",
+      "reason": "generated-file header; carries the ownership marker storage relies on"
+    },
+    "autoair/codegen/yaml_dag.py::<module>::constant::SCHEMA_ID": {
+      "decision": "keep",
+      "reason": "Airflow YAML DAG schema id (protocol)"
+    },
+    "autoair/codegen/yaml_dag.py::<module>::constant::_DEFAULT_ARGS": {
+      "decision": "keep",
+      "reason": "fields of Airflow's YAML DAG format (protocol)"
+    },
+    "autoair/codegen/yaml_dag.py::<module>::constant::_TASK_ARGS": {
+      "decision": "keep",
+      "reason": "fields of Airflow's YAML DAG format (protocol)"
+    },
+    "autoair/collab.py::<module>::constant::MAX_ROOMS": {
+      "decision": "config",
+      "setting": "collab_max_rooms"
+    },
+    "autoair/collab.py::<module>::constant::ROOM_RE": {
+      "decision": "keep",
+      "reason": "co-editing URL routing (Airflow's dag_id rule)"
+    },
+    "autoair/collab.py::<module>::constant::TICKET_TTL": {
+      "decision": "config",
+      "setting": "collab_ticket_ttl"
+    },
+    "autoair/collab.py::CollabSettings::kwarg::Field(default=)": {
+      "decision": "keep",
+      "reason": "setting default/bound (documented in the configuration reference)"
+    },
+    "autoair/collab.py::CollabSettings::kwarg::Field(default=)#1": {
+      "decision": "keep",
+      "reason": "setting default/bound (documented in the configuration reference)"
+    },
+    "autoair/collab.py::CollabSettings::kwarg::Field(default=)#2": {
+      "decision": "keep",
+      "reason": "setting default/bound (documented in the configuration reference)"
+    },
+    "autoair/collab.py::CollabSettings::kwarg::Field(default=)#3": {
+      "decision": "keep",
+      "reason": "setting default/bound (documented in the configuration reference)"
+    },
+    "autoair/collab.py::CollabSettings::kwarg::Field(default=)#4": {
+      "decision": "keep",
+      "reason": "setting default/bound (documented in the configuration reference)"
+    },
+    "autoair/collab.py::CollabSettings::kwarg::Field(ge=)": {
+      "decision": "keep",
+      "reason": "setting default/bound (documented in the configuration reference)"
+    },
+    "autoair/collab.py::CollabSettings::kwarg::Field(ge=)#1": {
+      "decision": "keep",
+      "reason": "setting default/bound (documented in the configuration reference)"
+    },
+    "autoair/collab.py::CollabSettings::kwarg::Field(ge=)#2": {
+      "decision": "keep",
+      "reason": "setting default/bound (documented in the configuration reference)"
+    },
+    "autoair/collab.py::CollabSettings::kwarg::Field(gt=)": {
+      "decision": "keep",
+      "reason": "setting default/bound (documented in the configuration reference)"
+    },
+    "autoair/collab.py::CollabSettings::kwarg::Field(gt=)#1": {
+      "decision": "keep",
+      "reason": "setting default/bound (documented in the configuration reference)"
+    },
+    "autoair/collab.py::CollabSettings::kwarg::Field(le=)": {
+      "decision": "keep",
+      "reason": "setting default/bound (documented in the configuration reference)"
+    },
+    "autoair/collab.py::CollabSettings::kwarg::Field(le=)#1": {
+      "decision": "keep",
+      "reason": "setting default/bound (documented in the configuration reference)"
+    },
+    "autoair/collab.py::CollabSettings::kwarg::Field(min_length=)": {
+      "decision": "keep",
+      "reason": "setting default/bound (documented in the configuration reference)"
+    },
+    "autoair/collab.py::create_collab_app.app::number::ff1eb8bd": {
+      "decision": "keep",
+      "reason": "WebSocket close code 'policy violation' (RFC 6455)"
+    },
+    "autoair/collab.py::key_file::number::b741f252": {
+      "decision": "keep",
+      "reason": "file mode 0o600 (owner read/write)"
+    },
+    "autoair/collab_sync.py::<module>::constant::AWARENESS": {
+      "decision": "keep",
+      "reason": "y-protocols message type (protocol constant)"
+    },
+    "autoair/collab_sync.py::<module>::constant::GRACE_SECONDS": {
+      "decision": "keep",
+      "reason": "relay rows may commit out of id order within this window (internal correctness margin)"
+    },
+    "autoair/collab_sync.py::<module>::constant::PRUNE_EVERY": {
+      "decision": "keep",
+      "reason": "how often the relay table is pruned (retention itself is collab.retention_seconds)"
+    },
+    "autoair/config_reference.py::<module>::constant::ENV_PREFIX": {
+      "decision": "keep",
+      "reason": "environment variable prefix (backward compatibility)"
+    },
+    "autoair/config_reference.py::<module>::constant::MASK": {
+      "decision": "keep",
+      "reason": "mask shown for secret values (like Airflow's expose_config)"
+    },
+    "autoair/config_reference.py::<module>::constant::_CREDENTIAL_KEY": {
+      "decision": "keep",
+      "reason": "credential key names of fsspec/cloud SDK options (security masking; never weakened by configuration)"
+    },
+    "autoair/config_reference.py::<module>::constant::_PUBLIC_USERS": {
+      "decision": "keep",
+      "reason": "conventional non-secret URL user names (git@, ssh@)"
+    },
+    "autoair/config_reference.py::<module>::constant::_SECRET_NAME": {
+      "decision": "keep",
+      "reason": "safety net: credential-like names are always masked by /api/config (mark more with json_schema_extra secret)"
+    },
+    "autoair/config_reference.py::<module>::constant::_URL_USERINFO": {
+      "decision": "keep",
+      "reason": "RFC 3986 userinfo syntax (credential masking)"
+    },
+    "autoair/config_sources.py::<module>::constant::AIRFLOW_CONFIG_FILE_ENV": {
+      "decision": "keep",
+      "reason": "Airflow's variable for [autoair] config_file"
+    },
+    "autoair/config_sources.py::<module>::constant::CONFIG_FILE_ENV": {
+      "decision": "keep",
+      "reason": "name of the configuration-file variable itself"
+    },
+    "autoair/config_sources.py::<module>::constant::INI_SECTION": {
+      "decision": "keep",
+      "reason": "INI section name of the documented format"
+    },
+    "autoair/config_sources.py::<module>::constant::INI_SUFFIXES": {
+      "decision": "keep",
+      "reason": "file-format detection by suffix"
+    },
+    "autoair/config_sources.py::<module>::constant::PYTHON_ATTRS": {
+      "decision": "keep",
+      "reason": "documented attribute lookup order of Python config files"
+    },
+    "autoair/config_sources.py::<module>::constant::YAML_SUFFIXES": {
+      "decision": "keep",
+      "reason": "file-format detection by suffix"
+    },
+    "autoair/config_sources.py::<module>::constant::_EXPLICIT_FILES": {
+      "decision": "keep",
+      "reason": "process state, not a value"
+    },
+    "autoair/config_sources.py::<module>::constant::_LOADING": {
+      "decision": "keep",
+      "reason": "process state, not a value"
+    },
+    "autoair/config_sources.py::<module>::constant::_ORIGINS": {
+      "decision": "keep",
+      "reason": "process state, not a value"
+    },
+    "autoair/config_sources.py::<module>::constant::_PY_CACHE": {
+      "decision": "keep",
+      "reason": "process state (executed config modules), not a value"
+    },
+    "autoair/config_sources.py::_airflow_cfg_files::path::80a72ec4": {
+      "decision": "keep",
+      "reason": "Airflow's own AIRFLOW_HOME default"
+    },
+    "autoair/deploy_setup.py::<module>::constant::GIT_POLICY_FIELDS": {
+      "decision": "keep",
+      "reason": "names of the admin-only git settings (policy enforced on UI-chosen targets)"
+    },
+    "autoair/deploy_setup.py::_git::kwarg::run(timeout=)": {
+      "decision": "keep",
+      "reason": "best-effort local git probe of the deploy dialog"
+    },
+    "autoair/deploy_setup.py::_strip_credentials::regex::re.sub:743d4abe": {
+      "decision": "keep",
+      "reason": "redacts credentials from URLs"
+    },
+    "autoair/feature_overrides.py::<module>::constant::DOCUMENT_KEY": {
+      "decision": "keep",
+      "reason": "storage key of the runtime feature-override document (persistence layout)"
+    },
+    "autoair/feature_overrides.py::FeatureOverrideStore.__init__::default::ttl": {
+      "decision": "config",
+      "setting": "features_override_ttl (fallback for callers without settings)"
+    },
+    "autoair/gateway/__init__.py::<module>::constant::DEFAULT_TIMEOUT": {
+      "decision": "config",
+      "setting": "airflow_timeout"
+    },
+    "autoair/gateway/__init__.py::<module>::constant::FETCH_CONCURRENCY": {
+      "decision": "config",
+      "setting": "server.airflow_fetch_concurrency"
+    },
+    "autoair/gateway/__init__.py::<module>::constant::PAGE_SIZE": {
+      "decision": "config",
+      "setting": "server.airflow_page_size"
+    },
+    "autoair/gateway/__init__.py::<module>::constant::_T": {
+      "decision": "keep",
+      "reason": "typing helper / runtime object, not a value"
+    },
+    "autoair/gateway/__init__.py::AirflowGateway._request::number::ab7f7b95": {
+      "decision": "keep",
+      "reason": "message truncation / HTTP status class boundary (presentation/protocol)"
+    },
+    "autoair/gateway/__init__.py::AirflowGateway.assets::number::9f9af029": {
+      "decision": "keep",
+      "reason": "display truncation of messages/summaries (presentation)"
+    },
+    "autoair/gateway/__init__.py::AirflowGateway.backfill::default::max_active_runs": {
+      "decision": "keep",
+      "reason": "API request default of a backfill (clients send their own)"
+    },
+    "autoair/gateway/__init__.py::AirflowGateway.dag_versions::number::310b86e0": {
+      "decision": "keep",
+      "reason": "XCom entries / DAG versions per call: the UI shows the latest ones"
+    },
+    "autoair/gateway/__init__.py::AirflowGateway.xcom_entries::number::310b86e0": {
+      "decision": "keep",
+      "reason": "XCom entries / DAG versions per call: the UI shows the latest ones"
+    },
+    "autoair/gateway/__init__.py::AirflowGateway.xcom_keys::number::310b86e0": {
+      "decision": "keep",
+      "reason": "XCom entries listed per task instance (same page as xcom_entries)"
+    },
+    "autoair/gateway/__init__.py::ConnectionDraft::kwarg::Field(le=)": {
+      "decision": "keep",
+      "reason": "TCP port range (protocol)"
+    },
+    "autoair/gateway/__init__.py::ConnectionDraft::kwarg::Field(max_length=)": {
+      "decision": "keep",
+      "reason": "Airflow connection-id rule (protocol)"
+    },
+    "autoair/gateway/__init__.py::ConnectionDraft::regex::pattern:ff6a069c": {
+      "decision": "keep",
+      "reason": "Airflow connection-id rule (protocol)"
+    },
+    "autoair/gateway/__init__.py::_seg::number::ab7f7b95": {
+      "decision": "keep",
+      "reason": "message truncation / HTTP status class boundary (presentation/protocol)"
+    },
+    "autoair/governance.py::<module>::constant::CONTEXT_HEADER": {
+      "decision": "keep",
+      "reason": "marker line of the mandatory context block (tools grep for it)"
+    },
+    "autoair/governance.py::<module>::constant::CONTEXT_PLACEHOLDERS": {
+      "decision": "keep",
+      "reason": "template placeholder names (documented contract of the git templates)"
+    },
+    "autoair/governance.py::<module>::constant::_SAFE_LINE": {
+      "decision": "keep",
+      "reason": "control characters stripped from user values (no forged trailers/context lines)"
+    },
+    "autoair/governance.py::UserIdentity.git_author::number::775bc5c3": {
+      "decision": "keep",
+      "reason": "length cap of a commit author name"
+    },
+    "autoair/governance.py::_tidy::regex::re.sub:03647bc6": {
+      "decision": "keep",
+      "reason": "collapse blank lines left by empty placeholders"
+    },
+    "autoair/governance.py::dag_link::path::5710781c": {
+      "decision": "keep",
+      "reason": "UI mount point (/ui) the DAG link points at"
+    },
+    "autoair/governance.py::dag_link::path::5710781c#1": {
+      "decision": "keep",
+      "reason": "UI mount point (/ui) the DAG link points at"
+    },
+    "autoair/icons.py::<module>::constant::ALIASES": {
+      "decision": "keep",
+      "reason": "built-in icon matching data (own icons: upload + icon assignments, icons_url)"
+    },
+    "autoair/icons.py::<module>::constant::GLYPH_RULES": {
+      "decision": "config",
+      "setting": "icons.rules_extra (evaluated first; plus uploads and icon assignments)"
+    },
+    "autoair/icons.py::<module>::constant::ICON_ID_PATTERN": {
+      "decision": "keep",
+      "reason": "icon id format shared with the spec and the frontend (protocol)"
+    },
+    "autoair/icons.py::<module>::constant::_GENERIC": {
+      "decision": "keep",
+      "reason": "built-in icon matching data (own icons: upload + icon assignments, icons_url)"
+    },
+    "autoair/icons.py::<module>::constant::_ID_RE": {
+      "decision": "keep",
+      "reason": "icon id format shared with the spec and the frontend (protocol)"
+    },
+    "autoair/icons.py::<module>::constant::_SVG_ATTRS": {
+      "decision": "keep",
+      "reason": "SVG sanitiser allowlist (security: static vector art only)"
+    },
+    "autoair/icons.py::<module>::constant::_SVG_ELEMENTS": {
+      "decision": "keep",
+      "reason": "SVG sanitiser allowlist (security: static vector art only)"
+    },
+    "autoair/icons.py::<module>::constant::_SVG_NS": {
+      "decision": "keep",
+      "reason": "SVG XML namespace (standard)"
+    },
+    "autoair/icons.py::<module>::constant::_URL_REF": {
+      "decision": "keep",
+      "reason": "SVG sanitiser: url(...) references must be document-local (security)"
+    },
+    "autoair/icons.py::<module>::constant::_WORD": {
+      "decision": "keep",
+      "reason": "camel-case word splitting (icon matching)"
+    },
+    "autoair/icons.py::IconStore._path::regex::re.fullmatch:c49884c1": {
+      "decision": "keep",
+      "reason": "icon name normalisation (matching)"
+    },
+    "autoair/icons.py::IconStore.list::path::526c428d": {
+      "decision": "keep",
+      "reason": "icon store layout (storage format)"
+    },
+    "autoair/icons.py::IconStore.list::path::526c428d#1": {
+      "decision": "keep",
+      "reason": "icon URL path of the API (protocol)"
+    },
+    "autoair/icons.py::IconStore.list::regex::re.fullmatch:c49884c1": {
+      "decision": "keep",
+      "reason": "identifier validation pattern (safety)"
+    },
+    "autoair/icons.py::_integration_index::regex::re.sub:40d98a40": {
+      "decision": "keep",
+      "reason": "icon name normalisation (matching)"
+    },
+    "autoair/icons.py::_manifest::path::b8f2062a": {
+      "decision": "keep",
+      "reason": "packaged logo manifest (resource)"
+    },
+    "autoair/icons.py::normalize_png::number::12835113": {
+      "decision": "keep",
+      "reason": "bytes -> KB unit conversion"
+    },
+    "autoair/icons.py::sanitize_svg::default::max_bytes": {
+      "decision": "config",
+      "setting": "catalog.package_icon_max_bytes (passed by the catalog build)"
+    },
+    "autoair/icons.py::sanitize_svg::number::12835113": {
+      "decision": "keep",
+      "reason": "bytes -> KB in an error message"
+    },
+    "autoair/icons.py::sanitize_svg::regex::re.search:67e8f503": {
+      "decision": "keep",
+      "reason": "SVG sanitiser: DTDs/entities refused (security)"
+    },
+    "autoair/icons.py::slug::regex::re.sub:cad7a765": {
+      "decision": "keep",
+      "reason": "icon name normalisation (matching)"
+    },
+    "autoair/importer/bulk.py::<module>::constant::_REF": {
+      "decision": "keep",
+      "reason": "git ref syntax guard (security: no option injection into git argv)"
+    },
+    "autoair/importer/bulk.py::GitSource::kwarg::Field(max_length=)": {
+      "decision": "keep",
+      "reason": "request schema bound of a git URL (input validation)"
+    },
+    "autoair/importer/bulk.py::GitSource::kwarg::Field(max_length=)#1": {
+      "decision": "keep",
+      "reason": "request schema bound of a git ref (input validation)"
+    },
+    "autoair/importer/bulk.py::GitSource::kwarg::Field(max_length=)#2": {
+      "decision": "keep",
+      "reason": "request schema bound of a sub-folder path (input validation)"
+    },
+    "autoair/importer/bulk.py::GitSource::url::35cba4c6": {
+      "decision": "keep",
+      "reason": "field description text, not a URL"
+    },
+    "autoair/importer/bulk.py::UploadedFile::kwarg::Field(max_length=)": {
+      "decision": "keep",
+      "reason": "request schema bound of a repository-relative path (input validation)"
+    },
+    "autoair/importer/bulk.py::scan::default::max_chars": {
+      "decision": "config",
+      "setting": "interchange.max_source_chars (the API passes the setting)"
+    },
+    "autoair/importer/bulk.py::scan::default::max_files": {
+      "decision": "config",
+      "setting": "interchange.bulk_max_files (the API passes the setting)"
+    },
+    "autoair/importer/bulk.py::scan::default::timeout": {
+      "decision": "config",
+      "setting": "python_import_timeout (the API passes the setting)"
+    },
+    "autoair/importer/bulk.py::scan::default::workers": {
+      "decision": "config",
+      "setting": "interchange.bulk_workers (the API passes the setting)"
+    },
+    "autoair/importer/code_sync.py::<module>::constant::_AUTOAIR_DAG_FIELDS": {
+      "decision": "keep",
+      "reason": "AutoAir-only DAG fields not expressed in Python (schema)"
+    },
+    "autoair/importer/code_sync.py::<module>::constant::_CANVAS_NODE_FIELDS": {
+      "decision": "keep",
+      "reason": "spec fields that exist only on the canvas (schema)"
+    },
+    "autoair/importer/code_sync.py::sync_code::default::timeout": {
+      "decision": "keep",
+      "reason": "library default; the API passes python_import_timeout"
+    },
+    "autoair/importer/python_dag.py::<module>::constant::_COMMON": {
+      "decision": "keep",
+      "reason": "BaseOperator fields mapped by the importer (Airflow API)"
+    },
+    "autoair/importer/python_dag.py::<module>::constant::_CRON_SOURCES": {
+      "decision": "keep",
+      "reason": "per-import-subprocess registry of written cron expressions (internal state, not a setting)"
+    },
+    "autoair/importer/python_dag.py::<module>::constant::_DECORATORS": {
+      "decision": "keep",
+      "reason": "Airflow TaskFlow decorator classes (Airflow API)"
+    },
+    "autoair/importer/python_dag.py::<module>::constant::_PRESETS": {
+      "decision": "keep",
+      "reason": "Airflow cron presets and the spec's preset names (protocol)"
+    },
+    "autoair/importer/python_dag.py::<module>::constant::_SCRIPT_PATH": {
+      "decision": "keep",
+      "reason": "path format written by codegen's MATERIALIZE_TEMPLATE (internal protocol between codegen and importer)"
+    },
+    "autoair/importer/python_dag.py::_convert_dag::kwarg::getint(fallback=)": {
+      "decision": "keep",
+      "reason": "Airflow's own default of core.max_active_*_per_dag"
+    },
+    "autoair/importer/python_dag.py::_convert_dag::kwarg::getint(fallback=)#1": {
+      "decision": "keep",
+      "reason": "Airflow's own default of core.max_active_*_per_dag"
+    },
+    "autoair/importer/python_dag.py::_schedule::number::3e20a0ed": {
+      "decision": "keep",
+      "reason": "fallback interval when a timetable hides its delta (import)"
+    },
+    "autoair/importer/python_dag.py::import_python_file::default::timeout": {
+      "decision": "config",
+      "setting": "python_import_timeout"
+    },
+    "autoair/importer/python_dag.py::import_python_source::default::timeout": {
+      "decision": "config",
+      "setting": "python_import_timeout"
+    },
+    "autoair/kb/bundle.py::<module>::constant::FORMAT": {
+      "decision": "keep",
+      "reason": "KB bundle file format (protocol between autoair kb build and import)"
+    },
+    "autoair/kb/bundle.py::<module>::constant::KIND": {
+      "decision": "keep",
+      "reason": "KB bundle file format (protocol between autoair kb build and import)"
+    },
+    "autoair/kb/bundle.py::<module>::constant::MANIFEST": {
+      "decision": "keep",
+      "reason": "KB bundle file format (protocol between autoair kb build and import)"
+    },
+    "autoair/kb/bundle.py::<module>::constant::PAGES": {
+      "decision": "keep",
+      "reason": "KB bundle file format (protocol between autoair kb build and import)"
+    },
+    "autoair/kb/bundle.py::<module>::constant::_MAX_LINE": {
+      "decision": "keep",
+      "reason": "safety cap on one member of an untrusted bundle (never lowered by configuration); kb.bundle.max_bytes / max_pages bound the bundle"
+    },
+    "autoair/kb/bundle.py::<module>::constant::_MAX_MANIFEST": {
+      "decision": "keep",
+      "reason": "safety cap on one member of an untrusted bundle (never lowered by configuration); kb.bundle.max_bytes / max_pages bound the bundle"
+    },
+    "autoair/kb/bundle.py::_import::kwarg::progress(done=)": {
+      "decision": "keep",
+      "reason": "I/O buffer size / zip compression level / progress counter (internal, no user-visible effect)"
+    },
+    "autoair/kb/bundle.py::export_bundle::kwarg::ZipFile(compresslevel=)": {
+      "decision": "keep",
+      "reason": "I/O buffer size / zip compression level / progress counter (internal, no user-visible effect)"
+    },
+    "autoair/kb/bundle.py::export_bundle::kwarg::dumps(indent=)": {
+      "decision": "keep",
+      "reason": "I/O buffer size / zip compression level / progress counter (internal, no user-visible effect)"
+    },
+    "autoair/kb/bundle.py::export_bundle::number::5645efa3": {
+      "decision": "keep",
+      "reason": "I/O buffer size / zip compression level / progress counter (internal, no user-visible effect)"
+    },
+    "autoair/kb/bundle.py::import_bundle_source::number::5645efa3": {
+      "decision": "keep",
+      "reason": "I/O buffer size / zip compression level / progress counter (internal, no user-visible effect)"
+    },
+    "autoair/kb/bundle.py::iter_pages::number::5645efa3": {
+      "decision": "keep",
+      "reason": "I/O buffer size / zip compression level / progress counter (internal, no user-visible effect)"
+    },
+    "autoair/kb/cli.py::_echo::kwarg::dumps(indent=)": {
+      "decision": "keep",
+      "reason": "CLI option bound, output numbering, private key file mode 0600 (security floor)"
+    },
+    "autoair/kb/cli.py::keygen::number::b741f252": {
+      "decision": "keep",
+      "reason": "CLI option bound, output numbering, private key file mode 0600 (security floor)"
+    },
+    "autoair/kb/cli.py::search::default::limit": {
+      "decision": "keep",
+      "reason": "CLI option bound, output numbering, private key file mode 0600 (security floor)"
+    },
+    "autoair/kb/cli.py::search::kwarg::Option(max=)": {
+      "decision": "keep",
+      "reason": "CLI option bound, output numbering, private key file mode 0600 (security floor)"
+    },
+    "autoair/kb/cli.py::search::kwarg::Option(min=)": {
+      "decision": "keep",
+      "reason": "CLI option bound, output numbering, private key file mode 0600 (security floor)"
+    },
+    "autoair/kb/cli.py::search::kwarg::enumerate(start=)": {
+      "decision": "keep",
+      "reason": "CLI option bound, output numbering, private key file mode 0600 (security floor)"
+    },
+    "autoair/kb/components.py::<module>::constant::COMPONENTS": {
+      "decision": "keep",
+      "reason": "documentation component catalog and Apache package naming (data / format)"
+    },
+    "autoair/kb/components.py::<module>::constant::OFFICIAL_DOCS": {
+      "decision": "keep",
+      "reason": "official Apache Airflow documentation location; mirrors and copies are kb.sources (site/path/git)"
+    },
+    "autoair/kb/components.py::<module>::constant::PROVIDERS_INDEX": {
+      "decision": "keep",
+      "reason": "documentation component catalog and Apache package naming (data / format)"
+    },
+    "autoair/kb/components.py::<module>::constant::PROVIDER_PREFIX": {
+      "decision": "keep",
+      "reason": "documentation component catalog and Apache package naming (data / format)"
+    },
+    "autoair/kb/components.py::_norm::regex::re.sub:edbd6dad": {
+      "decision": "keep",
+      "reason": "documentation component catalog and Apache package naming (data / format)"
+    },
+    "autoair/kb/components.py::provider_repo_path::path::1baff95c": {
+      "decision": "keep",
+      "reason": "documentation component catalog and Apache package naming (data / format)"
+    },
+    "autoair/kb/fetch.py::<module>::constant::_MAX_RETRY_AFTER": {
+      "decision": "keep",
+      "reason": "longest Retry-After honoured before a page fails; retries are kb.fetch.retries"
+    },
+    "autoair/kb/fetch.py::<module>::constant::_RETRY_STATUS": {
+      "decision": "keep",
+      "reason": "HTTP redirect status codes (protocol)"
+    },
+    "autoair/kb/fetch.py::HttpFetcher._once::number::3e0f83cc": {
+      "decision": "keep",
+      "reason": "HTTP redirect status codes (protocol)"
+    },
+    "autoair/kb/fetch.py::HttpFetcher._once::number::787d41d9": {
+      "decision": "keep",
+      "reason": "HTTP redirect status codes (protocol)"
+    },
+    "autoair/kb/fetch.py::HttpFetcher._once::number::9f9af029": {
+      "decision": "keep",
+      "reason": "HTTP redirect status codes (protocol)"
+    },
+    "autoair/kb/fetch.py::HttpFetcher._once::number::ae5ffa65": {
+      "decision": "keep",
+      "reason": "HTTP redirect status codes (protocol)"
+    },
+    "autoair/kb/fetch.py::HttpFetcher._once::number::bbcbb1e8": {
+      "decision": "keep",
+      "reason": "HTTP redirect status codes (protocol)"
+    },
+    "autoair/kb/fetch.py::HttpFetcher._once::number::cd0613ba": {
+      "decision": "keep",
+      "reason": "HTTP redirect status codes (protocol)"
+    },
+    "autoair/kb/fetch.py::HttpFetcher.get::number::3e0f83cc": {
+      "decision": "keep",
+      "reason": "HTTP redirect status codes (protocol)"
+    },
+    "autoair/kb/fetch.py::HttpFetcher.get::number::787d41d9": {
+      "decision": "keep",
+      "reason": "HTTP redirect status codes (protocol)"
+    },
+    "autoair/kb/fetch.py::HttpFetcher.get::number::ae5ffa65": {
+      "decision": "keep",
+      "reason": "HTTP redirect status codes (protocol)"
+    },
+    "autoair/kb/fetch.py::HttpFetcher.get::number::bbcbb1e8": {
+      "decision": "keep",
+      "reason": "HTTP redirect status codes (protocol)"
+    },
+    "autoair/kb/fetch.py::HttpFetcher.get::number::cd0613ba": {
+      "decision": "keep",
+      "reason": "HTTP redirect status codes (protocol)"
+    },
+    "autoair/kb/fetch.py::Response.not_modified::number::79816ecb": {
+      "decision": "keep",
+      "reason": "HTTP redirect status codes (protocol)"
+    },
+    "autoair/kb/fetch.py::checkout::default::timeout": {
+      "decision": "config",
+      "setting": "kb.fetch.git_timeout_seconds (fallback of direct callers)"
+    },
+    "autoair/kb/ingest.py::<module>::constant::_EMBED_FAILURES": {
+      "decision": "keep",
+      "reason": "status write throttle / embedding failure cut-off / progress counter (internal mechanics)"
+    },
+    "autoair/kb/ingest.py::<module>::constant::_STATUS_EVERY": {
+      "decision": "keep",
+      "reason": "status write throttle / embedding failure cut-off / progress counter (internal mechanics)"
+    },
+    "autoair/kb/ingest.py::Ingestor._error::number::f83a383c": {
+      "decision": "keep",
+      "reason": "status write throttle / embedding failure cut-off / progress counter (internal mechanics)"
+    },
+    "autoair/kb/ingest.py::Ingestor._source::kwarg::progress(done=)": {
+      "decision": "keep",
+      "reason": "status write throttle / embedding failure cut-off / progress counter (internal mechanics)"
+    },
+    "autoair/kb/ingest.py::Ingestor._source::number::e26973e6": {
+      "decision": "keep",
+      "reason": "status write throttle / embedding failure cut-off / progress counter (internal mechanics)"
+    },
+    "autoair/kb/ingest.py::Ingestor._source::number::e26973e6#1": {
+      "decision": "keep",
+      "reason": "status write throttle / embedding failure cut-off / progress counter (internal mechanics)"
+    },
+    "autoair/kb/ingest.py::Ingestor._unit::kwarg::progress(done=)": {
+      "decision": "keep",
+      "reason": "status write throttle / embedding failure cut-off / progress counter (internal mechanics)"
+    },
+    "autoair/kb/mcp.py::<module>::constant::KB_TOOLS": {
+      "decision": "keep",
+      "reason": "MCP tool input bounds / tool names (schema)"
+    },
+    "autoair/kb/mcp.py::register_kb_tools.kb_search::default::limit": {
+      "decision": "keep",
+      "reason": "MCP tool input bounds / tool names (schema)"
+    },
+    "autoair/kb/mcp.py::register_kb_tools.kb_search::kwarg::Field(ge=)": {
+      "decision": "keep",
+      "reason": "MCP tool input bounds / tool names (schema)"
+    },
+    "autoair/kb/mcp.py::register_kb_tools.kb_search::kwarg::Field(le=)": {
+      "decision": "keep",
+      "reason": "MCP tool input bounds / tool names (schema)"
+    },
+    "autoair/kb/mcp.py::register_kb_tools.kb_search::kwarg::Field(max_length=)": {
+      "decision": "keep",
+      "reason": "MCP tool input bounds / tool names (schema)"
+    },
+    "autoair/kb/mcp.py::register_kb_tools.kb_search::kwarg::Field(min_length=)": {
+      "decision": "keep",
+      "reason": "MCP tool input bounds / tool names (schema)"
+    },
+    "autoair/kb/models.py::SourceOverride::kwarg::Field(max_length=)": {
+      "decision": "keep",
+      "reason": "API model bound / id hash length (schema)"
+    },
+    "autoair/kb/models.py::SourceOverride::kwarg::Field(max_length=)#1": {
+      "decision": "keep",
+      "reason": "API model bound / id hash length (schema)"
+    },
+    "autoair/kb/models.py::digest::default::size": {
+      "decision": "keep",
+      "reason": "API model bound / id hash length (schema)"
+    },
+    "autoair/kb/parse.py::<module>::constant::_ADMONITIONS": {
+      "decision": "keep",
+      "reason": "HTML / reStructuredText / Markdown syntax handled by the parser (format), boilerplate heuristic"
+    },
+    "autoair/kb/parse.py::<module>::constant::_ADORN": {
+      "decision": "keep",
+      "reason": "HTML / reStructuredText / Markdown syntax handled by the parser (format), boilerplate heuristic"
+    },
+    "autoair/kb/parse.py::<module>::constant::_ATX": {
+      "decision": "keep",
+      "reason": "HTML / reStructuredText / Markdown syntax handled by the parser (format), boilerplate heuristic"
+    },
+    "autoair/kb/parse.py::<module>::constant::_BLANKS": {
+      "decision": "keep",
+      "reason": "HTML / reStructuredText / Markdown syntax handled by the parser (format), boilerplate heuristic"
+    },
+    "autoair/kb/parse.py::<module>::constant::_BLOCK": {
+      "decision": "keep",
+      "reason": "HTML / reStructuredText / Markdown syntax handled by the parser (format), boilerplate heuristic"
+    },
+    "autoair/kb/parse.py::<module>::constant::_CODE_DIRECTIVES": {
+      "decision": "keep",
+      "reason": "HTML / reStructuredText / Markdown syntax handled by the parser (format), boilerplate heuristic"
+    },
+    "autoair/kb/parse.py::<module>::constant::_COMMENT": {
+      "decision": "keep",
+      "reason": "HTML / reStructuredText / Markdown syntax handled by the parser (format), boilerplate heuristic"
+    },
+    "autoair/kb/parse.py::<module>::constant::_DIRECTIVE": {
+      "decision": "keep",
+      "reason": "HTML / reStructuredText / Markdown syntax handled by the parser (format), boilerplate heuristic"
+    },
+    "autoair/kb/parse.py::<module>::constant::_DROP_DIRECTIVES": {
+      "decision": "keep",
+      "reason": "HTML / reStructuredText / Markdown syntax handled by the parser (format), boilerplate heuristic"
+    },
+    "autoair/kb/parse.py::<module>::constant::_EMPH": {
+      "decision": "keep",
+      "reason": "HTML / reStructuredText / Markdown syntax handled by the parser (format), boilerplate heuristic"
+    },
+    "autoair/kb/parse.py::<module>::constant::_FIELD": {
+      "decision": "keep",
+      "reason": "HTML / reStructuredText / Markdown syntax handled by the parser (format), boilerplate heuristic"
+    },
+    "autoair/kb/parse.py::<module>::constant::_FRONT": {
+      "decision": "keep",
+      "reason": "HTML / reStructuredText / Markdown syntax handled by the parser (format), boilerplate heuristic"
+    },
+    "autoair/kb/parse.py::<module>::constant::_HEADINGS": {
+      "decision": "keep",
+      "reason": "HTML / reStructuredText / Markdown syntax handled by the parser (format), boilerplate heuristic"
+    },
+    "autoair/kb/parse.py::<module>::constant::_INCLUDE_DIRECTIVES": {
+      "decision": "keep",
+      "reason": "HTML / reStructuredText / Markdown syntax handled by the parser (format), boilerplate heuristic"
+    },
+    "autoair/kb/parse.py::<module>::constant::_LINK": {
+      "decision": "keep",
+      "reason": "HTML / reStructuredText / Markdown syntax handled by the parser (format), boilerplate heuristic"
+    },
+    "autoair/kb/parse.py::<module>::constant::_LIST_GAP": {
+      "decision": "keep",
+      "reason": "HTML / reStructuredText / Markdown syntax handled by the parser (format), boilerplate heuristic"
+    },
+    "autoair/kb/parse.py::<module>::constant::_LITERAL": {
+      "decision": "keep",
+      "reason": "HTML / reStructuredText / Markdown syntax handled by the parser (format), boilerplate heuristic"
+    },
+    "autoair/kb/parse.py::<module>::constant::_MD_IMAGE": {
+      "decision": "keep",
+      "reason": "HTML / reStructuredText / Markdown syntax handled by the parser (format), boilerplate heuristic"
+    },
+    "autoair/kb/parse.py::<module>::constant::_MD_LINK": {
+      "decision": "keep",
+      "reason": "HTML / reStructuredText / Markdown syntax handled by the parser (format), boilerplate heuristic"
+    },
+    "autoair/kb/parse.py::<module>::constant::_ROLE": {
+      "decision": "keep",
+      "reason": "HTML / reStructuredText / Markdown syntax handled by the parser (format), boilerplate heuristic"
+    },
+    "autoair/kb/parse.py::<module>::constant::_ROLE_TEXT_TARGET": {
+      "decision": "keep",
+      "reason": "HTML / reStructuredText / Markdown syntax handled by the parser (format), boilerplate heuristic"
+    },
+    "autoair/kb/parse.py::<module>::constant::_SKIP": {
+      "decision": "keep",
+      "reason": "HTML / reStructuredText / Markdown syntax handled by the parser (format), boilerplate heuristic"
+    },
+    "autoair/kb/parse.py::<module>::constant::_TAG": {
+      "decision": "keep",
+      "reason": "HTML / reStructuredText / Markdown syntax handled by the parser (format), boilerplate heuristic"
+    },
+    "autoair/kb/parse.py::<module>::constant::_TARGET": {
+      "decision": "keep",
+      "reason": "HTML / reStructuredText / Markdown syntax handled by the parser (format), boilerplate heuristic"
+    },
+    "autoair/kb/parse.py::<module>::constant::_VOID": {
+      "decision": "keep",
+      "reason": "HTML / reStructuredText / Markdown syntax handled by the parser (format), boilerplate heuristic"
+    },
+    "autoair/kb/parse.py::<module>::constant::_WS": {
+      "decision": "keep",
+      "reason": "HTML / reStructuredText / Markdown syntax handled by the parser (format), boilerplate heuristic"
+    },
+    "autoair/kb/parse.py::_expand_includes::default::depth": {
+      "decision": "keep",
+      "reason": "HTML / reStructuredText / Markdown syntax handled by the parser (format), boilerplate heuristic"
+    },
+    "autoair/kb/parse.py::_main_container::regex::re.search:6b56ca87": {
+      "decision": "keep",
+      "reason": "HTML / reStructuredText / Markdown syntax handled by the parser (format), boilerplate heuristic"
+    },
+    "autoair/kb/parse.py::_main_container::regex::re.search:bd64921e": {
+      "decision": "keep",
+      "reason": "HTML / reStructuredText / Markdown syntax handled by the parser (format), boilerplate heuristic"
+    },
+    "autoair/kb/parse.py::_main_container::regex::re.search:c605b316": {
+      "decision": "keep",
+      "reason": "HTML / reStructuredText / Markdown syntax handled by the parser (format), boilerplate heuristic"
+    },
+    "autoair/kb/parse.py::parse_html::number::775bc5c3": {
+      "decision": "keep",
+      "reason": "HTML / reStructuredText / Markdown syntax handled by the parser (format), boilerplate heuristic"
+    },
+    "autoair/kb/parse.py::parse_markdown::regex::re.sub:493a8885": {
+      "decision": "keep",
+      "reason": "HTML / reStructuredText / Markdown syntax handled by the parser (format), boilerplate heuristic"
+    },
+    "autoair/kb/parse.py::slugify::regex::re.sub:091e8235": {
+      "decision": "keep",
+      "reason": "HTML / reStructuredText / Markdown syntax handled by the parser (format), boilerplate heuristic"
+    },
+    "autoair/kb/parse.py::slugify::regex::re.sub:7e1fc4c9": {
+      "decision": "keep",
+      "reason": "HTML / reStructuredText / Markdown syntax handled by the parser (format), boilerplate heuristic"
+    },
+    "autoair/kb/parse.py::slugify::regex::re.sub:a2d5519f": {
+      "decision": "keep",
+      "reason": "HTML / reStructuredText / Markdown syntax handled by the parser (format), boilerplate heuristic"
+    },
+    "autoair/kb/scheduler.py::<module>::constant::_CHECK_EVERY": {
+      "decision": "keep",
+      "reason": "scheduler check cadence and start-up delay (internal); the refresh interval is kb.refresh_interval_hours"
+    },
+    "autoair/kb/scheduler.py::<module>::constant::_RETRY_EMPTY": {
+      "decision": "keep",
+      "reason": "scheduler check cadence and start-up delay (internal); the refresh interval is kb.refresh_interval_hours"
+    },
+    "autoair/kb/scheduler.py::<module>::constant::_START_DELAY": {
+      "decision": "keep",
+      "reason": "scheduler check cadence and start-up delay (internal); the refresh interval is kb.refresh_interval_hours"
+    },
+    "autoair/kb/scheduler.py::check_once::number::3e20a0ed": {
+      "decision": "keep",
+      "reason": "scheduler check cadence and start-up delay (internal); the refresh interval is kb.refresh_interval_hours"
+    },
+    "autoair/kb/service.py::KnowledgeBase._hits::number::e3cbba88": {
+      "decision": "keep",
+      "reason": "query length cap, score scaling, rerank text cap, citation numbering, default passages per prompt (internal; kb.search.* holds the tunables)"
+    },
+    "autoair/kb/service.py::KnowledgeBase.asearch::number::73ee4958": {
+      "decision": "keep",
+      "reason": "query length cap, score scaling, rerank text cap, citation numbering, default passages per prompt (internal; kb.search.* holds the tunables)"
+    },
+    "autoair/kb/service.py::KnowledgeBase.asearch::number::e3cbba88": {
+      "decision": "keep",
+      "reason": "query length cap, score scaling, rerank text cap, citation numbering, default passages per prompt (internal; kb.search.* holds the tunables)"
+    },
+    "autoair/kb/service.py::KnowledgeBase.search::number::e3cbba88": {
+      "decision": "keep",
+      "reason": "query length cap, score scaling, rerank text cap, citation numbering, default passages per prompt (internal; kb.search.* holds the tunables)"
+    },
+    "autoair/kb/service.py::KnowledgeBase.set_source::regex::re.fullmatch:212288e3": {
+      "decision": "keep",
+      "reason": "query length cap, score scaling, rerank text cap, citation numbering, default passages per prompt (internal; kb.search.* holds the tunables)"
+    },
+    "autoair/kb/service.py::format_hits::kwarg::enumerate(start=)": {
+      "decision": "keep",
+      "reason": "query length cap, score scaling, rerank text cap, citation numbering, default passages per prompt (internal; kb.search.* holds the tunables)"
+    },
+    "autoair/kb/service.py::format_hits::number::9f9af029": {
+      "decision": "keep",
+      "reason": "query length cap, score scaling, rerank text cap, citation numbering, default passages per prompt (internal; kb.search.* holds the tunables)"
+    },
+    "autoair/kb/service.py::kb_context::default::k": {
+      "decision": "keep",
+      "reason": "query length cap, score scaling, rerank text cap, citation numbering, default passages per prompt (internal; kb.search.* holds the tunables)"
+    },
+    "autoair/kb/sources.py::<module>::constant::UNUSABLE_REASONS": {
+      "decision": "keep",
+      "reason": "English texts of the reason codes of unusable KB sources (the UI translates the codes)"
+    },
+    "autoair/kb/sources.py::<module>::constant::_CHART_VERSION": {
+      "decision": "keep",
+      "reason": "Sphinx site / llms.txt / apache-airflow repository layout (format of the sources)"
+    },
+    "autoair/kb/sources.py::<module>::constant::_DOC_SUFFIXES": {
+      "decision": "keep",
+      "reason": "Sphinx site / llms.txt / apache-airflow repository layout (format of the sources)"
+    },
+    "autoair/kb/sources.py::<module>::constant::_FILE_SUFFIXES": {
+      "decision": "keep",
+      "reason": "Sphinx site / llms.txt / apache-airflow repository layout (format of the sources)"
+    },
+    "autoair/kb/sources.py::<module>::constant::_MD_LINK": {
+      "decision": "keep",
+      "reason": "Sphinx site / llms.txt / apache-airflow repository layout (format of the sources)"
+    },
+    "autoair/kb/sources.py::<module>::constant::_PROVIDER_LINK": {
+      "decision": "keep",
+      "reason": "Sphinx site / llms.txt / apache-airflow repository layout (format of the sources)"
+    },
+    "autoair/kb/sources.py::<module>::constant::_SETINDEX": {
+      "decision": "keep",
+      "reason": "Sphinx site / llms.txt / apache-airflow repository layout (format of the sources)"
+    },
+    "autoair/kb/sources.py::<module>::constant::_VERSION_LINE": {
+      "decision": "keep",
+      "reason": "Sphinx site / llms.txt / apache-airflow repository layout (format of the sources)"
+    },
+    "autoair/kb/sources.py::_HttpReader.get::number::ab7f7b95": {
+      "decision": "keep",
+      "reason": "Sphinx site / llms.txt / apache-airflow repository layout (format of the sources)"
+    },
+    "autoair/kb/sources.py::_HttpReader.get::number::c35a9fc5": {
+      "decision": "keep",
+      "reason": "Sphinx site / llms.txt / apache-airflow repository layout (format of the sources)"
+    },
+    "autoair/kb/sources.py::_all_providers::path::ea0fcf4a": {
+      "decision": "keep",
+      "reason": "Sphinx site / llms.txt / apache-airflow repository layout (format of the sources)"
+    },
+    "autoair/kb/sources.py::_detect::path::9ad0c71b": {
+      "decision": "keep",
+      "reason": "Sphinx site / llms.txt / apache-airflow repository layout (format of the sources)"
+    },
+    "autoair/kb/sources.py::_detect::path::a6d09a20": {
+      "decision": "keep",
+      "reason": "Sphinx site / llms.txt / apache-airflow repository layout (format of the sources)"
+    },
+    "autoair/kb/sources.py::_llms_unit::regex::re.sub:b4d30f87": {
+      "decision": "keep",
+      "reason": "Sphinx site / llms.txt / apache-airflow repository layout (format of the sources)"
+    },
+    "autoair/kb/sources.py::_provider_yaml::regex::re.search:5f98864e": {
+      "decision": "keep",
+      "reason": "Sphinx site / llms.txt / apache-airflow repository layout (format of the sources)"
+    },
+    "autoair/kb/sources.py::_provider_yaml::regex::re.search:e37c6f1c": {
+      "decision": "keep",
+      "reason": "Sphinx site / llms.txt / apache-airflow repository layout (format of the sources)"
+    },
+    "autoair/kb/sources.py::_repo_units::kwarg::walk_files(limit=)": {
+      "decision": "keep",
+      "reason": "safety bound when scanning provider.yaml files of a checkout (internal)"
+    },
+    "autoair/kb/sources.py::_repo_units::number::5645efa3": {
+      "decision": "keep",
+      "reason": "safety bound when scanning provider.yaml files of a checkout (internal)"
+    },
+    "autoair/kb/sources.py::_repo_units::path::0be34fea": {
+      "decision": "keep",
+      "reason": "Sphinx site / llms.txt / apache-airflow repository layout (format of the sources)"
+    },
+    "autoair/kb/sources.py::_repo_units::path::7f48f1e3": {
+      "decision": "keep",
+      "reason": "Sphinx site / llms.txt / apache-airflow repository layout (format of the sources)"
+    },
+    "autoair/kb/sources.py::_repo_units::path::a6d09a20": {
+      "decision": "keep",
+      "reason": "Sphinx site / llms.txt / apache-airflow repository layout (format of the sources)"
+    },
+    "autoair/kb/sources.py::_site_unit::path::39171708": {
+      "decision": "keep",
+      "reason": "Sphinx site / llms.txt / apache-airflow repository layout (format of the sources)"
+    },
+    "autoair/kb/sources.py::_site_unit::path::68beb12b": {
+      "decision": "keep",
+      "reason": "Sphinx site / llms.txt / apache-airflow repository layout (format of the sources)"
+    },
+    "autoair/kb/sources.py::_site_unit::path::68beb12b#1": {
+      "decision": "keep",
+      "reason": "Sphinx site / llms.txt / apache-airflow repository layout (format of the sources)"
+    },
+    "autoair/kb/sources.py::_sparse::path::044a5908": {
+      "decision": "keep",
+      "reason": "Sphinx site / llms.txt / apache-airflow repository layout (format of the sources)"
+    },
+    "autoair/kb/sources.py::_sparse::path::18115843": {
+      "decision": "keep",
+      "reason": "Sphinx site / llms.txt / apache-airflow repository layout (format of the sources)"
+    },
+    "autoair/kb/sources.py::_sparse::path::7911b09d": {
+      "decision": "keep",
+      "reason": "Sphinx site / llms.txt / apache-airflow repository layout (format of the sources)"
+    },
+    "autoair/kb/sources.py::_sparse::path::7d47ade1": {
+      "decision": "keep",
+      "reason": "Sphinx site / llms.txt / apache-airflow repository layout (format of the sources)"
+    },
+    "autoair/kb/sources.py::_sparse::path::890b7466": {
+      "decision": "keep",
+      "reason": "Sphinx site / llms.txt / apache-airflow repository layout (format of the sources)"
+    },
+    "autoair/kb/sources.py::_sparse::path::8b898841": {
+      "decision": "keep",
+      "reason": "Sphinx site / llms.txt / apache-airflow repository layout (format of the sources)"
+    },
+    "autoair/kb/sources.py::_sparse::path::8e44c119": {
+      "decision": "keep",
+      "reason": "Sphinx site / llms.txt / apache-airflow repository layout (format of the sources)"
+    },
+    "autoair/kb/sources.py::_sparse::path::8f8e9d32": {
+      "decision": "keep",
+      "reason": "Sphinx site / llms.txt / apache-airflow repository layout (format of the sources)"
+    },
+    "autoair/kb/sources.py::_sparse::path::9989491c": {
+      "decision": "keep",
+      "reason": "Sphinx site / llms.txt / apache-airflow repository layout (format of the sources)"
+    },
+    "autoair/kb/sources.py::_sparse::path::fb46bcbf": {
+      "decision": "keep",
+      "reason": "Sphinx site / llms.txt / apache-airflow repository layout (format of the sources)"
+    },
+    "autoair/kb/state.py::KbState.__init__::kwarg::digest(size=)": {
+      "decision": "keep",
+      "reason": "document key hash length, seconds per hour (internal)"
+    },
+    "autoair/kb/state.py::KbState.set_override.fn::kwarg::dumps(indent=)": {
+      "decision": "keep",
+      "reason": "document key hash length, seconds per hour (internal)"
+    },
+    "autoair/kb/state.py::due::number::3e20a0ed": {
+      "decision": "keep",
+      "reason": "document key hash length, seconds per hour (internal)"
+    },
+    "autoair/kb/state.py::next_refresh::number::3e20a0ed": {
+      "decision": "keep",
+      "reason": "document key hash length, seconds per hour (internal)"
+    },
+    "autoair/kb/stores/base.py::<module>::constant::FILTER_KEYS": {
+      "decision": "keep",
+      "reason": "store schema, field lists, Elasticsearch REST API paths and aggregation sizes (protocol / internal)"
+    },
+    "autoair/kb/stores/elasticsearch.py::<module>::constant::_CHUNK_FIELDS": {
+      "decision": "keep",
+      "reason": "store schema, field lists, Elasticsearch REST API paths and aggregation sizes (protocol / internal)"
+    },
+    "autoair/kb/stores/elasticsearch.py::<module>::constant::_DELETE_BATCH": {
+      "decision": "keep",
+      "reason": "page ids per terms query when deleting pages, far below index.max_terms_count (internal batching)"
+    },
+    "autoair/kb/stores/elasticsearch.py::<module>::constant::_KEYWORD": {
+      "decision": "keep",
+      "reason": "store schema, field lists, Elasticsearch REST API paths and aggregation sizes (protocol / internal)"
+    },
+    "autoair/kb/stores/elasticsearch.py::<module>::constant::_PAGE_FIELDS": {
+      "decision": "keep",
+      "reason": "store schema, field lists, Elasticsearch REST API paths and aggregation sizes (protocol / internal)"
+    },
+    "autoair/kb/stores/elasticsearch.py::<module>::constant::_SCROLL_PAGE": {
+      "decision": "keep",
+      "reason": "page size of search_after listing (Elasticsearch default max_result_window)"
+    },
+    "autoair/kb/stores/elasticsearch.py::ElasticsearchStore._bulk::path::fa6acc65": {
+      "decision": "keep",
+      "reason": "store schema, field lists, Elasticsearch REST API paths and aggregation sizes (protocol / internal)"
+    },
+    "autoair/kb/stores/elasticsearch.py::ElasticsearchStore._ensure_vector_field::path::1bfb1b3a": {
+      "decision": "keep",
+      "reason": "store schema, field lists, Elasticsearch REST API paths and aggregation sizes (protocol / internal)"
+    },
+    "autoair/kb/stores/elasticsearch.py::ElasticsearchStore._exists::number::9f9af029": {
+      "decision": "keep",
+      "reason": "store schema, field lists, Elasticsearch REST API paths and aggregation sizes (protocol / internal)"
+    },
+    "autoair/kb/stores/elasticsearch.py::ElasticsearchStore._queue::default::count": {
+      "decision": "keep",
+      "reason": "parameter default: touch actions carry no chunk count (internal)"
+    },
+    "autoair/kb/stores/elasticsearch.py::ElasticsearchStore._refresh::path::a88de403": {
+      "decision": "keep",
+      "reason": "store schema, field lists, Elasticsearch REST API paths and aggregation sizes (protocol / internal)"
+    },
+    "autoair/kb/stores/elasticsearch.py::ElasticsearchStore._req::number::9f9af029": {
+      "decision": "keep",
+      "reason": "store schema, field lists, Elasticsearch REST API paths and aggregation sizes (protocol / internal)"
+    },
+    "autoair/kb/stores/elasticsearch.py::ElasticsearchStore._req::number::ab7f7b95": {
+      "decision": "keep",
+      "reason": "store schema, field lists, Elasticsearch REST API paths and aggregation sizes (protocol / internal)"
+    },
+    "autoair/kb/stores/elasticsearch.py::ElasticsearchStore._req::number::ab7f7b95#1": {
+      "decision": "keep",
+      "reason": "store schema, field lists, Elasticsearch REST API paths and aggregation sizes (protocol / internal)"
+    },
+    "autoair/kb/stores/elasticsearch.py::ElasticsearchStore._scan::path::bbdc8af3": {
+      "decision": "keep",
+      "reason": "store schema, field lists, Elasticsearch REST API paths and aggregation sizes (protocol / internal)"
+    },
+    "autoair/kb/stores/elasticsearch.py::ElasticsearchStore._send_pending::path::be103d06": {
+      "decision": "keep",
+      "reason": "store schema, field lists, Elasticsearch REST API paths and aggregation sizes (protocol / internal)"
+    },
+    "autoair/kb/stores/elasticsearch.py::ElasticsearchStore.clear::path::e842fec2": {
+      "decision": "keep",
+      "reason": "store schema, field lists, Elasticsearch REST API paths and aggregation sizes (protocol / internal)"
+    },
+    "autoair/kb/stores/elasticsearch.py::ElasticsearchStore.clear::path::e842fec2#1": {
+      "decision": "keep",
+      "reason": "store schema, field lists, Elasticsearch REST API paths and aggregation sizes (protocol / internal)"
+    },
+    "autoair/kb/stores/elasticsearch.py::ElasticsearchStore.delete_pages::path::e842fec2": {
+      "decision": "keep",
+      "reason": "store schema, field lists, Elasticsearch REST API paths and aggregation sizes (protocol / internal)"
+    },
+    "autoair/kb/stores/elasticsearch.py::ElasticsearchStore.delete_pages::path::e842fec2#1": {
+      "decision": "keep",
+      "reason": "store schema, field lists, Elasticsearch REST API paths and aggregation sizes (protocol / internal)"
+    },
+    "autoair/kb/stores/elasticsearch.py::ElasticsearchStore.dense::path::bbdc8af3": {
+      "decision": "keep",
+      "reason": "store schema, field lists, Elasticsearch REST API paths and aggregation sizes (protocol / internal)"
+    },
+    "autoair/kb/stores/elasticsearch.py::ElasticsearchStore.get_meta::number::c35a9fc5": {
+      "decision": "keep",
+      "reason": "store schema, field lists, Elasticsearch REST API paths and aggregation sizes (protocol / internal)"
+    },
+    "autoair/kb/stores/elasticsearch.py::ElasticsearchStore.get_meta::path::844198f0": {
+      "decision": "keep",
+      "reason": "store schema, field lists, Elasticsearch REST API paths and aggregation sizes (protocol / internal)"
+    },
+    "autoair/kb/stores/elasticsearch.py::ElasticsearchStore.lexical::path::bbdc8af3": {
+      "decision": "keep",
+      "reason": "store schema, field lists, Elasticsearch REST API paths and aggregation sizes (protocol / internal)"
+    },
+    "autoair/kb/stores/elasticsearch.py::ElasticsearchStore.missing_vectors::path::bbdc8af3": {
+      "decision": "keep",
+      "reason": "store schema, field lists, Elasticsearch REST API paths and aggregation sizes (protocol / internal)"
+    },
+    "autoair/kb/stores/elasticsearch.py::ElasticsearchStore.open::number::ab7f7b95": {
+      "decision": "keep",
+      "reason": "store schema, field lists, Elasticsearch REST API paths and aggregation sizes (protocol / internal)"
+    },
+    "autoair/kb/stores/elasticsearch.py::ElasticsearchStore.reset_vectors::number::c35a9fc5": {
+      "decision": "keep",
+      "reason": "store schema, field lists, Elasticsearch REST API paths and aggregation sizes (protocol / internal)"
+    },
+    "autoair/kb/stores/elasticsearch.py::ElasticsearchStore.set_meta::number::c35a9fc5": {
+      "decision": "keep",
+      "reason": "store schema, field lists, Elasticsearch REST API paths and aggregation sizes (protocol / internal)"
+    },
+    "autoair/kb/stores/elasticsearch.py::ElasticsearchStore.set_meta::path::844198f0": {
+      "decision": "keep",
+      "reason": "store schema, field lists, Elasticsearch REST API paths and aggregation sizes (protocol / internal)"
+    },
+    "autoair/kb/stores/elasticsearch.py::ElasticsearchStore.set_meta::path::844198f0#1": {
+      "decision": "keep",
+      "reason": "store schema, field lists, Elasticsearch REST API paths and aggregation sizes (protocol / internal)"
+    },
+    "autoair/kb/stores/elasticsearch.py::ElasticsearchStore.stats.count::path::bc84b705": {
+      "decision": "keep",
+      "reason": "store schema, field lists, Elasticsearch REST API paths and aggregation sizes (protocol / internal)"
+    },
+    "autoair/kb/stores/elasticsearch.py::ElasticsearchStore.stats::number::310b86e0": {
+      "decision": "keep",
+      "reason": "store schema, field lists, Elasticsearch REST API paths and aggregation sizes (protocol / internal)"
+    },
+    "autoair/kb/stores/elasticsearch.py::ElasticsearchStore.stats::number::310b86e0#1": {
+      "decision": "keep",
+      "reason": "store schema, field lists, Elasticsearch REST API paths and aggregation sizes (protocol / internal)"
+    },
+    "autoair/kb/stores/elasticsearch.py::ElasticsearchStore.stats::path::bbdc8af3": {
+      "decision": "keep",
+      "reason": "store schema, field lists, Elasticsearch REST API paths and aggregation sizes (protocol / internal)"
+    },
+    "autoair/kb/stores/local.py::<module>::constant::_CHUNK_COLS": {
+      "decision": "keep",
+      "reason": "store schema, field lists, Elasticsearch REST API paths and aggregation sizes (protocol / internal)"
+    },
+    "autoair/kb/stores/local.py::<module>::constant::_PAGE_COLS": {
+      "decision": "keep",
+      "reason": "store schema, field lists, Elasticsearch REST API paths and aggregation sizes (protocol / internal)"
+    },
+    "autoair/kb/stores/local.py::<module>::constant::_SCHEMA": {
+      "decision": "keep",
+      "reason": "store schema, field lists, Elasticsearch REST API paths and aggregation sizes (protocol / internal)"
+    },
+    "autoair/kb/stores/local.py::LocalStore._delete_chunks::number::f83a383c": {
+      "decision": "keep",
+      "reason": "store schema, field lists, Elasticsearch REST API paths and aggregation sizes (protocol / internal)"
+    },
+    "autoair/kb/stores/local.py::LocalStore._delete_chunks::number::f83a383c#1": {
+      "decision": "keep",
+      "reason": "store schema, field lists, Elasticsearch REST API paths and aggregation sizes (protocol / internal)"
+    },
+    "autoair/kb/stores/local.py::LocalStore._delete_chunks::number::f83a383c#2": {
+      "decision": "keep",
+      "reason": "store schema, field lists, Elasticsearch REST API paths and aggregation sizes (protocol / internal)"
+    },
+    "autoair/kb/stores/local.py::LocalStore._delete_chunks::number::f83a383c#3": {
+      "decision": "keep",
+      "reason": "store schema, field lists, Elasticsearch REST API paths and aggregation sizes (protocol / internal)"
+    },
+    "autoair/kb/stores/local.py::LocalStore.delete_pages::number::f83a383c": {
+      "decision": "keep",
+      "reason": "store schema, field lists, Elasticsearch REST API paths and aggregation sizes (protocol / internal)"
+    },
+    "autoair/kb/stores/local.py::LocalStore.delete_pages::number::f83a383c#1": {
+      "decision": "keep",
+      "reason": "store schema, field lists, Elasticsearch REST API paths and aggregation sizes (protocol / internal)"
+    },
+    "autoair/kb/stores/local.py::LocalStore.iter_bodies::number::9f9af029": {
+      "decision": "keep",
+      "reason": "store schema, field lists, Elasticsearch REST API paths and aggregation sizes (protocol / internal)"
+    },
+    "autoair/kb/stores/local.py::LocalStore.iter_bodies::number::9f9af029#1": {
+      "decision": "keep",
+      "reason": "store schema, field lists, Elasticsearch REST API paths and aggregation sizes (protocol / internal)"
+    },
+    "autoair/kb/stores/local.py::LocalStore.open::kwarg::connect(timeout=)": {
+      "decision": "keep",
+      "reason": "SQLite lock wait of the local index file (internal)"
+    },
+    "autoair/kb/stores/pgvector.py::<module>::constant::_CHUNK_FIELDS": {
+      "decision": "keep",
+      "reason": "store schema, field lists, Elasticsearch REST API paths and aggregation sizes (protocol / internal)"
+    },
+    "autoair/kb/stores/pgvector.py::<module>::constant::_PAGE_FIELDS": {
+      "decision": "keep",
+      "reason": "store schema, field lists, Elasticsearch REST API paths and aggregation sizes (protocol / internal)"
+    },
+    "autoair/kb/stores/pgvector.py::PgvectorStore.delete_pages::number::f83a383c": {
+      "decision": "keep",
+      "reason": "store schema, field lists, Elasticsearch REST API paths and aggregation sizes (protocol / internal)"
+    },
+    "autoair/kb/stores/pgvector.py::PgvectorStore.delete_pages::number::f83a383c#1": {
+      "decision": "keep",
+      "reason": "store schema, field lists, Elasticsearch REST API paths and aggregation sizes (protocol / internal)"
+    },
+    "autoair/kb/stores/pgvector.py::PgvectorStore.iter_bodies::number::9f9af029": {
+      "decision": "keep",
+      "reason": "store schema, field lists, Elasticsearch REST API paths and aggregation sizes (protocol / internal)"
+    },
+    "autoair/kb/stores/pgvector.py::PgvectorStore.iter_bodies::number::9f9af029#1": {
+      "decision": "keep",
+      "reason": "store schema, field lists, Elasticsearch REST API paths and aggregation sizes (protocol / internal)"
+    },
+    "autoair/kb/stores/pgvector.py::masked::regex::re.sub:743d4abe": {
+      "decision": "keep",
+      "reason": "store schema, field lists, Elasticsearch REST API paths and aggregation sizes (protocol / internal)"
+    },
+    "autoair/loader/__init__.py::<module>::constant::SPEC_SUFFIX": {
+      "decision": "keep",
+      "reason": "on-disk spec file suffix (storage format read by the loader and every target)"
+    },
+    "autoair/loader/__init__.py::<module>::constant::STUB_TEMPLATE": {
+      "decision": "keep",
+      "reason": "generated loader stub; carries the ownership marker"
+    },
+    "autoair/lsp/__init__.py::<module>::constant::CONTEXT_MODULE": {
+      "decision": "keep",
+      "reason": "module of the typed Airflow context stub (internal)"
+    },
+    "autoair/lsp/__init__.py::<module>::constant::MAX_CODE": {
+      "decision": "keep",
+      "reason": "schema ceiling; the effective limit is editor.max_source_chars"
+    },
+    "autoair/lsp/__init__.py::<module>::constant::_INDENT": {
+      "decision": "keep",
+      "reason": "indentation used by the code generator (offset mapping)"
+    },
+    "autoair/lsp/__init__.py::<module>::constant::_LOCK": {
+      "decision": "keep",
+      "reason": "process state, not a value"
+    },
+    "autoair/lsp/__init__.py::<module>::constant::_STAR": {
+      "decision": "keep",
+      "reason": "Python *args/**kwargs syntax"
+    },
+    "autoair/lsp/__init__.py::<module>::constant::_TYPES": {
+      "decision": "keep",
+      "reason": "jedi -> editor completion kinds"
+    },
+    "autoair/lsp/__init__.py::_typed_prefix::regex::re.search:fe47ccf9": {
+      "decision": "keep",
+      "reason": "Python identifier syntax"
+    },
+    "autoair/lsp/proxy.py::<module>::constant::CLIENT_ROOT": {
+      "decision": "keep",
+      "reason": "virtual URI root shared with the frontend client (protocol)"
+    },
+    "autoair/lsp/proxy.py::<module>::constant::CONTEXT_STUB": {
+      "decision": "keep",
+      "reason": "module name of the context stub written into each workspace (internal)"
+    },
+    "autoair/lsp/proxy.py::<module>::constant::LANGUAGES": {
+      "decision": "keep",
+      "reason": "languages with a proxied server (code)"
+    },
+    "autoair/lsp/proxy.py::<module>::constant::_INDENT": {
+      "decision": "keep",
+      "reason": "indentation of wrapped task bodies (matches codegen)"
+    },
+    "autoair/lsp/proxy.py::<module>::constant::_READ_MAX": {
+      "decision": "keep",
+      "reason": "largest source file shown in the definition peek (UI bound; lsp.max_message_bytes limits messages)"
+    },
+    "autoair/lsp/proxy.py::<module>::constant::_READ_SUFFIXES": {
+      "decision": "keep",
+      "reason": "only Python sources may be read for the definition peek (security allow-list)"
+    },
+    "autoair/lsp/proxy.py::<module>::constant::_SAFE_NAME": {
+      "decision": "keep",
+      "reason": "workspace file-name sanitising (internal)"
+    },
+    "autoair/lsp/proxy.py::<module>::constant::_WATCH_INTERVAL": {
+      "decision": "keep",
+      "reason": "idle-timeout polling granularity (internal)"
+    },
+    "autoair/lsp/proxy.py::Framer.feed::number::b48f6f67": {
+      "decision": "keep",
+      "reason": "largest LSP header block (Content-Length framing protocol sanity bound)"
+    },
+    "autoair/lsp/proxy.py::LspError.__init__::default::code": {
+      "decision": "keep",
+      "reason": "WebSocket close code 1011 internal error (protocol)"
+    },
+    "autoair/lsp/proxy.py::LspSessionManager._reserve::number::ba5bfc9d": {
+      "decision": "keep",
+      "reason": "WebSocket close code 1013 try again later (protocol)"
+    },
+    "autoair/lsp/proxy.py::LspSessionManager._reserve::number::ba5bfc9d#1": {
+      "decision": "keep",
+      "reason": "WebSocket close code 1013 try again later (protocol)"
+    },
+    "autoair/lsp/proxy.py::LspSessionManager.run::number::dd2dfa50": {
+      "decision": "keep",
+      "reason": "WebSocket close code 1011 internal error (protocol)"
+    },
+    "autoair/lsp/proxy.py::LspSessionManager.run::number::ff1eb8bd": {
+      "decision": "keep",
+      "reason": "WebSocket close code 1008 policy violation (protocol)"
+    },
+    "autoair/lsp/proxy.py::_Bridge._server_loop::number::1260ebb2": {
+      "decision": "keep",
+      "reason": "pipe read chunk size (I/O buffer)"
+    },
+    "autoair/lsp/proxy.py::_limits.apply::number::12835113": {
+      "decision": "keep",
+      "reason": "MB -> bytes conversion"
+    },
+    "autoair/lsp/proxy.py::_limits.apply::number::12835113#1": {
+      "decision": "keep",
+      "reason": "MB -> bytes conversion"
+    },
+    "autoair/lsp/proxy.py::_reap::kwarg::wait_for(timeout=)": {
+      "decision": "keep",
+      "reason": "grace period between SIGTERM and SIGKILL of a language server (internal)"
+    },
+    "autoair/lsp/proxy.py::_reap::kwarg::wait_for(timeout=)#1": {
+      "decision": "keep",
+      "reason": "wait after SIGKILL (internal)"
+    },
+    "autoair/lsp/shell.py::<module>::constant::_JINJA": {
+      "decision": "keep",
+      "reason": "Jinja delimiters (syntax)"
+    },
+    "autoair/lsp/shell.py::<module>::constant::_SEVERITY": {
+      "decision": "keep",
+      "reason": "ShellCheck -> editor severities"
+    },
+    "autoair/lsp/shell.py::ShellLintRequest::kwarg::Field(max_length=)": {
+      "decision": "keep",
+      "reason": "schema ceiling; the effective limit is editor.max_source_chars"
+    },
+    "autoair/lsp/validate.py::<module>::constant::MAX_CODE": {
+      "decision": "keep",
+      "reason": "schema ceiling; editor.max_source_chars is the effective limit"
+    },
+    "autoair/lsp/validate.py::<module>::constant::_BASH_ERROR": {
+      "decision": "keep",
+      "reason": "bash -n output format (tool protocol)"
+    },
+    "autoair/lsp/validate.py::<module>::constant::_CHECKERS": {
+      "decision": "keep",
+      "reason": "language -> checker table (code)"
+    },
+    "autoair/lsp/validate.py::<module>::constant::_ESBUILD": {
+      "decision": "keep",
+      "reason": "esbuild output format (tool protocol)"
+    },
+    "autoair/lsp/validate.py::<module>::constant::_FENCE": {
+      "decision": "keep",
+      "reason": "CommonMark code fence syntax"
+    },
+    "autoair/lsp/validate.py::<module>::constant::_GOFMT": {
+      "decision": "keep",
+      "reason": "gofmt -e output format (tool protocol)"
+    },
+    "autoair/lsp/validate.py::<module>::constant::_JAVAC": {
+      "decision": "keep",
+      "reason": "javac output format (tool protocol)"
+    },
+    "autoair/lsp/validate.py::<module>::constant::_JAVA_CLASS": {
+      "decision": "keep",
+      "reason": "Java syntax (public type name decides the file name javac needs)"
+    },
+    "autoair/lsp/validate.py::<module>::constant::_TSC": {
+      "decision": "keep",
+      "reason": "tsc output format (tool protocol)"
+    },
+    "autoair/lsp/validate.py::_markdown::kwarg::enumerate(start=)": {
+      "decision": "keep",
+      "reason": "1-based line numbers (editor protocol)"
+    },
+    "autoair/marketplace.py::<module>::constant::DEFAULT_MAX_BYTES": {
+      "decision": "config",
+      "setting": "marketplace_max_bytes"
+    },
+    "autoair/marketplace.py::<module>::constant::DEFAULT_TIMEOUT": {
+      "decision": "config",
+      "setting": "marketplace_timeout"
+    },
+    "autoair/marketplace.py::<module>::constant::DEFAULT_TTL": {
+      "decision": "config",
+      "setting": "marketplace_cache_ttl"
+    },
+    "autoair/marketplace.py::<module>::constant::_ID_RE": {
+      "decision": "keep",
+      "reason": "marketplace entry id format (used as a file name)"
+    },
+    "autoair/marketplace.py::MarketplaceSource::regex::pattern:eb1cbcbd": {
+      "decision": "keep",
+      "reason": "source name / URL scheme syntax"
+    },
+    "autoair/marketplace.py::_resolve::regex::re.match:384bfc52": {
+      "decision": "keep",
+      "reason": "source name / URL scheme syntax"
+    },
+    "autoair/merge.py::<module>::constant::MISSING": {
+      "decision": "keep",
+      "reason": "typing helper / runtime object, not a value"
+    },
+    "autoair/merge.py::<module>::constant::_DISCRIMINATORS": {
+      "decision": "keep",
+      "reason": "spec keys identifying list items in three-way merges (spec protocol)"
+    },
+    "autoair/merge.py::<module>::constant::_LAYOUT_FIELDS": {
+      "decision": "keep",
+      "reason": "spec layout fields ignored by conflicts (spec protocol)"
+    },
+    "autoair/net/tls.py::<module>::constant::_CONTEXTS": {
+      "decision": "keep",
+      "reason": "cache of built SSL contexts (internal)"
+    },
+    "autoair/net/tls.py::<module>::constant::_LOCK": {
+      "decision": "keep",
+      "reason": "lock of the SSL context cache (internal)"
+    },
+    "autoair/net/tls.py::<module>::constant::_WARNED": {
+      "decision": "keep",
+      "reason": "clients already warned about verify=false (internal)"
+    },
+    "autoair/net/tls.py::httpx_kwargs::url::43a9519e": {
+      "decision": "keep",
+      "reason": "httpx mount pattern for http:// URLs (protocol)"
+    },
+    "autoair/net/tls.py::httpx_kwargs::url::a9a13761": {
+      "decision": "keep",
+      "reason": "httpx mount pattern for https:// URLs (protocol)"
+    },
+    "autoair/persistence/config.py::DatabaseSettings._schema::regex::re.fullmatch:26784a8c": {
+      "decision": "keep",
+      "reason": "setting default/bound (documented in the configuration reference)"
+    },
+    "autoair/persistence/config.py::DatabaseSettings::kwarg::Field(default=)": {
+      "decision": "keep",
+      "reason": "setting default/bound (documented in the configuration reference)"
+    },
+    "autoair/persistence/config.py::DatabaseSettings::kwarg::Field(default=)#1": {
+      "decision": "keep",
+      "reason": "setting default/bound (documented in the configuration reference)"
+    },
+    "autoair/persistence/config.py::DatabaseSettings::kwarg::Field(default=)#2": {
+      "decision": "keep",
+      "reason": "setting default/bound (documented in the configuration reference)"
+    },
+    "autoair/persistence/config.py::DatabaseSettings::kwarg::Field(default=)#3": {
+      "decision": "keep",
+      "reason": "setting default/bound (documented in the configuration reference)"
+    },
+    "autoair/persistence/config.py::DatabaseSettings::kwarg::Field(default=)#4": {
+      "decision": "keep",
+      "reason": "setting default/bound (documented in the configuration reference)"
+    },
+    "autoair/persistence/config.py::DatabaseSettings::kwarg::Field(default=)#5": {
+      "decision": "keep",
+      "reason": "setting default/bound (documented in the configuration reference)"
+    },
+    "autoair/persistence/config.py::DatabaseSettings::kwarg::Field(ge=)": {
+      "decision": "keep",
+      "reason": "setting default/bound (documented in the configuration reference)"
+    },
+    "autoair/persistence/config.py::DatabaseSettings::kwarg::Field(ge=)#1": {
+      "decision": "keep",
+      "reason": "setting default/bound (documented in the configuration reference)"
+    },
+    "autoair/persistence/config.py::DatabaseSettings::kwarg::Field(ge=)#2": {
+      "decision": "keep",
+      "reason": "setting default/bound (documented in the configuration reference)"
+    },
+    "autoair/persistence/config.py::DatabaseSettings::kwarg::Field(ge=)#3": {
+      "decision": "keep",
+      "reason": "setting default/bound (documented in the configuration reference)"
+    },
+    "autoair/persistence/config.py::DatabaseSettings::kwarg::Field(gt=)": {
+      "decision": "keep",
+      "reason": "setting default/bound (documented in the configuration reference)"
+    },
+    "autoair/persistence/config.py::DatabaseSettings::kwarg::Field(gt=)#1": {
+      "decision": "keep",
+      "reason": "setting default/bound (documented in the configuration reference)"
+    },
+    "autoair/persistence/config.py::DatabaseSettings::kwarg::Field(le=)": {
+      "decision": "keep",
+      "reason": "setting default/bound (documented in the configuration reference)"
+    },
+    "autoair/persistence/config.py::DatabaseSettings::kwarg::Field(le=)#1": {
+      "decision": "keep",
+      "reason": "setting default/bound (documented in the configuration reference)"
+    },
+    "autoair/persistence/config.py::DatabaseSettings::regex::pattern:58c1f967": {
+      "decision": "keep",
+      "reason": "setting default/bound (documented in the configuration reference)"
+    },
+    "autoair/persistence/db.py::<module>::constant::_DATABASES": {
+      "decision": "keep",
+      "reason": "per-process engine cache"
+    },
+    "autoair/persistence/db.py::<module>::constant::_LOCK": {
+      "decision": "keep",
+      "reason": "per-process engine cache"
+    },
+    "autoair/persistence/db.py::Database.__init__::number::e3cbba88": {
+      "decision": "keep",
+      "reason": "unit conversion (s to ms)"
+    },
+    "autoair/persistence/documents.py::<module>::constant::ANY": {
+      "decision": "keep",
+      "reason": "sentinel"
+    },
+    "autoair/persistence/documents.py::<module>::constant::KEY_RE": {
+      "decision": "keep",
+      "reason": "identifier validation pattern (safety)"
+    },
+    "autoair/persistence/documents.py::FileDocumentStore._locked::path::1e92bf3f": {
+      "decision": "keep",
+      "reason": "lock file name inside the state folder"
+    },
+    "autoair/persistence/migrations.py::<module>::constant::HEAD": {
+      "decision": "keep",
+      "reason": "schema migration list (code)"
+    },
+    "autoair/persistence/migrations.py::<module>::constant::MIGRATIONS": {
+      "decision": "keep",
+      "reason": "schema migration list (code)"
+    },
+    "autoair/persistence/protocols.py::AuditRepository.query::default::offset": {
+      "decision": "keep",
+      "reason": "API default (first page)"
+    },
+    "autoair/persistence/schema.py::<module>::constant::_ID": {
+      "decision": "keep",
+      "reason": "SQL column size of the schema (changing it needs a migration)"
+    },
+    "autoair/persistence/schema.py::build_tables::kwarg::Column(default=)": {
+      "decision": "keep",
+      "reason": "SQL column size of the schema (changing it needs a migration)"
+    },
+    "autoair/persistence/schema.py::build_tables::kwarg::Column(default=)#1": {
+      "decision": "keep",
+      "reason": "SQL column size of the schema (changing it needs a migration)"
+    },
+    "autoair/persistence/schema.py::build_tables::number::3028f514": {
+      "decision": "keep",
+      "reason": "SQL column size of the schema (changing it needs a migration)"
+    },
+    "autoair/persistence/schema.py::build_tables::number::3028f514#1": {
+      "decision": "keep",
+      "reason": "SQL column size of the schema (changing it needs a migration)"
+    },
+    "autoair/persistence/schema.py::build_tables::number::3028f514#2": {
+      "decision": "keep",
+      "reason": "SQL column size of the schema (changing it needs a migration)"
+    },
+    "autoair/persistence/schema.py::build_tables::number::3028f514#3": {
+      "decision": "keep",
+      "reason": "SQL column size of the schema (changing it needs a migration)"
+    },
+    "autoair/persistence/schema.py::build_tables::number::3028f514#4": {
+      "decision": "keep",
+      "reason": "SQL column size of the schema (changing it needs a migration)"
+    },
+    "autoair/persistence/schema.py::build_tables::number::3028f514#5": {
+      "decision": "keep",
+      "reason": "SQL column size of the schema (changing it needs a migration)"
+    },
+    "autoair/persistence/schema.py::build_tables::number::3028f514#6": {
+      "decision": "keep",
+      "reason": "SQL column size of the schema (changing it needs a migration)"
+    },
+    "autoair/persistence/schema.py::build_tables::number::3028f514#7": {
+      "decision": "keep",
+      "reason": "SQL column size of the schema (changing it needs a migration)"
+    },
+    "autoair/persistence/schema.py::build_tables::number::3028f514#8": {
+      "decision": "keep",
+      "reason": "SQL column size of the schema (changing it needs a migration)"
+    },
+    "autoair/persistence/schema.py::build_tables::number::310b86e0": {
+      "decision": "keep",
+      "reason": "SQL column size of the schema (changing it needs a migration)"
+    },
+    "autoair/persistence/schema.py::build_tables::number::310b86e0#1": {
+      "decision": "keep",
+      "reason": "SQL column size of the schema (changing it needs a migration)"
+    },
+    "autoair/persistence/schema.py::build_tables::number::310b86e0#2": {
+      "decision": "keep",
+      "reason": "SQL column size of the schema (changing it needs a migration)"
+    },
+    "autoair/persistence/schema.py::build_tables::number::9f9af029": {
+      "decision": "keep",
+      "reason": "SQL column size of the schema (changing it needs a migration)"
+    },
+    "autoair/persistence/schema.py::build_tables::number::9f9af029#1": {
+      "decision": "keep",
+      "reason": "SQL column size of the schema (changing it needs a migration)"
+    },
+    "autoair/persistence/schema.py::build_tables::number::b4182bff": {
+      "decision": "keep",
+      "reason": "SQL column size of the schema (changing it needs a migration)"
+    },
+    "autoair/persistence/schema.py::build_tables::number::b4182bff#1": {
+      "decision": "keep",
+      "reason": "SQL column size of the schema (changing it needs a migration)"
+    },
+    "autoair/persistence/schema.py::build_tables::number::b4182bff#2": {
+      "decision": "keep",
+      "reason": "SQL column size of the schema (changing it needs a migration)"
+    },
+    "autoair/persistence/schema.py::build_tables::number::ba30fd97": {
+      "decision": "keep",
+      "reason": "SQL column size of the schema (changing it needs a migration)"
+    },
+    "autoair/persistence/schema.py::build_tables::number::ba30fd97#1": {
+      "decision": "keep",
+      "reason": "SQL column size of the schema (changing it needs a migration)"
+    },
+    "autoair/persistence/schema.py::build_tables::number::ba30fd97#2": {
+      "decision": "keep",
+      "reason": "SQL column size of the schema (changing it needs a migration)"
+    },
+    "autoair/persistence/sql.py::SqlAiAuditRepository.append::number::310b86e0": {
+      "decision": "keep",
+      "reason": "truncation to the SQL column size"
+    },
+    "autoair/persistence/sql.py::SqlAiAuditRepository.prune::number::12835113": {
+      "decision": "keep",
+      "reason": "unit conversion (MB to bytes)"
+    },
+    "autoair/persistence/sql.py::SqlAiAuditRepository.prune::number::12835113#1": {
+      "decision": "keep",
+      "reason": "unit conversion (MB to bytes)"
+    },
+    "autoair/persistence/sql.py::SqlAiAuditRepository.usage::kwarg::case(else_=)": {
+      "decision": "keep",
+      "reason": "SQL arithmetic (count of errors)"
+    },
+    "autoair/persistence/sql.py::SqlAuditRepository.append::number::310b86e0": {
+      "decision": "keep",
+      "reason": "truncation to the SQL column size"
+    },
+    "autoair/persistence/sql.py::SqlAuditRepository.query::default::offset": {
+      "decision": "keep",
+      "reason": "API default (first page)"
+    },
+    "autoair/persistence/sql.py::SqlCollabLog.append::number::3028f514": {
+      "decision": "keep",
+      "reason": "truncation to the SQL column size"
+    },
+    "autoair/persistence/sql.py::SqlDocumentStore._insert::kwarg::values(version=)": {
+      "decision": "keep",
+      "reason": "first row version"
+    },
+    "autoair/persistence/sql.py::SqlDocumentStore.update::kwarg::values(version=)": {
+      "decision": "keep",
+      "reason": "first row version"
+    },
+    "autoair/persistence/sql.py::heartbeat::number::3028f514": {
+      "decision": "keep",
+      "reason": "truncation to the SQL column size"
+    },
+    "autoair/persistence/sql.py::heartbeat::number::b4182bff": {
+      "decision": "keep",
+      "reason": "truncation to the SQL column size"
+    },
+    "autoair/plugin.py::<module>::constant::URL_PREFIX": {
+      "decision": "keep",
+      "reason": "Airflow plugin mount path; the frontend bundle's URLs depend on it"
+    },
+    "autoair/plugin.py::<module>::constant::_SETTINGS": {
+      "decision": "keep",
+      "reason": "process state, not a value"
+    },
+    "autoair/plugin.py::_react_apps::path::b403b69d": {
+      "decision": "keep",
+      "reason": "plugin bundle file name (build output)"
+    },
+    "autoair/plugin.py::_react_apps::path::bae01aec": {
+      "decision": "keep",
+      "reason": "plugin icon file name (build output)"
+    },
+    "autoair/registry/__init__.py::<module>::constant::ENTRY_POINT_GROUP": {
+      "decision": "keep",
+      "reason": "AutoAir node-kind entry point group (public extension contract)"
+    },
+    "autoair/runner/__init__.py::<module>::constant::DEFAULT_MAX_LOG": {
+      "decision": "config",
+      "setting": "runner.max_log_chars"
+    },
+    "autoair/runner/__init__.py::<module>::constant::DEFAULT_MAX_VALUE": {
+      "decision": "config",
+      "setting": "runner.max_value_chars"
+    },
+    "autoair/runner/__init__.py::run_dag_test::default::timeout": {
+      "decision": "config",
+      "setting": "runner.default_dag_timeout"
+    },
+    "autoair/runner/__init__.py::run_task_test::default::timeout": {
+      "decision": "config",
+      "setting": "runner.default_task_timeout"
+    },
+    "autoair/runner/_child.py::<module>::constant::RETURN_KEY": {
+      "decision": "keep",
+      "reason": "Airflow's return_value XCom key (protocol)"
+    },
+    "autoair/runner/_child.py::<module>::constant::_FAILED": {
+      "decision": "keep",
+      "reason": "Airflow task states (protocol)"
+    },
+    "autoair/runner/_child.py::<module>::constant::_REPR_LIMIT": {
+      "decision": "config",
+      "setting": "runner.max_value_chars"
+    },
+    "autoair/runner/_child.py::run_task::number::310b86e0": {
+      "decision": "keep",
+      "reason": "lower bound of the XCom repr length"
+    },
+    "autoair/scaffold/__init__.py::<module>::constant::NODE_NAME": {
+      "decision": "keep",
+      "reason": "node kind / Python package name syntax (protocol)"
+    },
+    "autoair/scaffold/__init__.py::<module>::constant::TEMPLATES": {
+      "decision": "keep",
+      "reason": "location of the packaged scaffold templates"
+    },
+    "autoair/secret_mask.py::<module>::constant::MASK": {
+      "decision": "keep",
+      "reason": "the replacement shown for masked secrets (same as config_reference.MASK)"
+    },
+    "autoair/secret_mask.py::<module>::constant::_ACTIVE": {
+      "decision": "keep",
+      "reason": "per-request registry of masked secrets (ContextVar, not a value)"
+    },
+    "autoair/secret_mask.py::<module>::constant::_BASIC_USERS": {
+      "decision": "keep",
+      "reason": "Basic-auth user names AutoAir pairs a token with (git http.extraHeader, Azure PAT, GitLab, Bitbucket): their encodings are masked too"
+    },
+    "autoair/secret_mask.py::<module>::constant::_INSTALL_LOCK": {
+      "decision": "keep",
+      "reason": "lock guarding the one-time log record factory installation (not a value)"
+    },
+    "autoair/secret_mask.py::<module>::constant::_MIN_LENGTH": {
+      "decision": "keep",
+      "reason": "secrets shorter than this are not registered (they would mask ordinary text); request tokens need >= 8 characters anyway"
+    },
+    "autoair/sections.py::<module>::constant::ADMIN_EXPORT_MAX": {
+      "decision": "keep",
+      "reason": "hard upper bound of the admin.* limits (memory guard; the configurable limits are validated against it)"
+    },
+    "autoair/sections.py::<module>::constant::ADMIN_SCAN_MAX": {
+      "decision": "keep",
+      "reason": "hard upper bound of the admin.* limits (memory guard; the configurable limits are validated against it)"
+    },
+    "autoair/sections.py::<module>::constant::DEFAULT_CLASS_HINT": {
+      "decision": "config",
+      "setting": "discovery.class_hint_pattern"
+    },
+    "autoair/sections.py::<module>::constant::DEFAULT_CONNECTION_PARAM_PATTERNS": {
+      "decision": "config",
+      "setting": "catalog.connection_param_patterns"
+    },
+    "autoair/sections.py::<module>::constant::DEFAULT_EXCLUDE_DISTRIBUTIONS": {
+      "decision": "config",
+      "setting": "discovery.exclude_distributions"
+    },
+    "autoair/sections.py::<module>::constant::DEFAULT_LINT_IGNORE": {
+      "decision": "config",
+      "setting": "editor.python_lint_ignore"
+    },
+    "autoair/sections.py::<module>::constant::DEFAULT_LINT_SELECT": {
+      "decision": "config",
+      "setting": "editor.python_lint_select"
+    },
+    "autoair/sections.py::<module>::constant::DEFAULT_PRIVILEGED_OPERATORS": {
+      "decision": "config",
+      "setting": "policy.privileged_operators"
+    },
+    "autoair/sections.py::<module>::constant::DEFAULT_SCRUB_ENV": {
+      "decision": "config",
+      "setting": "sandbox.scrub_env"
+    },
+    "autoair/sections.py::<module>::constant::DEFAULT_SENSITIVE_ASSIGNMENT": {
+      "decision": "config",
+      "setting": "policy.secret_assignment_pattern"
+    },
+    "autoair/sections.py::<module>::constant::DEFAULT_SENSITIVE_ENV": {
+      "decision": "config",
+      "setting": "sandbox.secret_env_pattern"
+    },
+    "autoair/sections.py::<module>::constant::DEFAULT_SENSITIVE_PARAM": {
+      "decision": "config",
+      "setting": "policy.secret_param_pattern"
+    },
+    "autoair/sections.py::<module>::constant::DEFAULT_SENSITIVE_PARAM_EXCLUDE": {
+      "decision": "config",
+      "setting": "policy.secret_param_exclude_pattern"
+    },
+    "autoair/sections.py::<module>::constant::DEFAULT_SHELLCHECK_EXCLUDE": {
+      "decision": "config",
+      "setting": "editor.shellcheck_exclude"
+    },
+    "autoair/sections.py::<module>::constant::DEFAULT_SKIP_CLASS": {
+      "decision": "config",
+      "setting": "discovery.skip_class_pattern"
+    },
+    "autoair/sections.py::<module>::constant::DEFAULT_SKIP_DIRS": {
+      "decision": "config",
+      "setting": "discovery.skip_dirs"
+    },
+    "autoair/sections.py::<module>::constant::DEFAULT_SKIP_MODULE": {
+      "decision": "config",
+      "setting": "discovery.skip_module_pattern"
+    },
+    "autoair/sections.py::<module>::constant::SECTION_TYPES": {
+      "decision": "keep",
+      "reason": "registry of section models, not a value"
+    },
+    "autoair/sections.py::<module>::constant::_ACTIVE": {
+      "decision": "keep",
+      "reason": "process state, not a value"
+    },
+    "autoair/sections.py::<module>::constant::_S": {
+      "decision": "keep",
+      "reason": "typing helper / runtime object, not a value"
+    },
+    "autoair/sections.py::SsoSettings::regex::pattern:d49769fe": {
+      "decision": "keep",
+      "reason": "RFC 6265 cookie-name token characters (validation of sso.cookie_name)"
+    },
+    "autoair/sections.py::UiSettings::regex::pattern:44d92022": {
+      "decision": "keep",
+      "reason": "validation of ui.accent_color (CSS hex or palette name; no CSS injection)"
+    },
+    "autoair/sections.py::UiSettings::regex::pattern:44d92022#1": {
+      "decision": "keep",
+      "reason": "validation of ui.banner_color (CSS hex or palette name; no CSS injection)"
+    },
+    "autoair/sections.py::_default_rate_limits::number::cae91e45": {
+      "decision": "config",
+      "setting": "limits.rate_limits (default requests per window of the validate group)"
+    },
+    "autoair/sections.py::compile_patterns::default::flags": {
+      "decision": "keep",
+      "reason": "regex flags parameter default (none)"
+    },
+    "autoair/server.py::<module>::constant::OPTIONS_ENV": {
+      "decision": "keep",
+      "reason": "internal variable passing CLI options to uvicorn worker processes"
+    },
+    "autoair/server.py::<module>::constant::_CERT_REQS": {
+      "decision": "keep",
+      "reason": "mapping of server.ssl_cert_reqs names to ssl constants"
+    },
+    "autoair/server.py::<module>::constant::_TLS_VERSIONS": {
+      "decision": "keep",
+      "reason": "mapping of server.ssl_min_version names to ssl constants"
+    },
+    "autoair/server.py::_open_when_ready::default::timeout": {
+      "decision": "keep",
+      "reason": "seconds to wait for the local server before giving up opening a browser (convenience)"
+    },
+    "autoair/server.py::_open_when_ready::kwarg::get(timeout=)": {
+      "decision": "keep",
+      "reason": "health probe timeout of the browser opener (convenience)"
+    },
+    "autoair/server.py::run::path::1533da9c": {
+      "decision": "keep",
+      "reason": "health endpoint polled before opening the browser"
+    },
+    "autoair/server.py::run::path::7c1abc4f": {
+      "decision": "keep",
+      "reason": "UI mount point opened in the browser"
+    },
+    "autoair/settings.py::_default_airflow_url::url::973503d5": {
+      "decision": "keep",
+      "reason": "airflow_url fallback without Airflow config (Airflow's default port)"
+    },
+    "autoair/settings.py::_default_airflow_url::url::ffb7b82d": {
+      "decision": "keep",
+      "reason": "airflow_url fallback without Airflow config (Airflow's default port)"
+    },
+    "autoair/settings.py::_default_dags_folder::path::5aca0ea1": {
+      "decision": "keep",
+      "reason": "dags_folder fallback without Airflow (default of the setting)"
+    },
+    "autoair/spec/migrations.py::<module>::constant::LATEST": {
+      "decision": "keep",
+      "reason": "spec version (spec protocol)"
+    },
+    "autoair/spec/migrations.py::<module>::constant::MIGRATIONS": {
+      "decision": "keep",
+      "reason": "spec version migrations (spec protocol)"
+    },
+    "autoair/spec/models.py::<module>::constant::RAW_CODE_MAX_CHARS": {
+      "decision": "keep",
+      "reason": "schema ceiling of DagSpec.raw_code (part of the stored document format; same as the default interchange.max_source_chars)"
+    },
+    "autoair/storage/base.py::<module>::constant::DEFAULT_HISTORY_LIMIT": {
+      "decision": "config",
+      "setting": "storage.history_limit"
+    },
+    "autoair/storage/base.py::<module>::constant::GENERATED_MARKER": {
+      "decision": "keep",
+      "reason": "ownership marker: files without it are never overwritten or deleted (safety contract)"
+    },
+    "autoair/storage/base.py::<module>::constant::HISTORY_DIR": {
+      "decision": "keep",
+      "reason": "on-disk layout shared by every deploy target and older versions"
+    },
+    "autoair/storage/base.py::<module>::constant::STATE_DIR": {
+      "decision": "keep",
+      "reason": "on-disk layout shared by every deploy target, the loader and older versions"
+    },
+    "autoair/storage/base.py::<module>::constant::STUB_MARKER": {
+      "decision": "keep",
+      "reason": "ownership marker of loader stubs (safety contract)"
+    },
+    "autoair/storage/base.py::<module>::constant::_VERSION_RE": {
+      "decision": "keep",
+      "reason": "version id safety (used in file names)"
+    },
+    "autoair/storage/base.py::AuthError.status::regex::re.search:ef22d4a1": {
+      "decision": "keep",
+      "reason": "HTTP 403 in a provider's error message (protocol): missing scopes vs refused credentials"
+    },
+    "autoair/storage/base.py::check_dag_id::number::ba30fd97": {
+      "decision": "keep",
+      "reason": "Airflow's maximum dag_id length (protocol)"
+    },
+    "autoair/storage/base.py::is_owned::number::f83a383c": {
+      "decision": "keep",
+      "reason": "message truncation / HTTP status class boundary (presentation/protocol)"
+    },
+    "autoair/storage/config.py::<module>::constant::ALL_TARGET_KINDS": {
+      "decision": "keep",
+      "reason": "deploy target kinds AutoAir implements (storage.allowed_targets restricts them)"
+    },
+    "autoair/storage/config.py::<module>::constant::TEMPLATE_FIELDS": {
+      "decision": "keep",
+      "reason": "placeholders each storage.git.*_template accepts (validation)"
+    },
+    "autoair/storage/config.py::<module>::constant::UNAVAILABLE_RETRY_SECONDS": {
+      "decision": "keep",
+      "reason": "throttle of read-triggered rebuilds of a deploy target that could not be built (writes always retry); internal recovery cadence"
+    },
+    "autoair/storage/config.py::<module>::constant::_URL_SLUG": {
+      "decision": "keep",
+      "reason": "git remote URL parsing (syntax)"
+    },
+    "autoair/storage/config.py::StorageSettings::regex::pattern:65d14c5b": {
+      "decision": "keep",
+      "reason": "validates octal file modes (storage.file_mode / dir_mode)"
+    },
+    "autoair/storage/config.py::StorageSettings::regex::pattern:65d14c5b#1": {
+      "decision": "keep",
+      "reason": "validates octal file modes (storage.file_mode / dir_mode)"
+    },
+    "autoair/storage/config.py::_git_provider::url::67a28901": {
+      "decision": "config",
+      "setting": "storage.git.api_url (default of the public host)"
+    },
+    "autoair/storage/config.py::_git_provider::url::7815ce3b": {
+      "decision": "config",
+      "setting": "storage.git.api_url (default of the public host)"
+    },
+    "autoair/storage/config.py::_git_provider::url::8c681b0a": {
+      "decision": "config",
+      "setting": "storage.git.api_url (default of the public host)"
+    },
+    "autoair/storage/credentials.py::<module>::constant::_UNSAFE": {
+      "decision": "keep",
+      "reason": "characters replaced in usernames to build an Airflow connection id"
+    },
+    "autoair/storage/git/azure.py::<module>::constant::API_VERSION": {
+      "decision": "keep",
+      "reason": "Azure DevOps REST API version the client is written against (protocol)"
+    },
+    "autoair/storage/git/azure.py::<module>::constant::ZERO": {
+      "decision": "keep",
+      "reason": "git null object id (protocol)"
+    },
+    "autoair/storage/git/azure.py::<module>::constant::_SHA_LEN": {
+      "decision": "keep",
+      "reason": "git object id length (protocol)"
+    },
+    "autoair/storage/git/azure.py::AzureDevOpsProvider.__init__::default::timeout": {
+      "decision": "config",
+      "setting": "storage.git.timeout"
+    },
+    "autoair/storage/git/azure.py::AzureDevOpsProvider.__init__::url::8c681b0a": {
+      "decision": "config",
+      "setting": "storage.git.api_url (default of the public host)"
+    },
+    "autoair/storage/git/azure.py::AzureDevOpsProvider._request::number::ab7f7b95": {
+      "decision": "keep",
+      "reason": "message truncation / HTTP status class boundary (presentation/protocol)"
+    },
+    "autoair/storage/git/azure.py::AzureDevOpsProvider.commit_files::number::ab7f7b95": {
+      "decision": "keep",
+      "reason": "message truncation / HTTP status class boundary (presentation/protocol)"
+    },
+    "autoair/storage/git/azure.py::AzureDevOpsProvider.commit_files::number::ab7f7b95#1": {
+      "decision": "keep",
+      "reason": "message truncation / HTTP status class boundary (presentation/protocol)"
+    },
+    "autoair/storage/git/azure.py::AzureDevOpsProvider.log::number::310b86e0": {
+      "decision": "keep",
+      "reason": "page size of the git host's list API (host maximum; pagination follows)"
+    },
+    "autoair/storage/git/azure.py::_message::number::e26973e6": {
+      "decision": "keep",
+      "reason": "message truncation / HTTP status class boundary (presentation/protocol)"
+    },
+    "autoair/storage/git/azure.py::_message::number::e26973e6#1": {
+      "decision": "keep",
+      "reason": "message truncation / HTTP status class boundary (presentation/protocol)"
+    },
+    "autoair/storage/git/azure.py::_message::number::e26973e6#2": {
+      "decision": "keep",
+      "reason": "message truncation / HTTP status class boundary (presentation/protocol)"
+    },
+    "autoair/storage/git/bitbucket.py::<module>::constant::DEFAULT_API_URL": {
+      "decision": "config",
+      "setting": "storage.git.api_url"
+    },
+    "autoair/storage/git/bitbucket.py::BitbucketProvider.__init__::default::timeout": {
+      "decision": "config",
+      "setting": "storage.git.timeout"
+    },
+    "autoair/storage/git/bitbucket.py::BitbucketProvider._request::number::ab7f7b95": {
+      "decision": "keep",
+      "reason": "message truncation / HTTP status class boundary (presentation/protocol)"
+    },
+    "autoair/storage/git/bitbucket.py::BitbucketProvider.commit_files::number::ab7f7b95": {
+      "decision": "keep",
+      "reason": "message truncation / HTTP status class boundary (presentation/protocol)"
+    },
+    "autoair/storage/git/bitbucket.py::BitbucketProvider.commit_files::number::ab7f7b95#1": {
+      "decision": "keep",
+      "reason": "message truncation / HTTP status class boundary (presentation/protocol)"
+    },
+    "autoair/storage/git/bitbucket.py::BitbucketProvider.commit_files::regex::re.search:784b0071": {
+      "decision": "keep",
+      "reason": "parses the host's response (protocol)"
+    },
+    "autoair/storage/git/bitbucket.py::BitbucketProvider.create_branch::number::ab7f7b95": {
+      "decision": "keep",
+      "reason": "message truncation / HTTP status class boundary (presentation/protocol)"
+    },
+    "autoair/storage/git/bitbucket.py::BitbucketProvider.create_branch::number::ab7f7b95#1": {
+      "decision": "keep",
+      "reason": "message truncation / HTTP status class boundary (presentation/protocol)"
+    },
+    "autoair/storage/git/bitbucket.py::BitbucketProvider.list_files::number::310b86e0": {
+      "decision": "keep",
+      "reason": "page size of the git host's list API (host maximum; pagination follows)"
+    },
+    "autoair/storage/git/bitbucket.py::BitbucketProvider.log::number::310b86e0": {
+      "decision": "keep",
+      "reason": "page size of the git host's list API (host maximum; pagination follows)"
+    },
+    "autoair/storage/git/bitbucket.py::_message::number::e26973e6": {
+      "decision": "keep",
+      "reason": "message truncation / HTTP status class boundary (presentation/protocol)"
+    },
+    "autoair/storage/git/bitbucket.py::_message::number::e26973e6#1": {
+      "decision": "keep",
+      "reason": "message truncation / HTTP status class boundary (presentation/protocol)"
+    },
+    "autoair/storage/git/bitbucket.py::_message::number::e26973e6#2": {
+      "decision": "keep",
+      "reason": "message truncation / HTTP status class boundary (presentation/protocol)"
+    },
+    "autoair/storage/git/gitea.py::<module>::constant::_DRAFT_PREFIX": {
+      "decision": "keep",
+      "reason": "Gitea's work-in-progress title marker for draft pull requests (host protocol)"
+    },
+    "autoair/storage/git/gitea.py::<module>::constant::_HTTP_REPO": {
+      "decision": "keep",
+      "reason": "parses owner/repo out of an HTTP(S) remote URL"
+    },
+    "autoair/storage/git/gitea.py::<module>::constant::_MAX_PAGES": {
+      "decision": "keep",
+      "reason": "bound of the open-pull-request scan (1000 PRs); internal safety limit"
+    },
+    "autoair/storage/git/gitea.py::<module>::constant::_PAGE_SIZE": {
+      "decision": "keep",
+      "reason": "Gitea API page size (its default maximum)"
+    },
+    "autoair/storage/git/gitea.py::GiteaProvider.__init__::default::api_timeout": {
+      "decision": "config",
+      "setting": "storage.git.timeout"
+    },
+    "autoair/storage/git/gitea.py::GiteaProvider._repo_path::path::8bf153b0": {
+      "decision": "keep",
+      "reason": "Gitea REST API route (host protocol)"
+    },
+    "autoair/storage/git/gitea.py::GiteaProvider._set_labels::path::27eb4259": {
+      "decision": "keep",
+      "reason": "Gitea REST API route (host protocol)"
+    },
+    "autoair/storage/git/gitea.py::GiteaProvider._set_labels::path::27eb4259#1": {
+      "decision": "keep",
+      "reason": "Gitea REST API route (host protocol)"
+    },
+    "autoair/storage/git/gitea.py::GiteaProvider._set_labels::path::bf929f33": {
+      "decision": "keep",
+      "reason": "Gitea REST API route (host protocol)"
+    },
+    "autoair/storage/git/gitea.py::GiteaProvider.find_open_pr::path::cdb8fbf7": {
+      "decision": "keep",
+      "reason": "Gitea REST API route (host protocol)"
+    },
+    "autoair/storage/git/gitea.py::GiteaProvider.open_pr::path::1842f297": {
+      "decision": "keep",
+      "reason": "Gitea REST API route (host protocol)"
+    },
+    "autoair/storage/git/gitea.py::GiteaProvider.open_pr::path::cdb8fbf7": {
+      "decision": "keep",
+      "reason": "Gitea REST API route (host protocol)"
+    },
+    "autoair/storage/git/gitea.py::GiteaProvider.open_pr::path::e41202a3": {
+      "decision": "keep",
+      "reason": "Gitea REST API route (host protocol)"
+    },
+    "autoair/storage/git/gitea.py::GiteaProvider.token_user::path::82b076b7": {
+      "decision": "keep",
+      "reason": "Gitea REST API path of the authenticated user (protocol)"
+    },
+    "autoair/storage/git/gitea.py::gitea_repo::path::cd775fc9": {
+      "decision": "config",
+      "setting": "storage.git.api_url (default derived from the remote URL)"
+    },
+    "autoair/storage/git/gitea.py::gitea_repo::regex::re.sub:94848ae9": {
+      "decision": "keep",
+      "reason": "strips user info (credentials) from a remote URL"
+    },
+    "autoair/storage/git/github.py::<module>::constant::DEFAULT_API_URL": {
+      "decision": "config",
+      "setting": "storage.git.api_url"
+    },
+    "autoair/storage/git/github.py::<module>::constant::_COMMIT_MUTATION": {
+      "decision": "keep",
+      "reason": "GitHub GraphQL mutation (protocol)"
+    },
+    "autoair/storage/git/github.py::GitHubAppTokenSource.__call__::number::7507d41e": {
+      "decision": "keep",
+      "reason": "fallback installation-token lifetime when GitHub sends none (tokens last 1 h)"
+    },
+    "autoair/storage/git/github.py::GitHubAppTokenSource.__call__::number::ab7f7b95": {
+      "decision": "keep",
+      "reason": "message truncation / HTTP status class boundary (presentation/protocol)"
+    },
+    "autoair/storage/git/github.py::GitHubAppTokenSource.__init__::default::timeout": {
+      "decision": "config",
+      "setting": "storage.git.timeout"
+    },
+    "autoair/storage/git/github.py::GitHubAppTokenSource.app_jwt::number::a8a2b30f": {
+      "decision": "keep",
+      "reason": "GitHub App JWT lifetime (GitHub allows at most 10 minutes)"
+    },
+    "autoair/storage/git/github.py::GitHubProvider.__init__::default::timeout": {
+      "decision": "config",
+      "setting": "storage.git.timeout"
+    },
+    "autoair/storage/git/github.py::GitHubProvider._request::number::ab7f7b95": {
+      "decision": "keep",
+      "reason": "message truncation / HTTP status class boundary (presentation/protocol)"
+    },
+    "autoair/storage/git/github.py::GitHubProvider.commit_files::number::e26973e6": {
+      "decision": "keep",
+      "reason": "message truncation / HTTP status class boundary (presentation/protocol)"
+    },
+    "autoair/storage/git/github.py::GitHubProvider.create_branch::number::ab7f7b95": {
+      "decision": "keep",
+      "reason": "message truncation / HTTP status class boundary (presentation/protocol)"
+    },
+    "autoair/storage/git/github.py::GitHubProvider.log::number::310b86e0": {
+      "decision": "keep",
+      "reason": "page size of the git host's list API (host maximum; pagination follows)"
+    },
+    "autoair/storage/git/github.py::_message::number::e26973e6": {
+      "decision": "keep",
+      "reason": "message truncation / HTTP status class boundary (presentation/protocol)"
+    },
+    "autoair/storage/git/github.py::_message::number::e26973e6#1": {
+      "decision": "keep",
+      "reason": "message truncation / HTTP status class boundary (presentation/protocol)"
+    },
+    "autoair/storage/git/github.py::_message::number::e26973e6#2": {
+      "decision": "keep",
+      "reason": "message truncation / HTTP status class boundary (presentation/protocol)"
+    },
+    "autoair/storage/git/gitlab.py::<module>::constant::DEFAULT_API_URL": {
+      "decision": "config",
+      "setting": "storage.git.api_url"
+    },
+    "autoair/storage/git/gitlab.py::GitLabProvider.__init__::default::timeout": {
+      "decision": "config",
+      "setting": "storage.git.timeout"
+    },
+    "autoair/storage/git/gitlab.py::GitLabProvider._request::number::ab7f7b95": {
+      "decision": "keep",
+      "reason": "message truncation / HTTP status class boundary (presentation/protocol)"
+    },
+    "autoair/storage/git/gitlab.py::GitLabProvider.commit_files::number::ab7f7b95": {
+      "decision": "keep",
+      "reason": "message truncation / HTTP status class boundary (presentation/protocol)"
+    },
+    "autoair/storage/git/gitlab.py::GitLabProvider.commit_files::number::ab7f7b95#1": {
+      "decision": "keep",
+      "reason": "message truncation / HTTP status class boundary (presentation/protocol)"
+    },
+    "autoair/storage/git/gitlab.py::GitLabProvider.create_branch::number::ab7f7b95": {
+      "decision": "keep",
+      "reason": "message truncation / HTTP status class boundary (presentation/protocol)"
+    },
+    "autoair/storage/git/gitlab.py::GitLabProvider.create_branch::number::ab7f7b95#1": {
+      "decision": "keep",
+      "reason": "message truncation / HTTP status class boundary (presentation/protocol)"
+    },
+    "autoair/storage/git/gitlab.py::GitLabProvider.list_files::number::310b86e0": {
+      "decision": "keep",
+      "reason": "page size of the git host's list API (host maximum; pagination follows)"
+    },
+    "autoair/storage/git/gitlab.py::GitLabProvider.log::number::310b86e0": {
+      "decision": "keep",
+      "reason": "page size of the git host's list API (host maximum; pagination follows)"
+    },
+    "autoair/storage/git/gitlab.py::_message::number::e26973e6": {
+      "decision": "keep",
+      "reason": "message truncation / HTTP status class boundary (presentation/protocol)"
+    },
+    "autoair/storage/git/gitlab.py::_message::number::e26973e6#1": {
+      "decision": "keep",
+      "reason": "message truncation / HTTP status class boundary (presentation/protocol)"
+    },
+    "autoair/storage/git/gitlab.py::_message::number::e26973e6#2": {
+      "decision": "keep",
+      "reason": "message truncation / HTTP status class boundary (presentation/protocol)"
+    },
+    "autoair/storage/git/local_git.py::<module>::constant::_AUTH_FAILED_RE": {
+      "decision": "keep",
+      "reason": "recognises git's own authentication-failure messages (git CLI protocol)"
+    },
+    "autoair/storage/git/local_git.py::<module>::constant::_CACHE_LOCKS": {
+      "decision": "keep",
+      "reason": "one lock per clone cache directory (not a value)"
+    },
+    "autoair/storage/git/local_git.py::<module>::constant::_CACHE_LOCKS_GUARD": {
+      "decision": "keep",
+      "reason": "lock guarding the clone-cache lock registry (not a value)"
+    },
+    "autoair/storage/git/local_git.py::<module>::constant::_SHA_RE": {
+      "decision": "keep",
+      "reason": "git object id format (protocol)"
+    },
+    "autoair/storage/git/local_git.py::<module>::constant::_USERINFO_RE": {
+      "decision": "keep",
+      "reason": "redacts credentials from remote URLs in messages"
+    },
+    "autoair/storage/git/local_git.py::LocalGitProvider.__init__::default::command_timeout": {
+      "decision": "config",
+      "setting": "storage.git.command_timeout"
+    },
+    "autoair/storage/git/local_git.py::LocalGitProvider.__init__::default::fetch_interval": {
+      "decision": "config",
+      "setting": "storage.git.fetch_interval"
+    },
+    "autoair/storage/git/local_git.py::LocalGitProvider._key_file::number::b741f252": {
+      "decision": "keep",
+      "reason": "0o600: private key files must be owner-only (ssh/signing keys)"
+    },
+    "autoair/storage/git/provider.py::<module>::constant::_BRANCH_RE": {
+      "decision": "keep",
+      "reason": "git ref-name rules (git check-ref-format)"
+    },
+    "autoair/storage/git/provider.py::<module>::constant::_SHA_RE": {
+      "decision": "keep",
+      "reason": "git object id format (protocol)"
+    },
+    "autoair/storage/git/provider.py::parse_author::regex::re.match:31f75a31": {
+      "decision": "keep",
+      "reason": "git author string parsing (syntax)"
+    },
+    "autoair/storage/git/provider.py::parse_author::regex::re.match:b9ee6841": {
+      "decision": "keep",
+      "reason": "git author string parsing (syntax)"
+    },
+    "autoair/storage/git/provider.py::parse_author::regex::re.sub:a4164b61": {
+      "decision": "keep",
+      "reason": "git author string parsing (syntax)"
+    },
+    "autoair/storage/git/target.py::<module>::constant::_CACHE_SIZE": {
+      "decision": "config",
+      "setting": "storage.git.read_cache_size"
+    },
+    "autoair/storage/git/target.py::<module>::constant::_FULL_SHA": {
+      "decision": "keep",
+      "reason": "git object id format (protocol)"
+    },
+    "autoair/storage/git/target.py::<module>::constant::_MAX_ATTEMPTS": {
+      "decision": "config",
+      "setting": "storage.git.max_attempts"
+    },
+    "autoair/storage/git/target.py::<module>::constant::_P": {
+      "decision": "keep",
+      "reason": "typing helper (ParamSpec), not a value"
+    },
+    "autoair/storage/git/target.py::<module>::constant::_R": {
+      "decision": "keep",
+      "reason": "typing helper (TypeVar), not a value"
+    },
+    "autoair/storage/git/target.py::GitTarget._pr_body::regex::re.sub:03647bc6": {
+      "decision": "keep",
+      "reason": "collapse blank lines left by empty placeholders"
+    },
+    "autoair/storage/local.py::<module>::constant::DEFAULT_FILE_MODE": {
+      "decision": "config",
+      "setting": "storage.file_mode"
+    },
+    "autoair/storage/request_token.py::<module>::constant::HEADER": {
+      "decision": "keep",
+      "reason": "name of the request header carrying a per-deploy git token (API contract shared with the frontend and MCP clients)"
+    },
+    "autoair/storage/request_token.py::<module>::constant::HINTS": {
+      "decision": "keep",
+      "reason": "token type and scopes each git host needs (provider documentation shown in the UI)"
+    },
+    "autoair/storage/request_token.py::<module>::constant::MAX_LENGTH": {
+      "decision": "keep",
+      "reason": "upper bound of a git token's length (input validation; real tokens are < 300 characters)"
+    },
+    "autoair/storage/request_token.py::<module>::constant::OFF": {
+      "decision": "keep",
+      "reason": "value of the storage.git.request_token setting (enum member)"
+    },
+    "autoair/storage/request_token.py::<module>::constant::REQUIRED": {
+      "decision": "keep",
+      "reason": "value of the storage.git.request_token setting (enum member)"
+    },
+    "autoair/storage/request_token.py::<module>::constant::_MIN_LENGTH": {
+      "decision": "keep",
+      "reason": "lower bound of a git token's length (input validation; also keeps masking from hitting ordinary text)"
+    },
+    "autoair/storage/request_token.py::<module>::constant::_SSH_REMOTE": {
+      "decision": "keep",
+      "reason": "recognises SSH remotes (git URL syntax), which a token cannot authenticate"
+    },
+    "autoair/storage/request_token.py::<module>::constant::_TOKEN_RE": {
+      "decision": "keep",
+      "reason": "tokens are visible ASCII without spaces (input validation, header-safe)"
+    },
+    "autoair/storage/request_token.py::_insecure_url::url::43a9519e": {
+      "decision": "keep",
+      "reason": "plain-HTTP scheme prefix: tokens are never sent to http:// hosts unless request_token_allow_insecure"
+    },
+    "autoair/templates/__init__.py::<module>::constant::_DICT_FIELDS": {
+      "decision": "keep",
+      "reason": "task spec fields addressable by dotted lock paths (schema)"
+    },
+    "autoair/templates/__init__.py::<module>::constant::_ICON": {
+      "decision": "keep",
+      "reason": "node icon reference syntax (same as the spec schema)"
+    },
+    "autoair/templates/__init__.py::<module>::constant::_ID_RE": {
+      "decision": "keep",
+      "reason": "template id = file name (path safety)"
+    },
+    "autoair/templates/__init__.py::<module>::constant::_NOT_LOCKABLE": {
+      "decision": "keep",
+      "reason": "identity/canvas fields a template can never lock (schema rule)"
+    },
+    "autoair/templates/__init__.py::<module>::kwarg::Field(max_length=)": {
+      "decision": "keep",
+      "reason": "template schema bound (lock path length)"
+    },
+    "autoair/templates/__init__.py::<module>::regex::pattern:56f382ad": {
+      "decision": "keep",
+      "reason": "lock path syntax (schema)"
+    },
+    "autoair/templates/__init__.py::TemplateInput::kwarg::Field(max_length=)": {
+      "decision": "keep",
+      "reason": "template title length (API contract)"
+    },
+    "autoair/templates/__init__.py::TemplateInput::kwarg::Field(max_length=)#1": {
+      "decision": "keep",
+      "reason": "template schema bound (owner team length)"
+    },
+    "autoair/templates/__init__.py::TemplateInput::kwarg::Field(max_length=)#2": {
+      "decision": "keep",
+      "reason": "template schema bound (version string length, same as TemplateRef)"
+    },
+    "autoair/templates/__init__.py::TemplateInput::kwarg::Field(max_length=)#3": {
+      "decision": "keep",
+      "reason": "template schema bound (documentation link length)"
+    },
+    "autoair/templates/__init__.py::TemplateInput::regex::pattern:ca7f6703": {
+      "decision": "keep",
+      "reason": "documentation links must be http(s) (rendered as links in the UI)"
+    },
+    "autoair/templates/__init__.py::<module>::constant::BLUEPRINT_NODE_ID": {
+      "decision": "keep",
+      "reason": "node id of a stored blueprint task (stored format, mirrored by the UI)"
+    },
+    "autoair/templates/__init__.py::<module>::constant::PREVIEW_DAG_ID": {
+      "decision": "keep",
+      "reason": "dag_id of the throwaway one-task DAG a template is validated in (never stored)"
+    },
+    "autoair/templates/__init__.py::TemplateStore.__init__::default::history_limit": {
+      "decision": "config",
+      "setting": "templates_history_limit"
+    },
+    "autoair/templates/__init__.py::TemplateStore.__init__::path::ffe3dafc": {
+      "decision": "keep",
+      "reason": "history folder inside the templates folder (stored layout; templates_url moves both)"
+    },
+    "autoair/templates/builtin.py::<module>::constant::APPROVAL": {
+      "decision": "keep",
+      "reason": "built-in template content (Airflow operator path)"
+    },
+    "autoair/templates/builtin.py::<module>::constant::BASH": {
+      "decision": "keep",
+      "reason": "built-in template content (Airflow operator path)"
+    },
+    "autoair/templates/builtin.py::<module>::constant::BUILTIN_TEMPLATES": {
+      "decision": "keep",
+      "reason": "built-in template gallery content (own templates: templates_url, marketplaces)"
+    },
+    "autoair/templates/builtin.py::<module>::constant::EMPTY": {
+      "decision": "keep",
+      "reason": "built-in template content (Airflow operator path)"
+    },
+    "autoair/templates/builtin.py::<module>::constant::FILE_SENSOR": {
+      "decision": "keep",
+      "reason": "built-in template content (Airflow operator path)"
+    },
+    "autoair/templates/builtin.py::<module>::constant::SQL": {
+      "decision": "keep",
+      "reason": "built-in template content (Airflow operator path)"
+    },
+    "autoair/templates/builtin.py::<module>::constant::TRIGGER": {
+      "decision": "keep",
+      "reason": "built-in template content (Airflow operator path)"
+    },
+    "autoair/templates/builtin.py::<module>::constant::_START": {
+      "decision": "keep",
+      "reason": "built-in template content"
+    },
+    "autoair/validation/__init__.py::<module>::constant::DEFAULT_POLICY": {
+      "decision": "keep",
+      "reason": "policy object built from defaults, not a value"
+    },
+    "autoair/validation/__init__.py::<module>::constant::MESSAGING_SCHEME_PACKAGES": {
+      "decision": "keep",
+      "reason": "Airflow common.messaging schemes -> provider packages (protocol data)"
+    },
+    "autoair/validation/__init__.py::<module>::constant::MISSING_VALUE": {
+      "decision": "keep",
+      "reason": "sentinel object (code)"
+    },
+    "autoair/validation/__init__.py::<module>::constant::PRIVILEGED_OPERATORS": {
+      "decision": "config",
+      "setting": "policy.privileged_operators / policy.privileged_operators_extra"
+    },
+    "autoair/validation/__init__.py::<module>::constant::_COMMON_FIELDS": {
+      "decision": "keep",
+      "reason": "BaseOperator fields (Airflow API)"
+    },
+    "autoair/validation/__init__.py::<module>::constant::_SECRET_ASSIGN": {
+      "decision": "config",
+      "setting": "policy.secret_assignment_pattern"
+    },
+    "autoair/validation/__init__.py::_matches::default::flags": {
+      "decision": "keep",
+      "reason": "regex flags parameter default (none)"
+    },
+    "autoair/validation/__init__.py::_regexes::default::flags": {
+      "decision": "keep",
+      "reason": "regex flags parameter default (none)"
+    },
+    "autoair/validation/__init__.py::_validate::default::import_timeout": {
+      "decision": "config",
+      "setting": "import_check_timeout"
+    },
+    "autoair/validation/__init__.py::validate_spec::default::import_timeout": {
+      "decision": "config",
+      "setting": "import_check_timeout"
+    },
+    "autoair/validation/dagbag_check.py::check_file::default::timeout": {
+      "decision": "config",
+      "setting": "import_check_timeout"
+    },
+    "autoair/validation/dagbag_check.py::check_source::default::timeout": {
+      "decision": "config",
+      "setting": "import_check_timeout"
+    },
+    "autoair/validation/jinja.py::<module>::constant::CONTEXT_NAMES": {
+      "decision": "config",
+      "setting": "policy.jinja_names_extra (extends Airflow's template context)"
+    },
+    "autoair/validation/jinja.py::<module>::constant::DAG_RUN_LOGICAL_DATE_ATTRS": {
+      "decision": "keep",
+      "reason": "Airflow 3 DagRun attributes that are None without a logical date (protocol; mirrored to the frontend)"
+    },
+    "autoair/validation/jinja.py::<module>::constant::LOGICAL_DATE_NAMES": {
+      "decision": "keep",
+      "reason": "Airflow 3 context keys set only for runs with a logical date (task_runner protocol; mirrored to the frontend by scripts/gen_shared_constants.py)"
+    },
+    "autoair/validation/jinja.py::<module>::constant::TIME_NAMES": {
+      "decision": "keep",
+      "reason": "set view of LOGICAL_DATE_NAMES (same protocol list)"
+    },
+    "autoair/validation/llm.py::<module>::constant::LLM_DECORATORS": {
+      "decision": "keep",
+      "reason": "task decorators of the common.ai provider (provider API, mirrors the spec's PythonDecorator literal)"
+    },
+    "autoair/validation/llm.py::<module>::constant::_TAGGED": {
+      "decision": "keep",
+      "reason": "spec tagged-value type -> model mapping (schema, not a tunable)"
+    },
+    "autoair/validation/opa.py::<module>::constant::_CACHE": {
+      "decision": "keep",
+      "reason": "process-local decision cache (internal state, not a value)"
+    },
+    "autoair/validation/opa.py::<module>::constant::_CACHE_SIZE": {
+      "decision": "keep",
+      "reason": "bounded in-process memoisation of OPA decisions (TTL is policy.opa_cache_seconds)"
+    },
+    "autoair/validation/opa.py::<module>::constant::_LOCK": {
+      "decision": "keep",
+      "reason": "thread lock (internal state)"
+    },
+    "autoair/validation/policy_rules.py::<module>::constant::PRESET_CRON": {
+      "decision": "keep",
+      "reason": "cron equivalents of Airflow's schedule presets (Airflow semantics)"
+    },
+    "autoair/validation/policy_rules.py::<module>::constant::_DEFAULT_ARGS_FALLBACK": {
+      "decision": "keep",
+      "reason": "task fields Airflow inherits from default_args (Airflow semantics)"
+    },
+    "autoair/validation/policy_rules.py::<module>::constant::_UNSET": {
+      "decision": "keep",
+      "reason": "sentinel object (internal)"
+    },
+    "autoair/validation/pool.py::<module>::constant::DEFAULT_MAX_TASKS": {
+      "decision": "config",
+      "setting": "dagbag_pool_max_tasks"
+    },
+    "autoair/validation/pool.py::<module>::constant::DEFAULT_SIZE": {
+      "decision": "config",
+      "setting": "dagbag_pool_size"
+    },
+    "autoair/validation/pool.py::<module>::constant::DEFAULT_START_TIMEOUT": {
+      "decision": "config",
+      "setting": "dagbag_pool_start_timeout"
+    },
+    "autoair/validation/pool.py::DagBagPool.submit::default::timeout": {
+      "decision": "config",
+      "setting": "import_check_timeout"
+    },
+    "autoair/validation/pool.py::DagBagPool.submit_file::default::timeout": {
+      "decision": "config",
+      "setting": "import_check_timeout"
+    },
+    "autoair/validation/pylint.py::lint_python_task::url::a9a13761": {
+      "decision": "keep",
+      "reason": "builds rule documentation links"
+    },
+    "autoair/validation/raw.py::<module>::constant::_DECORATOR_OPERATORS": {
+      "decision": "keep",
+      "reason": "Airflow TaskFlow decorator -> operator equivalence (compatibility data); the privileged list itself is policy.privileged_operators"
+    },
+    "autoair/validation/raw.py::<module>::constant::_TASK_DECORATOR_MODULES": {
+      "decision": "keep",
+      "reason": "modules Airflow exports `task` from (compatibility data)"
+    },
+    "autoair/validation/raw.py::_lint::url::7690cda5": {
+      "decision": "keep",
+      "reason": "ruff's public rule documentation (doc link of lint problems, like lsp/validate.py)"
+    },
+    "autoair/validation/raw.py::validate_raw::default::import_timeout": {
+      "decision": "config",
+      "setting": "import_check_timeout (the API passes it; this default is the fallback for callers without settings)"
+    },
+    "autoair/validation/shell.py::<module>::constant::_SCRIPT_SUFFIXES": {
+      "decision": "keep",
+      "reason": "file suffixes of shell scripts"
+    },
+    "autoair/validation/shell.py::<module>::constant::_SHELLS": {
+      "decision": "keep",
+      "reason": "shells ShellCheck understands (tool protocol)"
+    },
+    "autoair/validation/shell.py::_problems::url::88527164": {
+      "decision": "keep",
+      "reason": "ShellCheck wiki (documentation link per SC code)"
+    }
+  }
+}

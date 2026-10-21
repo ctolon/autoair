@@ -1,0 +1,118 @@
+---
+title: Connections and Variables
+description: Pick and create Airflow connections from the AutoAir builder, use Airflow Variables in templates and code, and map connection and Variable ids per environment.
+sidebar_label: Connections and Variables
+---
+
+AutoAir never stores credentials. DAGs refer to Airflow connections by id and to Airflow Variables by key, exactly as hand-written DAGs do; the builder helps you find the right ids, create missing connections in Airflow, and map ids per environment.
+
+## Connection pickers
+
+Every operator or notifier parameter that takes a connection id (`conn_id` or a name ending in `_conn_id`) uses the connection picker:
+
+- Suggestions come from Airflow's REST API, filtered to the connection types the operator's hook accepts. The accepted types are shown under the field as **Connection type: …**.
+- The hooks' default connection names (for example `aws_default`) are offered too, labelled **default … connection**; the placeholder shows the first one.
+- Each suggestion shows the connection type, host and description.
+- Free text is always accepted.
+
+Connections defined in environment variables (`AIRFLOW_CONN_*`) or in a secrets backend (such as HashiCorp Vault or AWS Secrets Manager) are not visible to the REST API, so an id that is missing from the list is never a validation error. If your Airflow resolves connections from a secrets backend, set `airflow_secrets_backend` so the builder does not report such ids as missing from the metastore:
+
+```bash
+AUTOAIR_AIRFLOW_SECRETS_BACKEND=true
+```
+
+Pickers need a reachable Airflow (`features.airflow`) and the `airflow:read` permission. In a multi-team setup they list the connections of the DAG's team; see [Multi-team](/docs/user-guide/multi-team). In `autoair local`, or when Airflow cannot be reached, the picker is a plain text field.
+
+Pool fields use the same kind of picker for Airflow pools, with their slot counts.
+
+## Creating a connection
+
+**New connection** under a connection field opens **New Airflow connection**. The connection is created in Airflow with your own permissions; credentials are sent to Airflow and never stored by AutoAir. The button is shown when you have the `connection:write` permission.
+
+| Field | Notes |
+|---|---|
+| **Connection id** | Letters, digits, `_`, `.` and `-` only. Prefilled with the field's current value or the default connection name. |
+| **Connection type** | The hook type, from Airflow's list; prefilled with the first type the operator accepts. It decides which fields Airflow uses. |
+| **Host**, **Port**, **Login**, **Password**, **Schema**, **Description** | Standard connection fields. |
+| **Extra (JSON)** | A JSON object. |
+
+- **Test** asks Airflow to test the connection and shows **Connection works** or **Connection failed** with Airflow's message. Airflow can disable connection testing; the test then fails with Airflow's explanation.
+- **Create** creates the connection, refreshes the pickers and puts the new id into the field you came from.
+
+### Typed connection forms
+
+When Airflow provides form metadata for the selected connection type, the dialog adapts to that type. AutoAir reads the metadata from Airflow's hook registry through `GET /api/airflow/connections/hook-meta` (needs `connection:write`) and caches it for five minutes.
+
+- **Standard fields.** Host, Port, Login, Password, Schema and Description are relabelled, given type-specific placeholders, or hidden, as the hook defines. For example, a hook can label **Login** as its account id or hide **Port** entirely. Hidden fields are not sent to Airflow.
+- **Type settings.** The type's own fields appear under **&lt;type&gt; settings (stored in extra)**, as typed inputs derived from each field's JSON schema:
+
+  | Schema of the field | Input |
+  |---|---|
+  | `enum` | Drop-down |
+  | `boolean` | Switch |
+  | `integer`, `number` | Number field |
+  | `object`, `array` | Multi-line JSON field |
+  | `format: password` | Password field |
+  | `format: multiline` | Multi-line text field |
+  | anything else | Text field |
+
+  The label is the field's title from the hook, and its description is shown as help text. Fields start at the hook's defaults; changing **Connection type** resets them to the new type's defaults. A value that does not parse as its type (for example `12a` in an integer field) is marked `Not a valid <kind> value` and disables **Test** and **Create**. Empty inputs and switches that are off are left out of `extra`.
+- **Advanced: raw extra JSON.** A toggle below the typed settings opens **Extra (JSON)** for keys the form does not cover. It must be a JSON object (`Must be a JSON object`); its keys override the typed fields above (`Keys here override the fields above.`).
+
+The typed values and the raw JSON are merged into the connection's `extra` string. When Airflow returns no metadata for the type (an older Airflow, a provider without form metadata, or a 403 on the hook registry), the dialog shows the generic form: the standard fields with their generic labels and **Extra (JSON)** always open.
+
+## Connections in templates and code
+
+Besides `*_conn_id` parameters, DAGs reach connections through:
+
+- Jinja: `{{ conn.<conn_id>.host }}`, `{{ conn.<conn_id>.password }}` and the other attributes (`port`, `login`, `schema`, `conn_type`, `extra`, `extra_dejson`). Completion offers the connection ids after `conn.`.
+- Python: `BaseHook.get_connection("<conn_id>")` or a hook with a connection id in Python task code and inline functions.
+
+Do not paste credentials into parameters or code. Validation reports literal values (at least 6 characters, without `{{`) of secret-looking parameters and secret-looking assignments in code as warnings. By default, a parameter is secret-looking when its name contains, case-insensitively, `password`, `passwd`, `secret`, `token`, `api_key` (also `api-key`, `apikey`), `access_key` (also `access-key`, `accesskey`), `private_key` (also `private-key`, `privatekey`) or `credential`, unless it ends in `_conn_id`, `_id`, `_name`, `_path`, `_file`, `_field`, `_url` or `_ref`, or is `token_url`. For example: `"password" looks like a hard-coded secret: use an Airflow connection or variable.` The patterns are configurable; see [Policy](/docs/admin/policy).
+
+## Variables
+
+Airflow Variables are read in templates and code:
+
+| Where | Syntax |
+|---|---|
+| Jinja, as a string | `{{ var.value.<key> }}` |
+| Jinja, parsed as JSON | `{{ var.json.<key> }}` |
+| Python task code, inline functions | `Variable.get("<key>")` |
+
+Completion lists the Variable keys from Airflow after `var.value.` and `var.json.`, and the **Insert** menu of templated fields has an **Airflow Variables** group. Variables are not created from the builder; manage them in Airflow. The template preview shows Variables as placeholders because their values are only known at runtime.
+
+Like connections, Variables are listed per team in a multi-team setup and need a reachable Airflow.
+
+## Per-environment mapping
+
+The same DAG often uses different connections and Variables in `dev` and `prod`. Instead of editing ids per environment, write the DAG with logical ids and map them in the environment overlay: **DAG settings → Environments**, expand the environment, **Connection & Variable mapping**.
+
+| Column | Meaning |
+|---|---|
+| **Connection id in the DAG** / **Variable key in the DAG** | The logical id used in the DAG. Suggestions list the ids the DAG references. |
+| **Connection id in** _environment_ / **Variable key in** _environment_ | The id in that environment's Airflow. Suggestions list Airflow's connections (type and host) or Variables. |
+
+Use **Map a connection** and **Map a variable** to add rows. A logical id mapped twice is flagged (`This id is mapped twice.`); an id with characters other than letters, digits, `.`, `_` and `-` is flagged and not saved until fixed. The mapping is stored as `environments.<env>.connections` and `environments.<env>.variables` in the spec.
+
+When you validate or deploy as that environment, the mapping is substituted in:
+
+| Reference | Example |
+|---|---|
+| Parameters named `conn_id` or ending in `_conn_id` | `postgres_conn_id: "warehouse"` becomes `"warehouse_prod"` |
+| Jinja connection references | `{{ conn.warehouse.host }}`, `{{ conn['warehouse'].host }}` |
+| Jinja Variable references | `{{ var.value.bucket }}`, `{{ var.json.settings }}` |
+| Literal ids in Python task code, inline functions and loop conditions | `Variable.get("bucket")`, `BaseHook.get_connection("warehouse")`, `get_hook("warehouse")`, and any call with a `conn_id=` keyword or a keyword ending in `_conn_id`, such as `PostgresHook(postgres_conn_id="warehouse")` |
+
+Only literal references are rewritten. Ids computed at runtime (for example `Variable.get(f"bucket_{env}")`) are left unchanged and need your own logic. Mapping never imports or executes code.
+
+The panel checks the mapped ids against the connected Airflow (`POST /api/airflow/mapping-check`) and shows **all found in Airflow**, **N not in Airflow's metastore** with a note per missing id, or **not checked** when Airflow cannot be asked. The check never blocks a deploy, because ids can come from a secrets backend or `AIRFLOW_CONN_*` / `AIRFLOW_VAR_*` environment variables. With `airflow_secrets_backend` on, or in `autoair local`, the check is not shown.
+
+The full procedure, where overlays apply and how promotion re-renders them are described in [Environments](/docs/user-guide/environments#connection-and-variable-aliases).
+
+## Related pages
+
+- [Operators and parameters](/docs/user-guide/operators-and-parameters#connection-and-pool-pickers)
+- [Jinja, XCom and Python](/docs/user-guide/jinja-xcom-python)
+- [Environments](/docs/user-guide/environments)
+- [IAM](/docs/admin/iam)

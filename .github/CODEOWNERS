@@ -1,0 +1,9 @@
+# Code owners are requested for review automatically; branch protection can require them.
+# Later rules take precedence over earlier ones.
+*                       @ctolon
+
+/.github/               @ctolon
+/deploy/                @ctolon
+/src/autoair/iam/       @ctolon
+/src/autoair/auth.py    @ctolon
+/SECURITY.md            @ctolon

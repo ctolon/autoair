@@ -1,0 +1,157 @@
+# AI assistants ("Ask AI")
+
+Reference for contributors and operators. Task-oriented guide on the documentation site: [AI assistants](https://ctolon.github.io/autoair/docs/ai/assistants).
+
+AutoAir has two chat assistants. Both are tool-using agents with persisted conversations.
+Open them from **AI → Ask AI…**, from the command palette, or with **Ctrl/⌘+Shift+A**. The
+chat opens as a right-side drawer, which you can expand to full screen.
+
+| | Developer assistant | Admin assistant |
+|---|---|---|
+| Who | `ai:use` | `ai:admin` **or** `admin:panel` |
+| System prompt | `DEVELOPER_ASSISTANT_SYSTEM` | `ADMIN_ASSISTANT_SYSTEM` |
+| Tools | catalog search / operator schema, the open DAG (`get_current_spec`), validate / lint / render code / deploy dry run, saved specs, the user's runs, task instances and logs (through Airflow with the **user's** token), research (installed provider docs and source; online when `ai.research.online`), code writers (`write_code`), memory (`list_conventions`, `remember`) | settings reference, effective configuration (secrets masked; needs `admin:config` and `AUTOAIR_EXPOSE_CONFIG`), feature flags, IAM overview, `who_has_permission`, `explain_user_access`, replicas and database, AI usage and cost, audit search, catalog/provider inventory, `find_dags_using_operator`, deploy targets, the proposals queue, health, memory |
+| Changes | `propose_spec_change`: findings with JSON patches, or a full DagSpec, validated server-side and shown as a reviewable diff | `propose_config_snippet`: a YAML/env snippet shown as text; nothing is written |
+| Memory scope | conventions/preferences without the `assistant:admin` tag | memories tagged `assistant:admin` |
+| Settings ([reference](configuration-reference.md#aiassistantsdeveloper)) | `ai.assistants.developer.enabled`, `tools`, `max_steps`, `memory`, `allow_external_mcp` | `ai.assistants.admin.enabled`, `tools`, `max_steps`, `memory`, `allow_external_mcp` |
+
+Each assistant has a tool allow-list, `ai.assistants.<mode>.tools` (fnmatch). The developer
+assistant is also limited by `ai.guardrails.tool_allowlist` for the caller's role. The admin
+assistant's tools are read-only by construction.
+
+## A turn
+
+`POST /api/ai/assistant/chat/stream` (Server-Sent Events) runs one turn:
+
+1. Loads or creates the thread and stores the user message.
+2. **Context compaction.** When the history sent to the model would exceed
+   `ai.assistants.compaction_trigger_chars`, older messages are folded into a rolling summary
+   with one `COMPACT_SYSTEM` call. The last `compaction_keep_messages` messages always stay
+   verbatim. The model sees the summary followed by the recent turns: each answer stores its
+   pydantic-ai messages (tool calls and results included; never returned by the API), so a
+   follow-up sees what the tools returned before. Tool results of earlier turns are
+   shortened by a history processor.
+3. Runs the bounded pydantic-ai agent (`ai.assistants.<mode>.max_steps`, plus the `ai.agent.token_budget`,
+   `ai.agent.cost_budget_usd` and `ai.agent.timeout_seconds` budgets). Guardrails apply to every model call: inputs are checked (size,
+   external guardrails), outgoing text is redacted, tool output is treated as untrusted
+   data, and streamed and final answers are scrubbed of secrets.
+4. Streams `status` (`thread` carries the thread id, `compact`, `model`), `token`, `tool_call`,
+   `tool_result`, `usage` and `guardrail` events. It ends with a `result` of kind
+   `assistant_turn`, holding the stored user and assistant messages, then `done`.
+5. Stores the answer with its tool calls, numbered **citations**, **follow-ups**,
+   **proposals**, token usage/cost and guardrail notes. The turn is written to the AI audit
+   log as feature `assistant:<mode>`, with the tools that ran, the sources used, the thread
+   id and the proposal ids.
+
+**Citations.** Every source a tool returns gets a number: search hits, source files, fetched
+pages, task logs, audit records, settings and specs. The tool result carries it as `cite`,
+the answer cites it as `[n]`, and the UI lists the cited sources under the answer, linking
+web pages.
+
+**Follow-ups.** The prompt asks the model to end its answer with a `<follow_ups>` block. The
+server strips the block and stores up to `ai.assistants.max_follow_ups` questions, which the
+UI shows as buttons.
+
+**Regenerate.** Send `regenerate: true` with the `thread_id`: the last answer is replaced.
+**Stop**: closing the stream cancels the turn, and the stored answer is marked `cancelled`.
+
+## Threads
+
+Threads are stored per user and mode in the persistence layer: collection `ai_threads`, as
+files under `<state>/ai-threads` or rows of the SQL database. `ai.assistants.store_url`
+moves the file location. Retention: `max_threads_per_user` per mode, and
+`max_messages_per_thread`.
+
+| Endpoint | |
+|---|---|
+| `GET /api/ai/assistant/info` | Which assistants the caller may use |
+| `GET /api/ai/assistant/threads?mode=` | The caller's threads, newest first |
+| `GET /api/ai/assistant/threads/{id}` | One thread with its messages |
+| `PATCH /api/ai/assistant/threads/{id}` | Rename |
+| `DELETE /api/ai/assistant/threads/{id}` | Delete |
+| `POST /api/ai/assistant/threads/{id}/proposals/{pid}/decision` | `approve` / `reject` / `applied` (approving or applying a spec change needs `spec:write`); audited as `assistant:proposal_<decision>` |
+
+Requests for another user's thread return 404.
+
+## Proposals: review, then apply
+
+A spec proposal stores the base spec (the editor's DAG at the time of the turn), the
+findings with their patches, the validated proposed spec and its problems. The UI shows:
+
+* the structured spec diff (`/api/vcs/diff`);
+* validation problems;
+* on demand, a side-by-side diff of the generated Python file.
+
+**Apply to the editor** loads the proposed spec as unsaved work and records the approval.
+**Deploy…** then opens the normal deploy dialog, which applies governance, four-eyes approval,
+pull requests and the `deploy` permission. Once the builder reports the DAG saved under a new
+version or PR, the proposal is recorded as `applied` together with the deploy outcome.
+Nothing changes without these explicit steps.
+
+Code blocks in answers have **Copy** and **Insert** buttons. Insert puts Python into the
+selected `python_task` and Bash/SQL into the selected operator's `bash_command` / `sql`.
+
+## Prompts and prompt variables
+
+Every system prompt can be replaced or extended:
+
+1. `ai.prompts.override_dir`: `<NAME>.md` replaces prompt `NAME`. This takes precedence
+   over the other two.
+2. `ai.prompts.replace`: `{NAME: text}`.
+3. `ai.prompts.append`: `{NAME: text}` is added after the prompt.
+
+`GET /api/ai/prompts` lists the names and where each prompt comes from (`file`, `settings`,
+`builtin`). The assistants' prompts are `DEVELOPER_ASSISTANT_SYSTEM`,
+`ADMIN_ASSISTANT_SYSTEM`, `TROUBLESHOOT_SYSTEM`, `UPGRADE_SYSTEM`,
+`DEPLOY_MESSAGE_SYSTEM` and `COMPACT_SYSTEM`.
+
+<a id="prompt-variables"></a>**Variables** are written `${name}` and replaced in every prompt.
+Unknown names are left untouched, and Jinja such as `{{ ds }}` is never affected.
+
+| Variable | Value |
+|---|---|
+| `${organization}` | `ai.prompts.organization` (default "your organisation") |
+| `${user}` | The caller |
+| `${team}` | The `team` setting (`AUTOAIR_TEAM`) |
+| `${assistant}` | `developer`, `admin` or `troubleshoot` |
+| `${airflow_version}` / `${autoair_version}` | Installed versions |
+| `${today}` | ISO date |
+| `${online_research}` | "enabled", or "disabled (air-gapped)" |
+| any key of `ai.prompts.variables` | Your own values |
+
+## Project rules
+
+Admins can write rules in Markdown, global or per team (scope `team:<name>`), in the admin
+panel under **AI rules**, or through `PUT /api/ai/rules/{scope}`, which needs `ai:admin`.
+`GET /api/ai/rules` and `GET /api/ai/rules/effective` read them. The rules are appended to
+every authoring and writing prompt:
+
+* generation;
+* review, optimise and fix;
+* task code and the writers;
+* explain-DAG;
+* the agent and the developer assistant;
+* troubleshooting and upgrade.
+
+They are stored in the `ai_rules` collection, limited to `ai.rules.max_chars`, cached for
+`ai.rules.cache_seconds` and audited (`ai_rules_put` / `ai_rules_delete`).
+
+## Commit and PR messages
+
+In the deploy dialog, the PR description field has a **Generate** button that calls
+`POST /api/ai/deploy-message`. It diffs the deployed spec against the spec being deployed and
+sends only the structured diff to the model, which returns a commit subject of at most 72
+characters and a Markdown PR body (Summary / Changes / Risk). Without a model, a
+deterministic message is built from the same diff.
+
+## Airflow upgrade assistant
+
+**AI → Airflow upgrade assistant…**, or `POST /api/ai/upgrade` with `spec`, `dag_ids` or
+`all: true`. It combines:
+
+* AutoAir's Airflow 3 rules: removed template variables, deprecated operators, SLA → deadlines;
+* ruff's `AIR3` rules (`ai.upgrade.ruff_rules`) on the generated code, task bodies included;
+* for a single DAG, one LLM pass (`UPGRADE_SYSTEM`).
+
+The result is findings with patches, a validated proposed spec and the code diff. **Apply**
+loads the upgrade into the editor; you deploy it as usual.

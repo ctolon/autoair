@@ -1,0 +1,137 @@
+# AutoAir configuration file mounted at /etc/autoair/autoair.yaml (AUTOAIR_CONFIG_FILE) in
+# every AutoAir container of the demo: the Airflow plugin, both replicas and the AI service.
+#
+# Precedence: environment variables (the compose file, .env, autoair.env) > this file >
+# defaults. Keys are those of docs/configuration-reference.md (`storage.git.mode` is
+# storage: {git: {mode: ...}}). Inspect the effective result with:
+#   docker compose -f docker-compose.demo.yml exec autoair-a autoair config show --changed
+#
+# Keep credentials out of this file: use environment variables or Airflow connections.
+
+# ------------------------------------------------------------------------------ UI branding
+ui:
+  title: AutoAir demo
+  banner_text: "Local demo: every Airflow user is an administrator"
+  banner_color: orange
+  default_timezone: UTC
+
+# ------------------------------------------------------------------------------ feature flags
+# Everything is on by default; these lines show the switches (true = default unless noted).
+features:
+  visual_editor: true
+  code_editor: true
+  code_edit_inline: true       # default false: make the bottom panel's Code tab editable
+  templates: true
+  marketplace: true            # the signed examples/marketplace index (marketplace-seed)
+  imports: true
+  collab: true
+  runs: true
+  test_runs: true
+  deploy: true
+  custom_icons: true
+  python_code: true
+  mcp: true
+  ai: true                     # AI stays inert until ai.enabled (DEMO_AI_ENABLED) is true
+  iam: true
+  ide_language_server: false   # needs basedpyright/pylsp in the image
+
+# Deployment environments (environment picker, git branch per environment):
+# environments: [dev, prod]
+# default_environment: dev
+
+# ------------------------------------------------------------------------------ IAM
+# How Airflow users become AutoAir roles (docs/iam.md):
+#   role_mapping        - from the Airflow role names of the user (token "role"/"roles" claims
+#                         in standalone; the auth manager in the plugin)
+#   airflow_permissions - from what Airflow's auth manager allows (DAG read/edit, config
+#                         edit). Plugin mode only: standalone cannot check those permissions,
+#                         so combining it with role_mapping there would grant every role.
+#   custom_view         - "AutoAir <resource>" permissions of FAB/Keycloak auth managers
+# The demo's SimpleAuthManager gives everybody the role ADMIN (case-insensitive -> Admin).
+iam:
+  strategies: [role_mapping]
+  role_mapping:
+    Admin: [Admin]
+    Op: [Author, Reviewer, Deployer, Operator, TemplateManager]
+    User: [Author, Operator]
+    Viewer: [Viewer]
+    data-eng: [Author, Deployer]          # example of a custom Airflow role
+    data-reviewers: [Reviewer]
+  role_prefix: "AutoAir "                 # an Airflow role "AutoAir Deployer" grants Deployer
+  roles:                                  # custom role with explicit permissions
+    Auditor: ["spec:read", "audit:read"]
+  direct_push_roles: [Admin]              # may bypass the pull request in git PR mode
+  require_approval: false                 # true = four-eyes rule for deploys (needs 2 users)
+  audit_denials: true
+  login_max_failures: 5
+  login_window_seconds: 300
+
+# ------------------------------------------------------------------------------ policy rules
+# Validation rules every DAG must pass (errors block a deploy). The seeded demo DAGs satisfy
+# them; tighten a rule and redeploy one to see the validation panel react.
+require_owner: false
+require_description: true
+max_tasks: 100
+operator_deny: []
+forbidden_operators: []
+allow_python_code: true
+allow_privileged_operators: true          # BashOperator & friends (policy.privileged_operators)
+policy:
+  dag_id_pattern: "[a-z][a-z0-9_]*"
+  task_id_pattern: "[a-z][a-z0-9_]*"
+  privileged_operators_extra:
+    - airflow.providers.ssh.operators.ssh.SSHOperator
+  secret_param_patterns_extra: ["(^|_)dsn$"]
+  jinja_names_extra: [demo_macro]
+  # Declarative organisation rules (docs/policy.md). severity: error blocks deploys,
+  # warning only shows in the Problems panel.
+  rules:
+    - id: no-rm-rf
+      message: "bash_command must not run 'rm -rf'"
+      match:
+        params: [{name: bash_command, pattern: 'rm\s+-rf'}]
+      check: forbid
+    - id: owner-recommended
+      severity: warning
+      check: require_owner
+    - id: demo-tag
+      severity: warning
+      message: "Tag demo DAGs with 'demo' so they are easy to find"
+      match: {dag_ids: ["demo_*"]}
+      check: {type: tags_include, tags: [demo]}
+    - id: prod-retries
+      match: {environments: [prod]}
+      check: {type: min_retries, value: 1}
+    - id: no-bash-in-prod
+      message: BashOperator is not allowed in production
+      match: {environments: [prod], operators: [BashOperator]}
+      check: forbid
+    - id: hourly-no-catchup
+      match: {schedule: ["@hourly"]}
+      check: {type: catchup, value: false}
+
+# ------------------------------------------------------------------------------ governance
+# What every commit / pull request carries (docs/configuration.md "Deploy governance"). The
+# context block and X-AutoAir-* trailers are always appended; these templates shape the rest.
+storage:
+  history_limit: 50
+  allowed_targets: [local, git]
+  git:
+    branch_prefix: autoair/
+    commit_message_template: "AutoAir: update DAG {dag_id} ({environment})"
+    delete_message_template: "AutoAir: delete DAG {dag_id}"
+    pr_title_template: "AutoAir: {message}"
+    pr_body_template: "{message}\n\n{description}\n\nOpened by {user} through the AutoAir demo."
+    pr_labels: [autoair, demo]
+    commit_author: service
+    # environments: {prod: main}            # environment -> branch
+
+# ------------------------------------------------------------------------------ operations
+server:
+  metrics_enabled: true
+  ready_check_storage: true
+  frame_ancestors: ["'self'", "http://localhost:*"]
+logging:
+  levels:
+    httpx2: WARNING
+collab_ticket_ttl: 600

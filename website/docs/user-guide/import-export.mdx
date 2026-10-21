@@ -1,0 +1,183 @@
+---
+title: Import and export
+description: Bring existing Python and YAML DAGs into AutoAir, export DAGs as Python, Airflow YAML, dag-factory YAML or AutoAir spec JSON, and see what survives a round trip.
+---
+
+AutoAir stores every DAG as a **spec** (JSON), which is the document that the canvas, code mode and deploys work on. Importing converts an existing DAG into a spec. Exporting renders a spec in another format. The supported formats, their entry points in the UI and CLI, and the constructs that survive the conversion:
+
+| Format | Import | Export | Lossless |
+|---|---|---|---|
+| Python DAG file | UI, CLI, from Airflow | UI, CLI (`autoair generate`) | Export: yes. Import: most constructs (see [below](#what-does-not-round-trip)). |
+| Airflow native YAML DAG (Airflow 3.4, AIP-85) | UI, CLI | UI, CLI | Only for DAGs that YAML can express. Otherwise export reports errors. |
+| dag-factory YAML (astronomer/dag-factory 1.0+) | No | UI, CLI | No. One-way, with warnings. |
+| AutoAir spec JSON (`.autoair.json`) | UI | UI | Yes, including overlays and layout |
+
+<Screenshot name="import-dialog" alt="The Import a DAG dialog with tabs Python, From Airflow, YAML and AutoAir spec, a pasted Python DAG and the import result listing one DAG with two warnings and an Open as unsaved button" caption="File → Import → From Python file…" />
+
+## Import in the UI
+
+Open **File → Import** and choose **From Python file…**, **From Airflow…**, **From YAML…** or **From AutoAir spec (JSON)…**. The command palette entry **Import DAG…** opens the same dialog. The **Import a DAG** dialog ("Convert an existing DAG into an editable AutoAir document.") has one tab per source:
+
+| Tab | Input | Notes |
+|---|---|---|
+| **Python** | Paste the DAG file, or **Upload file** | "it is parsed, not executed by your browser". The **server** imports it in a sandbox (see below). |
+| **From Airflow** | **Airflow DAG id**, then **Fetch** | "Import a DAG that already runs in Airflow from its source file." AutoAir fetches the source through Airflow's API with your credentials. |
+| **YAML** | Paste or **Upload file** | An Airflow native YAML DAG |
+| **AutoAir spec** | Paste or **Upload file** | "Open an exported .autoair.json file (older spec versions are migrated)." |
+
+Then:
+
+1. Click **Import**.
+2. The result lists every DAG found in the source, each with its warnings ("N warnings") or **not importable** and the reason. "No DAGs were found in this file." means the source defines none.
+3. Click **Open as unsaved** on the DAG you want. If your current document has unsaved changes, AutoAir asks before discarding them. The spec is laid out automatically when it has no positions.
+4. Review the canvas and the [Problems panel](/docs/user-guide/validation), then [deploy](/docs/user-guide/deploy).
+
+Nothing is written by an import. The original file in Airflow is untouched until you deploy. When the imported DAG's `dag_id` matches the file's, the deploy then replaces it with the AutoAir-generated file. AutoAir refuses to overwrite a file it did not create, so a DAG imported from Airflow usually needs a new id, or you remove the original file yourself.
+
+### Unmanaged DAGs
+
+Opening a DAG id that exists in Airflow but not in AutoAir, for example through a deep link or the **AutoAir** tab on an Airflow DAG page, shows **&lt;dag_id&gt; is not managed by AutoAir**. That dialog offers:
+
+- **Import this DAG from Airflow**: the same import as the **From Airflow** tab.
+- **Start an empty DAG**.
+- **Open in code editor**, when the DAG cannot be converted to the visual editor: "Open its code, fix or simplify it and apply." See [Code mode](/docs/user-guide/code-mode).
+
+## Import Python DAGs
+
+The Python importer runs the file with Airflow's DagBag **in a sandboxed subprocess on the AutoAir server**, then reverse-engineers each DAG object it defines. This recovers operators and their arguments, `@task` functions with their source, task groups, dependencies, schedule, params and task settings. Because importing executes the file, it requires:
+
+- the permission `code:execute` (Author, Admin),
+- `allow_python_code` (`AUTOAIR_ALLOW_PYTHON_CODE`, `features.python_code`). Otherwise the import is refused with "importing Python DAGs executes their code and is disabled by policy (allow_python_code)",
+- `features.imports`.
+
+The subprocess gets an environment with AutoAir's secrets removed and is killed after `AUTOAIR_PYTHON_IMPORT_TIMEOUT` seconds (default `90`; the error reads "import timed out after …s"). Module-level code in the file **does run**, including imports, network calls and file access, with the AutoAir server's permissions. Only import files you would let Airflow parse.
+
+**From Airflow** imports have the same requirements. They also need `features.airflow` and Airflow read access to the DAG's source. When the file defines several DAGs, only the requested one is kept.
+
+### What does not round-trip
+
+The importer reports what it could not convert as warnings on the DAG. Common ones:
+
+| Warning | What to do |
+|---|---|
+| "&lt;task&gt;: mapped argument 'x' cannot be imported; the task is imported without mapping (re-create the mapping in the builder)" | Mapped tasks (`.partial().expand()` / `.expand_kwargs()`) are imported with their operator, `partial()` arguments and mapping. This warning means an `expand` value is not a list or a plain XCom reference (for example `.map()` or `.zip()` on an XCom). Re-create the `expand` in the inspector. |
+| "&lt;task&gt;: callable parameter 'x' dropped" | Callables passed as operator arguments are not representable. Use a Python task or an inline function. |
+| "&lt;task&gt;: value of type X dropped" | Arbitrary Python objects as arguments. Set the value again in the inspector. |
+| "&lt;task&gt;: source of the python callable is unavailable" | The function's source could not be found, for example when it is built dynamically. |
+| "timetable X is not supported; imported without schedule" | Custom timetables. Choose a schedule in the builder. |
+| "unsupported asset condition …" | Complex asset expressions. Rebuild the condition in the schedule editor. |
+| "deadline alerts are not imported" / "DAG callbacks are not imported" | Re-add them under [callbacks, retries and deadlines](/docs/user-guide/callbacks-retries-deadlines). |
+
+A converted DAG that fails AutoAir's validation is reported as **not importable** with "converted spec is invalid: …". Dynamic DAG factories (loops that create many DAGs) import as the individual DAGs they produced at parse time. The loop itself is lost.
+
+## Airflow native YAML DAGs
+
+AutoAir reads and writes Airflow's native YAML DAG format (Airflow 3.4, AIP-85, schema `https://airflow.apache.org/schemas/dag/2026-10-30.json`). YAML import does not execute code and does not need `code:execute`.
+
+Import warnings include "`run:` stub tasks are imported as EmptyOperator" and "timetable X imported as no schedule". A document without `dag_id` is rejected ("not an Airflow YAML Dag document (missing dag_id)").
+
+**Export** (**File → Export → Airflow YAML DAG**, or the **Airflow YAML** tab of the Code panel) is refused for anything YAML cannot express. The toast reads "N constructs cannot be expressed in Airflow YAML", and the list includes:
+
+- Python tasks, inline functions, script files and Python references
+- Non-operator nodes, dynamic task mapping, setup/teardown, retry policies, task callbacks, asset inlets and outlets
+- Every schedule except none, a preset and a plain cron expression: multi-cron, interval, cron with an interval, events, asset, asset-or-time, asset-and-time, partitioned cron and partitioned asset schedules
+- DAG callbacks, deadlines, `owner_links`, and `retry_delay` / `execution_timeout` in default arguments
+
+Exports that succeed can still warn: "task groups are flattened: YAML Dags have no task groups (task ids keep the group prefix)", "edge label 'x' is dropped", and "param schemas (type, enum, ...) are dropped; only defaults are kept". A DAG whose **output** setting is **Airflow YAML DAG** is deployed as YAML. Its settings note says "Task groups and Python tasks aren't supported in YAML."
+
+The **Airflow YAML** tab of the Code panel is editable: **Apply YAML to canvas** imports your edits as unsaved changes ("YAML applied to the canvas (unsaved)").
+
+## dag-factory YAML
+
+**File → Export → dag-factory YAML** writes `<dag_id>.dag-factory.yaml` for teams that use astronomer/dag-factory 1.0 or later ("One-way export for teams using astronomer/dag-factory."). It is lossy, and the toast counts the warnings: XCom references and Python references become plain strings, inline functions and files are dropped, asset schedules become a flat list, edges between groups are not exported, and Python tasks and custom nodes are skipped. AutoAir cannot import dag-factory files.
+
+## Export
+
+**File → Export**:
+
+| Menu item | File | Notes |
+|---|---|---|
+| **Python file (.py)** | `<dag_id>.py` | The generated DAG file, as deployed with the base definition (no environment overlay). Fails with "Fix the problems first: no code could be generated." while the DAG has errors. |
+| **Airflow YAML DAG** | `<dag_id>.yaml` | See above |
+| **dag-factory YAML** | `<dag_id>.dag-factory.yaml` | See above |
+| **AutoAir spec (JSON)** | `<dag_id>.autoair.json` | The complete document, including environment overlays, notes and layout. Re-import it with **From AutoAir spec (JSON)…**. |
+
+The **Code** tab in the bottom panel shows the same renderings live: **Python**, **Airflow YAML**, **dag-factory** and **Spec JSON**.
+
+## Command line
+
+```bash
+# Python DAG file -> one <dag_id>.autoair.json per DAG in the file
+autoair import-python dags/legacy_etl.py -o specs/
+
+# Airflow YAML DAG -> spec JSON on stdout (issues on stderr)
+autoair import-yaml dags/orders.yaml > specs/orders.autoair.json
+
+# spec -> Python / Airflow YAML / dag-factory
+autoair generate specs/orders.autoair.json -o dags/orders.py
+autoair export-yaml specs/orders.autoair.json > dags/orders.yaml   # exit 1 if not lossless
+autoair export-dag-factory specs/orders.autoair.json > orders.dag-factory.yaml
+
+# validate a spec (optionally with the DagBag import check)
+autoair validate specs/orders.autoair.json --import-check --env prod
+```
+
+`import-python` prints "import error: …", "&lt;dag&gt;: warning: …" and "&lt;dag&gt;: failed: …" lines on stderr. Commands of a disabled feature (`features.imports`, `features.python_code`) exit with code 2. The import, export and `generate` commands work on the base definition. `autoair validate --env <name>` validates with an environment's overlay and rules. The full list is in the [CLI reference](/docs/reference/cli).
+
+## Bulk import
+
+**File → Import → From a DAG repository…** converts every DAG of a repository in one pass. The **Import a DAG repository** dialog takes one of two sources:
+
+| Source | Fields | Notes |
+| --- | --- | --- |
+| **Folder** | **Choose folder…** | Only `.py` files are uploaded; hidden folders and `__pycache__` are skipped. The chosen folder is treated as the repository root, so helper modules next to the DAGs resolve as they do in a DAG folder. |
+| **Git repository** | **Repository URL (https)**, **Branch or tag**, **Folder in the repository**, **Access token (private repositories)** | The server makes a shallow clone. The token is sent to the git host for this clone only and is never stored or logged. |
+
+1. Choose the source and click **Scan**. Each candidate file is imported with the same Python importer as a single file (Airflow's DagBag in an isolated subprocess without AutoAir's secrets). Nothing is saved yet.
+2. Review the result. The summary counts files, convertible DAGs, DAGs that already exist and files that failed. Each file shows a result (**imported**, **no DAG**, **excluded**, **error**, **not scanned**), its DAGs and their warnings; a `dag_id` defined in two files is flagged.
+3. Select the DAGs to deploy. A DAG that already exists is only replaced when you tick **overwrite existing** for it; otherwise it is deployed create-only and reported as "exists - not overwritten".
+4. Click **Deploy N DAGs**. Each DAG goes through the normal deploy path, so validation, policy and approvals apply; the per-DAG outcome is **deployed**, **exists - not overwritten**, **invalid**, **ejected**, **awaiting approval** or **failed**.
+
+The menu entry requires the `code:execute` and `spec:write` permissions and the `python_code` feature, because importing executes the DAG files. The server applies these settings ([reference](/docs/reference/configuration#interchange)):
+
+| Setting | Default | Effect |
+| --- | --- | --- |
+| `interchange.bulk_max_files` | `500` | Python files imported per request; more are reported as **not scanned**. |
+| `interchange.bulk_workers` | `4` | Files imported concurrently, one isolated subprocess each. |
+| `interchange.bulk_exclude` | tests, hidden folders, `__pycache__`, `node_modules` | fnmatch patterns over repository-relative paths that are never imported. Files that do not contain both `airflow` and `dag` are skipped as well (Airflow's safe-mode heuristic). |
+| `interchange.bulk_git_allowed_hosts` | `["*"]` | Hosts that may be cloned (https only), for example `["github.com", "gitlab.acme.internal"]`. An empty list disables git sources. |
+| `interchange.bulk_git_timeout` | `120` | Seconds a shallow clone may take. |
+
+Restrict `interchange.bulk_git_allowed_hosts` in production: the clone runs on the AutoAir server. The API behind the dialog is `POST /api/interchange/bulk/scan` (operation `bulkImportDags`); it returns the per-file result and never writes. The CLI has no bulk command; in a script, loop over files:
+
+```bash
+for f in dags/*.py; do autoair import-python "$f" -o specs/; done
+```
+
+## Limits, permissions and API
+
+| Setting | Default | Description |
+|---|---|---|
+| `AUTOAIR_FEATURES__IMPORTS` | `true` | Python, YAML, spec and Airflow imports (UI, API, CLI) |
+| `AUTOAIR_PYTHON_IMPORT_TIMEOUT` | `90` | Seconds a Python import may run |
+| `AUTOAIR_INTERCHANGE__MAX_SOURCE_CHARS` | `2000000` | Largest source accepted ("source is larger than … characters") |
+| `AUTOAIR_INTERCHANGE__YAML_MAX_NODES` | `200000` | YAML node limit (guards against alias expansion attacks) |
+| `limits.rate_limits.import` | `60` | Imports per user and window |
+
+| Method and path | Permission |
+|---|---|
+| `POST /api/interchange/python/import` (`{source, filename}`) | `builder:use` + `code:execute` |
+| `POST /api/interchange/airflow/{dag_id}/import` | `builder:use` + `airflow:read` + `code:execute`; `404` while `features.airflow` or `features.imports` is off |
+| `POST /api/interchange/yaml/import` (`{source}`) | `builder:use` |
+| `POST /api/interchange/spec/import` (`{source}`) | `builder:use` |
+| `POST /api/interchange/yaml/export` | `builder:use` |
+| `POST /api/export/dag-factory`, `POST /api/codegen` | `builder:use` |
+| `GET /api/schema/spec` | `builder:use` (JSON Schema of the spec) |
+
+See the [spec format](/docs/extending/spec-format) and the [REST API reference](/api).
+
+## Related
+
+- [Code mode](/docs/user-guide/code-mode)
+- [Versions and diff](/docs/user-guide/versions-and-diff#hand-edited-and-foreign-files)
+- [TaskFlow and loops](/docs/user-guide/taskflow-and-loops)

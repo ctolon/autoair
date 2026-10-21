@@ -1,0 +1,221 @@
+---
+title: TaskFlow, mapping, branching and loops
+description: TaskFlow decorators supported by AutoAir, dynamic task mapping, branching, task groups, task loops, trigger rules and setup and teardown tasks.
+sidebar_label: TaskFlow and loops
+---
+
+The control-flow features of a DAG are Python tasks written with TaskFlow decorators, dynamic task mapping, branching, task groups and task loops, trigger rules, and setup and teardown tasks. Each section shows the inspector fields and the code AutoAir generates.
+
+## TaskFlow tasks
+
+A Python task node (`kind: python_task`) is a function whose body you write in the builder. It generates a decorated function and a call:
+
+```python
+@task(task_id="transform", multiple_outputs=True)
+def transform(rows, threshold):
+    """Return totals per region."""
+    ...
+    return {"summary": summary, "rows": kept}
+
+t_transform = transform(rows=t_extract.output, threshold=10)
+```
+
+Python task code is privileged: it needs `allow_python_code` and `features.python_code` on the server. With Python code disabled, validation reports `Python code tasks are disabled by policy`.
+
+### Supported decorators
+
+Insert a variant from the palette's **Built-in** section or switch it later with the **Decorator** field of the **Code** tab. The palette only offers decorators the server's Airflow installation provides; `@task` is always available.
+
+| Decorator | Palette hint | Extra fields in the Code tab |
+|---|---|---|
+| `@task` | Plain `@task` function with your own code | **DAG result (@result)** |
+| `@task.branch` | Returns the task_id(s) to follow | Lists the downstream task ids to return. |
+| `@task.short_circuit` | Falsy result skips downstream tasks | **Skip all downstream tasks** (`ignore_downstream_trigger_rules`) |
+| `@task.virtualenv` | Runs in a fresh virtualenv | **Requirements**, **Python version**, **System site packages** |
+| `@task.branch_virtualenv` | Branching function in a virtualenv | Same as `virtualenv` |
+| `@task.external_python` | Runs in an existing Python interpreter | **Python interpreter** (required) |
+| `@task.branch_external_python` | Branching function in an existing Python interpreter | **Python interpreter** (required) |
+| `@task.sensor` | Pokes until the function says done | **Poke interval (s)**, **Timeout (s)**, **Mode** (`poke` / `reschedule`), **Skip instead of failing on timeout** |
+| `@task.bash` | Returns a bash command to run | The returned string is checked with ShellCheck. |
+| `@task.docker` | Runs inside a Docker container | **Image** (required), **Docker URL**, **Command**, **Remove container on success** |
+| `@task.kubernetes` | Runs in a Kubernetes pod | **Image** (required), **Namespace**, **Pod name**, **In cluster** |
+| `@task.stub` | Language SDK task (Java/Go/TS) | **Queue** (required). The function body is not used. Airflow 3.3 or later, experimental. |
+
+**Other decorator arguments (JSON)** passes any further keyword arguments to the decorator.
+
+Validation checks the decorator arguments: `@task.external_python` and `@task.branch_external_python` need `python`; `@task.docker` and `@task.kubernetes` need `image`; `@task.stub` needs a `queue`; `@task.virtualenv` without `requirements` gets an informational note. Decorators with a missing provider fail the import check in Airflow.
+
+### The Code tab
+
+| Field | Purpose |
+|---|---|
+| **Function name** | Python function name; also the default task id. Must be a valid identifier. If two tasks use the same name, the generated functions are renamed. |
+| **Arguments** | Become function parameters. Each value can be a literal, a Jinja template or an upstream output (XCom). See [XCom references](/docs/user-guide/jinja-xcom-python#xcom-references). |
+| **Extra parameters** | Parameters without a bound value, for example keys provided by `expand_kwargs`. |
+| **Generated function signature** | Read-only preview of the `def` line. |
+| **Function body** | The statements of the function. Use `return` to push a value to XCom. Edited with the full Python editor (completion, hover, signatures). |
+| **Multiple outputs** | Push each key of a returned dict as its own XCom. **Detected keys** lists the keys found in a `return {…}` or `return dict(…)` literal; they are offered to downstream tasks. |
+| **DAG result (@result)** | Airflow 3.3 or later, plain `@task` only. The return value becomes the DAG run's result, returned by the `dagRuns/{id}/wait` API. |
+| **Use loop context** | Inside a task loop only: adds a keyword-only `loop` parameter. See [Task loops](#task-loops). |
+| **Write / explain with AI** | Describe what the task should do and review the generated code as a diff. See [AI assist](/docs/ai/assist). |
+
+The argument names `self` and `context` are reserved. The body is linted with ruff and syntax errors are reported with their line. See [Validation](/docs/user-guide/validation#python-lint).
+
+### TaskFlow equivalents of operators
+
+The standard provider's callable operators take a Python callable. AutoAir offers them in the palette, configured with a [Python reference](/docs/user-guide/jinja-xcom-python#python-references), and points to the TaskFlow node that lets you write the function in the builder instead:
+
+| Operator | Equivalent node |
+|---|---|
+| `PythonOperator` | `@task` |
+| `BranchPythonOperator` | `@task.branch` |
+| `ShortCircuitOperator` | `@task.short_circuit` |
+| `PythonVirtualenvOperator` | `@task.virtualenv` |
+| `BranchPythonVirtualenvOperator` | `@task.branch_virtualenv` |
+| `ExternalPythonOperator` | `@task.external_python` |
+| `BranchExternalPythonOperator` | `@task.branch_external_python` |
+| `PythonSensor` | `@task.sensor` |
+
+The palette hint reads, for example, `Takes python_callable as a Python reference (import path) — or use a @task node to write the function here.`
+
+## Dynamic task mapping
+
+Dynamic task mapping creates one task instance per element at runtime. Configure it in the **Data** tab under **Dynamic task mapping**:
+
+| Mode | Fields | Generated code |
+|---|---|---|
+| **Off** | | A plain task. |
+| **expand** | **Expand over**: one or more arguments, each given a list or the output of an upstream task. | `Op.partial(...).expand(arg=...)`; for a Python task, `fn.partial(...).expand(arg=...)`. |
+| **expand_kwargs** | **Keyword argument sets**: a list of dicts, or an upstream output producing one. Each dict is one set of arguments. | `Op.partial(...).expand_kwargs(...)` |
+
+**Map index label** (`map_index_template`) is a Jinja template rendered per mapped instance and shown in the Airflow UI instead of the index.
+
+- For an operator, the expanded arguments are removed from its regular parameters; the remaining parameters go into `partial(...)`.
+- For a Python task, each expanded argument becomes a function parameter receiving one element.
+- **Max active instances per run** in the **Execution** tab (`max_active_tis_per_dagrun`) limits how many mapped instances run at once.
+
+```python
+t_process = BashOperator.partial(task_id="process", retries=2).expand(
+    bash_command=t_list_commands.output,
+)
+```
+
+Validation reports `expand value for '…' must be a list or an XCom reference` and `expand_kwargs must be a list of dicts or an XCom reference`. Mapped tasks show a `mapped` badge on the canvas.
+
+## Branching
+
+AutoAir supports Airflow's branching constructs:
+
+| Construct | How |
+|---|---|
+| `@task.branch` (and `branch_virtualenv`, `branch_external_python`) | Return one task id, or a list of task ids, of the tasks directly downstream. The Code tab lists the ids you can return. |
+| `@task.short_circuit` | Return a falsy value to skip downstream tasks. With **Skip all downstream tasks** off, only direct downstream tasks are skipped and trigger rules apply further down. |
+| `BranchPythonOperator`, `BranchPythonVirtualenvOperator`, `BranchExternalPythonOperator` | Configured with a Python reference. |
+| `HITLBranchOperator` | A person chooses the branch. See [Human-in-the-loop](/docs/user-guide/human-in-the-loop). |
+
+Validation of `@task.branch` tasks:
+
+- `a branch task needs at least one downstream task` (error).
+- Returned string literals that are not directly downstream: `branch returns […] which are not directly downstream (expected one of […])` (warning). Task ids include group prefixes.
+
+Label the dependencies leaving a branch to document each path; labels are generated as `Label(...)`. Give the task that joins the branches the trigger rule `none_failed_min_one_success` so it runs whichever path was taken:
+
+```python
+t_choose >> Label("weekday") >> t_weekday
+t_choose >> Label("weekend") >> t_weekend
+```
+
+## Task groups
+
+Task groups are drawn as frames on the canvas and generate `TaskGroup(group_id=...)`; tasks are attached with `task_group=`. Groups can be nested. An edge to or from a group applies to every task in it, as in Airflow. With **Prefix task ids with group id** on (default), a task `load` in group `orders` has the Airflow id `orders.load`; the inspector shows the full id under the **Task id** field.
+
+Grouping, ungrouping, collapsing and resizing are described in [Canvas: task groups](/docs/user-guide/canvas#task-groups). To reuse a group of tasks across DAGs, save it as a fragment; see [Templates and fragments](/docs/user-guide/templates-and-fragments).
+
+## Task loops
+
+A task loop (Airflow 3.4 or later) repeats the tasks of a group until a condition is met or an iteration limit is reached. Turn on **Loop this group (Task Loop)** in the group inspector:
+
+| Field | Purpose |
+|---|---|
+| **Max iterations** | Upper bound on loop iterations, from 1 to 10,000 (safety stop). |
+| **Condition name** | Name of the generated condition function (default `until_done`). |
+| **Stop condition (until)** | Python body that returns `True` to stop. `loop`, `ti`, `params` and the rest of the context are available. Leave it empty for a fixed number of iterations. Not converging by the limit fails the loop. |
+
+The body of the loop must end in exactly one terminal task. Its return value is `loop.result` for the condition and `loop.previous` in the next iteration. Python tasks inside the loop can turn on **Use loop context** to receive `loop` (`loop.index`, `loop.previous`, `loop.result`, `loop.max_iterations`).
+
+```python
+@task_group(group_id="poll")
+def g_poll_body():
+    @task(task_id="fetch_page")
+    def fetch_page(*, loop=None):
+        return get_page(cursor=loop.previous)
+    t_fetch_page = fetch_page()
+
+def until_done(**context):
+    loop = context["loop"]
+    return loop.result is None
+
+g_poll = g_poll_body.loop(max_iterations=50, until=until_done)
+```
+
+Validation rules for loop groups:
+
+| Rule | Message |
+|---|---|
+| The group has tasks | `A loop group needs at least one task.` |
+| Exactly one terminal task (teardowns excluded) | `the loop body must end in exactly one terminal task (found […]); combine branches into one task` |
+| No nested groups | `loop groups cannot contain nested task groups` |
+| Outside tasks connect to the group, not to its members | `connect outside tasks to the loop group, not to tasks inside it` |
+| Outside tasks do not read XComs from inside | `tasks outside a loop cannot read XComs of tasks inside it` |
+| The until code parses and Python code is allowed | `until: line N: …`, `loop until-code is Python and needs allow_python_code` |
+| `loop` context only inside a loop | `` `loop` context is only available inside a loop group `` (warning) |
+
+## Trigger rules
+
+Set a task's trigger rule in **Execution → Dependencies → Trigger rule**. Empty means `all_success`, Airflow's default.
+
+| Trigger rule | Runs when |
+|---|---|
+| `all_success` | All upstream tasks succeeded. |
+| `all_failed` | All upstream tasks failed or were `upstream_failed`. |
+| `all_done` | All upstream tasks finished, whatever their state. |
+| `all_done_min_one_success` | All upstream tasks finished and at least one succeeded (Airflow 3.1 or later). |
+| `all_done_setup_success` | All upstream tasks finished and all upstream setup tasks succeeded (teardowns). |
+| `all_skipped` | All upstream tasks were skipped. |
+| `one_success` | As soon as one upstream task succeeded. |
+| `one_done` | As soon as one upstream task succeeded or failed. |
+| `one_failed` | As soon as one upstream task failed. |
+| `none_failed` | No upstream task failed (succeeded or skipped). |
+| `none_failed_min_one_success` | No upstream task failed and at least one succeeded. |
+| `none_skipped` | No upstream task was skipped. |
+| `always` | Regardless of upstream states. |
+
+**Depends on past** (run only if this task succeeded in the previous DAG run) is set next to it and inherits the DAG default when empty.
+
+## Setup and teardown tasks
+
+Setup tasks create resources and teardown tasks clean them up. A teardown runs even when the work tasks fail and does not fail the DAG run by itself.
+
+- Toggle **Setup task** or **Teardown task** in the node toolbar or in **Behaviour → Setup & teardown**. A task cannot be both.
+- Connect the teardown downstream of its setup; the tasks in between are the work it protects. Edges touching setup and teardown tasks are drawn dashed.
+- Generated code: `t_create.as_setup()` and `t_delete.as_teardown(setups=[t_create])`, where `setups` lists the setup tasks directly upstream of the teardown.
+- Teardowns normally use the `all_done_setup_success` trigger rule. Setting another rule shows a warning in the Behaviour tab because it changes when cleanup runs.
+- Validation reports `teardown tasks cannot use trigger rule 'always'` (error) and `teardown has no upstream setup task; connect it to the setup it cleans up` (warning).
+
+## Airflow version requirements
+
+Some features need a minimum Airflow version. When the target version (`target_airflow_version`, or the installed Airflow) is older, validation reports `<feature> requires Airflow ≥ X.Y.Z (target is …)`:
+
+| Feature | Minimum Airflow |
+|---|---|
+| Deadline alerts, the `all_done_min_one_success` trigger rule | 3.1 |
+| Partitioned schedules | 3.2 |
+| `@result`, `@task.stub`, exception retry policies, `rerun_with_latest_version` | 3.3 |
+| Task loops, `AssetAndTimeSchedule`, `batch_asset_events` | 3.4 |
+
+## Related pages
+
+- [Jinja, XCom and Python](/docs/user-guide/jinja-xcom-python)
+- [Callbacks, retries and deadlines](/docs/user-guide/callbacks-retries-deadlines)
+- [Canvas](/docs/user-guide/canvas)
+- [Validation](/docs/user-guide/validation)

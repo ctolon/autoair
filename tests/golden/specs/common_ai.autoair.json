@@ -1,0 +1,82 @@
+{
+  "spec_version": 2,
+  "dag_id": "common_ai",
+  "description": "common.ai provider: structured LLM output, agent toolsets, approvals, @task.llm",
+  "schedule": {"type": "none"},
+  "start_date": "2026-01-01T00:00:00Z",
+  "nodes": [
+    {"kind": "operator", "id": "classify", "task_id": "classify",
+     "operator": "airflow.providers.common.ai.operators.llm.LLMOperator",
+     "params": {
+       "llm_conn_id": "pydanticai_default",
+       "prompt": "Classify the sentiment of: {{ params.text }}",
+       "system_prompt": "You are a precise classifier.",
+       "output_type": {"$type": "output_model", "name": "Sentiment",
+         "description": "Sentiment of a text",
+         "fields": [
+           {"name": "label", "choices": ["positive", "negative", "neutral"],
+            "description": "Overall sentiment"},
+           {"name": "score", "type": "float", "description": "Confidence 0..1"},
+           {"name": "keywords", "type": "list[str]", "required": false}
+         ]},
+       "require_approval": true,
+       "approval_timeout": {"$type": "timedelta", "seconds": 3600},
+       "allow_modifications": true
+     }},
+    {"kind": "operator", "id": "investigate", "task_id": "investigate",
+     "operator": "airflow.providers.common.ai.operators.agent.AgentOperator",
+     "params": {
+       "llm_conn_id": "pydanticai_default",
+       "prompt": "Explain why {{ ti.xcom_pull(task_ids='classify') }} happened.",
+       "toolsets": [
+         {"$type": "toolset", "kind": "sql", "conn_id": "warehouse",
+          "allowed_tables": ["orders", "customers"], "db_schema": "sales", "max_rows": 100},
+         {"$type": "toolset", "kind": "mcp", "conn_id": "docs_mcp", "tool_prefix": "docs"}
+       ],
+       "enable_hitl_review": true,
+       "max_hitl_iterations": 3,
+       "hitl_timeout": {"$type": "timedelta", "seconds": 7200}
+     }},
+    {"kind": "operator", "id": "route", "task_id": "route",
+     "operator": "airflow.providers.common.ai.operators.llm_branch.LLMBranchOperator",
+     "params": {"llm_conn_id": "pydanticai_default",
+                "prompt": "Pick the follow-up task for this report."}},
+    {"kind": "operator", "id": "query", "task_id": "query",
+     "operator": "airflow.providers.common.ai.operators.llm_sql.LLMSQLQueryOperator",
+     "params": {"llm_conn_id": "pydanticai_default", "db_conn_id": "warehouse",
+                "prompt": "Count orders per region for {{ ds }}",
+                "table_names": ["orders"], "dialect": "postgres"}},
+    {"kind": "operator", "id": "escalate", "task_id": "escalate",
+     "operator": "airflow.providers.standard.operators.empty.EmptyOperator"},
+    {"kind": "operator", "id": "archive", "task_id": "archive",
+     "operator": "airflow.providers.standard.operators.empty.EmptyOperator"},
+    {"kind": "python_task", "id": "summarize", "task_id": "summarize",
+     "function_name": "summarize", "decorator": "llm",
+     "decorator_kwargs": {
+       "llm_conn_id": "pydanticai_default",
+       "output_type": {"$type": "output_model", "name": "Sentiment",
+         "description": "Sentiment of a text",
+         "fields": [
+           {"name": "label", "choices": ["positive", "negative", "neutral"],
+            "description": "Overall sentiment"},
+           {"name": "score", "type": "float", "description": "Confidence 0..1"},
+           {"name": "keywords", "type": "list[str]", "required": false}
+         ]}
+     },
+     "code": "return 'Summarize the sentiment of the latest reviews.'"},
+    {"kind": "python_task", "id": "triage", "task_id": "triage",
+     "function_name": "triage", "decorator": "agent",
+     "decorator_kwargs": {
+       "llm_conn_id": "pydanticai_default",
+       "toolsets": [{"$type": "toolset", "kind": "sql", "conn_id": "warehouse"}]
+     },
+     "code": "return 'Find the top 3 failing pipelines.'"}
+  ],
+  "edges": [
+    {"source": "classify", "target": "investigate"},
+    {"source": "investigate", "target": "route"},
+    {"source": "route", "target": "escalate"},
+    {"source": "route", "target": "archive"},
+    {"source": "escalate", "target": "query"}
+  ]
+}

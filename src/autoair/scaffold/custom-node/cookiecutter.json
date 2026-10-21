@@ -1,0 +1,10 @@
+{
+  "node_name": "my_node",
+  "title": "My node",
+  "description": "A custom AutoAir node kind",
+  "category": "custom",
+  "icon": "builtin:python",
+  "project_slug": "autoair-node-{{ cookiecutter.node_name.replace('_', '-') }}",
+  "package_name": "autoair_node_{{ cookiecutter.node_name }}",
+  "class_name": "{{ cookiecutter.node_name.title().replace('_', '') }}Handler"
+}

@@ -1,0 +1,329 @@
+{
+  "groups": {
+    "edit": "Düzen",
+    "canvas": "Tuval",
+    "general": "Genel"
+  },
+  "commands": {
+    "undo": "Geri al",
+    "redo": "Yinele",
+    "copy": "Kopyala",
+    "cut": "Kes",
+    "paste": "Yapıştır",
+    "duplicate": "Çoğalt",
+    "delete": "Seçimi sil",
+    "selectAll": "Tümünü seç",
+    "clearSelection": "Seçimi temizle",
+    "group": "Seçimi grupla",
+    "ungroup": "Grubu çöz",
+    "toggleCollapse": "Grubu daralt / genişlet",
+    "addNote": "Not ekle",
+    "autoLayout": "Otomatik yerleşim",
+    "fitView": "Görünüme sığdır",
+    "toggleSnap": "Izgaraya hizalamayı aç/kapat",
+    "toggleMinimap": "Mini haritayı aç/kapat",
+    "commandPalette": "Komut paleti",
+    "insert": "Düğüm ekle…",
+    "shortcuts": "Klavye kısayolları",
+    "toggleColorMode": "Açık / koyu mod",
+    "nudgeLeft": "Seçimi sola taşı",
+    "nudgeRight": "Seçimi sağa taşı",
+    "nudgeUp": "Seçimi yukarı taşı",
+    "nudgeDown": "Seçimi aşağı taşı",
+    "nudgeLeftFast": "Seçimi sola taşı (büyük adım)",
+    "nudgeRightFast": "Seçimi sağa taşı (büyük adım)",
+    "nudgeUpFast": "Seçimi yukarı taşı (büyük adım)",
+    "nudgeDownFast": "Seçimi aşağı taşı (büyük adım)",
+    "togglePalette": "Paleti aç/kapat",
+    "toggleInspector": "Denetçiyi aç/kapat",
+    "toggleBottom": "Alt paneli aç/kapat"
+  },
+  "actions": {
+    "copy": "Kopyala",
+    "cut": "Kes",
+    "paste": "Buraya yapıştır",
+    "duplicate": "Çoğalt",
+    "delete": "Sil",
+    "deleteEdge": "Bağımlılığı sil",
+    "group_one": "Görev grubuna al",
+    "group_other": "{{count}} düğümü grupla",
+    "ungroup": "Grubu çöz",
+    "collapse": "Grubu daralt",
+    "expand": "Grubu genişlet",
+    "focus": "Düğüme yakınlaş",
+    "editLabel": "Etiketi düzenle",
+    "addNote": "Buraya not ekle",
+    "selectAll": "Tümünü seç",
+    "autoLayout": "Otomatik yerleşim",
+    "fitView": "Görünüme sığdır",
+    "saveOperatorTemplate": "Operatör şablonu olarak kaydet…"
+  },
+  "menu": {
+    "label": "Tuval işlemleri"
+  },
+  "toolbar": {
+    "label": "{{name}} için işlemler",
+    "disable": "Görevi devre dışı bırak (tuvalde kalır, DAG'a dahil edilmez)",
+    "enable": "Görevi etkinleştir",
+    "setup": "Kurulum (setup) görevi",
+    "teardown": "Temizlik (teardown) görevi",
+    "test": "Bu görevi test et",
+    "testUnavailable": "Görev testi kullanılamıyor",
+    "docs": "Operatör belgeleri",
+    "noDocs": "Belge bulunmuyor."
+  },
+  "badge": {
+    "disabled": "devre dışı",
+    "setup": "setup",
+    "teardown": "teardown",
+    "mapped": "eşlenmiş",
+    "asset": "→ varlık",
+    "errors_one": "{{count}} hata",
+    "errors_other": "{{count}} hata",
+    "warnings_one": "{{count}} uyarı",
+    "warnings_other": "{{count}} uyarı",
+    "result": "sonuç",
+    "stub": "stub · {{queue}}",
+    "lineage_enabled": "lineage",
+    "lineage_disabled": "lineage yok"
+  },
+  "marker": {
+    "sensor": "Sensör",
+    "deferrable": "Ertelenebilir",
+    "hitl": "İnsan onayı (HITL)",
+    "branch": "Dallanma",
+    "shortCircuit": "Kısa devre"
+  },
+  "state": {
+    "success": "başarılı",
+    "failed": "başarısız",
+    "running": "çalışıyor",
+    "restarting": "yeniden başlıyor",
+    "queued": "kuyrukta",
+    "scheduled": "zamanlandı",
+    "skipped": "atlandı",
+    "up_for_retry": "yeniden denenecek",
+    "up_for_reschedule": "yeniden zamanlanacak",
+    "upstream_failed": "üst akış başarısız",
+    "deferred": "ertelendi",
+    "awaiting_input": "girdi bekliyor",
+    "removed": "kaldırıldı",
+    "none": "durum yok"
+  },
+  "run": {
+    "title": "Çalıştırma {{runId}}",
+    "legend": "Çalıştırma durumu açıklaması",
+    "clear": "Çalıştırma katmanını gizle",
+    "chipLabel": "Durum: {{state}}, deneme {{n}}",
+    "shortTitle": "{{type}} çalıştırma · {{when}}",
+    "showLegend": "Durum açıklamasını göster",
+    "hideLegend": "Durum açıklamasını gizle",
+    "types": {
+      "manual": "Elle",
+      "scheduled": "Zamanlanmış",
+      "backfill": "Geriye dönük",
+      "dataset_triggered": "Varlık tetiklemeli",
+      "asset_triggered": "Varlık tetiklemeli",
+      "asset_materialization": "Varlık üretimi"
+    }
+  },
+  "diff": {
+    "added": "eklendi",
+    "changed": "değişti",
+    "title": "{{label}} ile karşılaştırma",
+    "clear": "Karşılaştırmayı gizle",
+    "addedCount": "{{count}} eklendi",
+    "changedCount": "{{count}} değişti",
+    "removedCount": "{{count}} kaldırıldı",
+    "removedTitle": "Bu sürümde kaldırılanlar"
+  },
+  "group": {
+    "badge": "görev grubu",
+    "members_one": "{{count}} görev",
+    "members_other": "{{count}} görev",
+    "collapse": "{{name}} daralt",
+    "expand": "{{name}} genişlet",
+    "loopTitle": "Görev döngüsü: en fazla bu kadar tekrar eder"
+  },
+  "note": {
+    "empty": "Not yazmak için çift tıklayın",
+    "placeholder": "Markdown: # başlık, - liste, **kalın**, `kod`…",
+    "editLabel": "Not metni",
+    "toolbar": "Not işlemleri",
+    "color": "Renk: {{color}}",
+    "edit": "Notu düzenle",
+    "colors": {
+      "yellow": "Sarı",
+      "orange": "Turuncu",
+      "pink": "Pembe",
+      "purple": "Mor",
+      "blue": "Mavi",
+      "teal": "Turkuaz",
+      "green": "Yeşil",
+      "gray": "Gri"
+    }
+  },
+  "edge": {
+    "insert": "Buraya düğüm ekle",
+    "editHint": "Etiketi düzenlemek için çift tıklayın",
+    "labelInput": "Bağımlılık etiketi"
+  },
+  "insert": {
+    "pythonTask": "Python görevi",
+    "taskGroup": "Görev grubu",
+    "taskGroupHint": "Görevleri görsel ve mantıksal olarak gruplar",
+    "note": "Not",
+    "noteHint": "Markdown metinli yapışkan not",
+    "fragmentHint": "Yeniden kullanılabilir görev grubu",
+    "decorators": {
+      "task": "Kendi kodunuzla düz @task fonksiyonu",
+      "branch": "İzlenecek task_id(ler)ini döndürür",
+      "short_circuit": "Yanlış sonuç alt akış görevlerini atlar",
+      "virtualenv": "Yeni bir virtualenv içinde çalışır",
+      "external_python": "Mevcut bir Python yorumlayıcısında çalışır",
+      "branch_virtualenv": "Virtualenv içinde dallanma fonksiyonu",
+      "sensor": "Fonksiyon bitti diyene kadar yoklar",
+      "bash": "Çalıştırılacak bash komutunu döndürür",
+      "docker": "Docker konteynerinde çalışır",
+      "kubernetes": "Kubernetes pod'unda çalışır",
+      "stub": "Dil SDK görevi (Java/Go/TS)",
+      "branch_external_python": "Mevcut bir Python yorumlayıcısında dallanma fonksiyonu",
+      "llm": "LLM'e istem gönder (common.ai)",
+      "agent": "Araç setli yapay zekâ ajanı (common.ai)",
+      "llm_branch": "Dalı LLM seçer (common.ai)",
+      "llm_sql": "SQL'i LLM yazar (common.ai)"
+    },
+    "operatorTemplateHint": "Yeniden kullanılabilir yapılandırılmış görev"
+  },
+  "insertPopover": {
+    "label": "Düğüm ekle",
+    "placeholder": "Operatör, @task türü ara…"
+  },
+  "palette": {
+    "title": "Komut paleti",
+    "insertTitle": "Düğüm ekle",
+    "placeholder": "Düğüm, görev ve komut ara…",
+    "insertPlaceholder": "Operatör, @task türü, şablon ara…",
+    "search": "Operatör ara…",
+    "empty": "Sonuç yok",
+    "loading": "Katalog yükleniyor…",
+    "builtin": "Yerleşik",
+    "fragments": "Şablonlar",
+    "operators": "Operatörler",
+    "favoritesAndRecent": "Favoriler ve son kullanılanlar",
+    "goTo": "Göreve git",
+    "commands": "Komutlar",
+    "deprecated": "kullanımdan kalktı",
+    "unsupported": "Henüz desteklenmiyor: {{reason}}",
+    "favorite": "{{name}} favorilere ekle",
+    "unfavorite": "{{name}} favorilerden çıkar",
+    "dragHint": "Tuvale sürükleyin, çift tıklayın veya Enter'a basın.",
+    "noFavorites": "Burada tutmak için öğeleri yıldızlayın.",
+    "noRecent": "Eklediğiniz düğümler burada görünür.",
+    "footer": "↑↓ gez · Enter ekle · Alt+S favori · sürükle-bırak",
+    "hintNavigate": "gezin",
+    "hintSelect": "seç",
+    "hintClose": "kapat",
+    "tabs": {
+      "all": "Tümü",
+      "operators": "Operatörler",
+      "sensors": "Sensörler",
+      "transfers": "Aktarımlar",
+      "builtin": "Yerleşik",
+      "favorites": "Favoriler",
+      "recent": "Son"
+    },
+    "needsCallable": "Python fonksiyonu (callable) parametresi gerekiyor: {{params}}",
+    "callableOperator": "Python nesnesi alır — {{params}} — Python referansı (import yolu) olarak verilir.",
+    "callableWithAlternative": "{{params}} parametresini Python referansı (import yolu) olarak alır — ya da fonksiyonu burada yazmak için {{decorator}} düğümünü kullanın.",
+    "needsPythonCode": "{{params}} için sunucuda Python kodu izni gerekiyor (allow_python_code)",
+    "operatorTemplates": "Operatör şablonları",
+    "newOperatorTemplate": "Yeni operatör şablonu"
+  },
+  "shortcuts": {
+    "title": "Klavye kısayolları",
+    "close": "Kapat",
+    "footer": "Bir alana veya kod düzenleyiciye yazarken kısayollar yok sayılır. macOS'ta Ctrl yerine ⌘ kullanılır."
+  },
+  "shell": {
+    "commandPalette": "Komut paleti (Ctrl+K)",
+    "shortcuts": "Klavye kısayolları (?)",
+    "language": "Dil",
+    "darkMode": "Koyu moda geç",
+    "lightMode": "Açık moda geç",
+    "hide": {
+      "palette": "Paleti gizle (Ctrl/⌘+B)",
+      "bottom": "Alt paneli gizle (Ctrl/⌘+J)",
+      "inspector": "Denetçiyi gizle (Ctrl/⌘+I)"
+    },
+    "show": {
+      "palette": "Paleti göster (Ctrl/⌘+B)",
+      "bottom": "Alt paneli göster (Ctrl/⌘+J)",
+      "inspector": "Denetçiyi göster (Ctrl/⌘+I)"
+    },
+    "user": "{{user}} olarak giriş yapıldı",
+    "signOut": "Çıkış yap",
+    "configuration": "AutoAir yapılandırması",
+    "resize": {
+      "palette": "Paleti yeniden boyutlandır (ok tuşları; çift tık sıfırlar)",
+      "inspector": "Denetçiyi yeniden boyutlandır (ok tuşları; çift tık sıfırlar)",
+      "bottom": "Alt paneli yeniden boyutlandır (ok tuşları; çift tık sıfırlar)"
+    },
+    "rail": {
+      "palette": "Operatörler",
+      "inspector": "Denetçi"
+    },
+    "more": "Diğer",
+    "commandPaletteItem": "Komut paleti",
+    "shortcutsItem": "Klavye kısayolları",
+    "hideItem": {
+      "palette": "Paleti gizle",
+      "inspector": "Denetçiyi gizle",
+      "bottom": "Alt paneli gizle"
+    },
+    "showItem": {
+      "palette": "Paleti göster",
+      "inspector": "Denetçiyi göster",
+      "bottom": "Alt paneli göster"
+    },
+    "rolePermissions": "{{role}} şunları verir:"
+  },
+  "toast": {
+    "copied_one": "1 düğüm kopyalandı",
+    "copied_other": "{{count}} düğüm kopyalandı",
+    "nothingToPaste": "Yapıştırılacak bir şey yok: önce tuvalden düğüm kopyalayın",
+    "layoutFailed": "Otomatik yerleşim başarısız",
+    "fragmentFailed": "Şablon eklenemedi",
+    "notAFragment": "Bu şablon bir parça (fragment) değil"
+  },
+  "aria": {
+    "operator": "{{name}}, {{operator}}",
+    "python": "{{name}}, Python {{decorator}}",
+    "custom": "{{name}}, {{handler}}",
+    "group": "{{name}}, görev grubu",
+    "groupCollapsed": "{{name}}, daraltılmış görev grubu",
+    "note": "Not: {{text}}"
+  },
+  "a11y": {
+    "nodeDefault": "Düğüm seçmek için Enter veya Boşluk'a basın. Ok tuşları taşır, Delete siler, Escape iptal eder.",
+    "nodeKeyboardDisabled": "Düğüm seçmek için Enter veya Boşluk'a basın. Escape iptal eder.",
+    "moved": "Düğüm {{direction}} yönüne taşındı: x {{x}}, y {{y}}",
+    "edgeDefault": "Bağımlılık seçmek için Enter veya Boşluk'a basın. Delete siler, Escape iptal eder.",
+    "controls": "Tuval kontrolleri",
+    "zoomIn": "Yakınlaştır",
+    "zoomOut": "Uzaklaştır",
+    "fitView": "Görünüme sığdır",
+    "interactive": "Etkileşimi aç/kapat",
+    "minimap": "Mini harita",
+    "handle": "Bağlantı noktası"
+  },
+  "emptyState": {
+    "title": "DAG'ınıza başlayın",
+    "help": "Paletten tuvale bir operatör sürükleyin ya da:",
+    "search": "Operatör ara…",
+    "template": "Bir şablondan başla…",
+    "ai": "Yapay zekâ ile oluştur…",
+    "code": "Kod olarak yaz",
+    "raw": "Ham kod DAG'ı yaz"
+  }
+}
