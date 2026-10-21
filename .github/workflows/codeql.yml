@@ -30,8 +30,8 @@ jobs:
       matrix:
         language: [python, javascript-typescript, actions]
     steps:
-      - uses: actions/checkout@v5
-      - uses: github/codeql-action/init@v3
+      - uses: actions/checkout@v7
+      - uses: github/codeql-action/init@v4
         with:
           languages: ${{ matrix.language }}
           build-mode: none
@@ -42,6 +42,6 @@ jobs:
               - tests/golden/expected
               - website/build
               - "**/node_modules"
-      - uses: github/codeql-action/analyze@v3
+      - uses: github/codeql-action/analyze@v4
         with:
           category: /language:${{ matrix.language }}
