@@ -12,6 +12,7 @@ pytest.importorskip("sqlalchemy")
 
 from autoair.cli import app
 from autoair.persistence import migrations
+from autoair.persistence.db import sqlalchemy_major
 
 
 def test_db_upgrade_and_current(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -47,7 +48,9 @@ def test_db_commands_refuse_the_file_backend(monkeypatch: pytest.MonkeyPatch) ->
 
 
 def test_db_credentials_are_masked(monkeypatch: pytest.MonkeyPatch) -> None:
-    pytest.importorskip("psycopg")
+    # The driver follows the installed SQLAlchemy (psycopg2 on 1.4); without it the command
+    # exits 2 with an install hint before it ever connects.
+    pytest.importorskip("psycopg" if sqlalchemy_major() >= 2 else "psycopg2")
     monkeypatch.setenv("AUTOAIR_DATABASE__BACKEND", "postgresql")
     monkeypatch.setenv("AUTOAIR_DATABASE__URL", "postgresql://u:topsecret@127.0.0.1:1/x")
     monkeypatch.setenv("AUTOAIR_DATABASE__POOL_TIMEOUT", "1")
