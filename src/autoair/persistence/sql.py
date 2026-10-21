@@ -53,6 +53,24 @@ def _upsert(db: Database, table: Table) -> Any:
     return sqlite_insert(table)
 
 
+def _returning(conn: Any, kind: str) -> bool:
+    """Whether ``INSERT``/``UPDATE ... RETURNING`` compiles on this connection.
+
+    SQLAlchemy 2 sets ``insert_returning`` / ``update_returning`` per dialect (SQLite from
+    3.35). SQLAlchemy 1.4, the version Airflow 3.0 pins, has neither attribute and supports
+    RETURNING only on PostgreSQL."""
+    return bool(getattr(conn.dialect, f"{kind}_returning", conn.dialect.name == "postgresql"))
+
+
+def _insert_if_absent(conn: Any, stmt: Any, column: Any) -> bool:
+    """Run an ``INSERT ... ON CONFLICT DO NOTHING``; ``True`` when it inserted the row."""
+    if _returning(conn, "insert"):
+        # RETURNING, not rowcount: drivers disagree on rowcount for ON CONFLICT DO NOTHING.
+        return conn.execute(stmt.returning(column)).first() is not None
+    # Only SQLite on SQLAlchemy 1.4 gets here; sqlite3 reports 0/1 changed rows exactly.
+    return bool(conn.execute(stmt).rowcount == 1)
+
+
 # --------------------------------------------------------------------------- documents
 
 
@@ -89,10 +107,8 @@ class SqlDocumentStore:
                 updated_at=_now_iso(),
             )
             .on_conflict_do_nothing()
-            .returning(self.table.c.key)
         )
-        # RETURNING, not rowcount: drivers disagree on rowcount for ON CONFLICT DO NOTHING.
-        return conn.execute(stmt).first() is not None
+        return _insert_if_absent(conn, stmt, self.table.c.key)
 
     def put(self, key: str, data: bytes, *, expected_version: Any = ANY) -> StoredDocument:
         check_key(key)
@@ -106,14 +122,21 @@ class SqlDocumentStore:
             where = self._where(key)
             if expected_version is not ANY:
                 where = and_(where, c.version == int(expected_version))
-            result = conn.execute(
+            stmt = (
                 update(self.table)
                 .where(where)
                 .values(data=data, version=c.version + 1, updated_at=now)
-                .returning(c.version)
-            ).first()
-            if result is not None:
-                return StoredDocument(key, data, str(result.version), now)
+            )
+            version: Any = None
+            if _returning(conn, "update"):
+                result = conn.execute(stmt.returning(c.version)).first()
+                version = None if result is None else result.version
+            elif conn.execute(stmt).rowcount:
+                # SQLite holds the database write lock (BEGIN IMMEDIATE) until commit, so
+                # the row read back is the one just written.
+                version = conn.execute(select(c.version).where(self._where(key))).scalar()
+            if version is not None:
+                return StoredDocument(key, data, str(version), now)
             if expected_version is not ANY:
                 raise DocumentConflict(f"{key} changed (expected version {expected_version})")
             if self._insert(conn, key, data):
@@ -432,9 +455,8 @@ class SqlMemoryRepository:
                     item=item.model_dump_json(),
                 )
                 .on_conflict_do_nothing()
-                .returning(self.table.c.id)
             )
-            inserted = conn.execute(stmt).first() is not None
+            inserted = _insert_if_absent(conn, stmt, self.table.c.id)
         if inserted:
             return item
         with self.db.connect() as conn:  # a concurrent add of the same text won

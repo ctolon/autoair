@@ -5,7 +5,8 @@ description: Add or change a tool of AutoAir's MCP server (src/autoair/mcp/serve
 
 # Add an MCP tool
 
-The server is FastMCP 4 on the `mcp` SDK 2 (`autoair[mcp]`). Tools are registered inside
+The server is FastMCP 4 on the `mcp` SDK 2 (`autoair[mcp]`, not part of `all`;
+it cannot install next to Airflow 3.1, so MCP tests use the markers in `tests/optional.py`). Tools are registered inside
 `create_mcp_server(...)` in `src/autoair/mcp/server.py`; access control is
 `IamMiddleware` in `src/autoair/mcp/iam.py`.
 

@@ -14,12 +14,16 @@ import httpx2
 import pytest
 from fastapi.testclient import TestClient
 
-from autoair.api.app import build_services, create_app
-from autoair.auth import TokenVerifier, bearer_passthrough
-from autoair.iam.config import IamSettings
-from autoair.mcp.iam import TOOL_PERMISSIONS
-from autoair.mcp.server import create_mcp_server
-from autoair.settings import Settings
+from tests.optional import importorskip_mcp
+
+importorskip_mcp()
+
+from autoair.api.app import build_services, create_app  # noqa: E402
+from autoair.auth import TokenVerifier, bearer_passthrough  # noqa: E402
+from autoair.iam.config import IamSettings  # noqa: E402
+from autoair.mcp.iam import TOOL_PERMISSIONS  # noqa: E402
+from autoair.mcp.server import create_mcp_server  # noqa: E402
+from autoair.settings import Settings  # noqa: E402
 
 AIRFLOW = "http://airflow.test"
 MCP_HEADERS = {

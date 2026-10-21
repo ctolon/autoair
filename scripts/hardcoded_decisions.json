@@ -1897,6 +1897,14 @@
       "decision": "keep",
       "reason": "scheduler check cadence and start-up delay (internal); the refresh interval is kb.refresh_interval_hours"
     },
+    "autoair/kb/service.py::<module>::constant::_START_POLL": {
+      "decision": "keep",
+      "reason": "Poll interval of the start handshake above; internal mechanics with no user-visible effect."
+    },
+    "autoair/kb/service.py::<module>::constant::_START_TIMEOUT": {
+      "decision": "keep",
+      "reason": "Upper bound for the background refresh to record its own start (a lease claim and one status write) before the 202 answers; internal handshake, not a run time limit."
+    },
     "autoair/kb/service.py::KnowledgeBase._hits::number::e3cbba88": {
       "decision": "keep",
       "reason": "query length cap, score scaling, rerank text cap, citation numbering, default passages per prompt (internal; kb.search.* holds the tunables)"

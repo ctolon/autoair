@@ -19,7 +19,8 @@ separate AI service). Operator-facing instructions are in
 
 The code talks to small repository protocols (`autoair/persistence/protocols.py`); each has
 a file implementation (next to the domain code) and a SQL implementation
-(`autoair/persistence/sql.py`, SQLAlchemy 2 Core). The HTTP API is the same on every backend.
+(`autoair/persistence/sql.py`, SQLAlchemy Core; 2.x, or 1.4 inside Airflow 3.0, which pins
+`sqlalchemy<2`: only APIs both lines share, RETURNING only where the dialect compiles it). The HTTP API is the same on every backend.
 
 ## Inventory
 

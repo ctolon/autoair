@@ -40,8 +40,10 @@ def jwt(**claims: Any) -> str:
     return f"{enc({'alg': 'HS512', 'typ': 'JWT'})}.{enc(claims)}.signature"
 
 
-GOOD = jwt(sub="alice", given_name="Alice", family_name="A", exp=time.time() + 3600)
-RENEWED = jwt(sub="alice", given_name="Alice", family_name="A", exp=time.time() + 7200)
+# Built at collection time: lifetimes of a day and two days keep the expiry assertions
+# below true however long the suite runs before these tests (slow CI runners take >10 min).
+GOOD = jwt(sub="alice", given_name="Alice", family_name="A", exp=time.time() + 86400)
+RENEWED = jwt(sub="alice", given_name="Alice", family_name="A", exp=time.time() + 2 * 86400)
 
 
 class FakeAirflow:
@@ -182,9 +184,9 @@ def test_refresh_relays_airflows_new_cookie(tmp_path: Path) -> None:
     assert "HttpOnly" in set_cookie
     assert "Secure" in set_cookie
     assert "samesite=lax" in set_cookie.lower()
-    # RENEWED expires 2 h after collection, GOOD after 1 h: the renewed token's lifetime is
-    # reported (a bound that holds however long the suite ran before this test).
-    assert resp.json()["expires_in"] > 3600
+    # RENEWED expires two days after collection, GOOD after one: a remaining lifetime longer
+    # than GOOD's whole lifetime can only be the renewed token's.
+    assert resp.json()["expires_in"] > 86400
     sent = next(r for r in fake.calls if r.url.path == "/api/v2/version")
     assert f"_token={GOOD}" in sent.headers["cookie"]
 

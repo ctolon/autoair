@@ -27,6 +27,7 @@ from autoair.gateway import (
 )
 from autoair.iam.model import ALL_PERMISSIONS, Principal
 from autoair.settings import Settings
+from tests.optional import requires_mcp
 
 pytestmark = pytest.mark.airflow
 
@@ -554,6 +555,7 @@ def test_troubleshoot_permissions_and_missing_run(
     assert any(r.feature == "troubleshoot:reject" for r in audit(services))
 
 
+@requires_mcp
 def test_troubleshoot_filesystem_and_mcp_scope(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -725,6 +727,7 @@ def test_project_rules_crud_and_injection(tmp_path: Path) -> None:
 # --------------------------------------------------------------------------- MCP admin
 
 
+@requires_mcp
 def test_admin_mcp_servers_crud(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     from fastmcp import FastMCP
 
@@ -856,6 +859,7 @@ def _turn_tools(client: TestClient, llm: Any, mode: str, **extra: Any) -> tuple[
     return names, evts
 
 
+@requires_mcp
 def test_chat_assistants_attach_scoped_external_mcp_servers(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -896,6 +900,7 @@ def test_chat_assistants_attach_scoped_external_mcp_servers(
     assert not any(n.startswith("mcp__") for n in names)
 
 
+@requires_mcp
 def test_chat_mcp_tools_respect_iam_and_the_profile_switch(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

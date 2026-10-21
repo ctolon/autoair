@@ -24,8 +24,10 @@ One Python package, `autoair`; `autoair --help` lists the CLI (`autoair.cli:app`
 
 - Python >= 3.10 (CI 3.10-3.14; dev venv 3.12 from `.python-version`), uv, hatchling;
   FastAPI, Pydantic v2, pydantic-settings, Typer, Jinja2, fsspec; HTTP client `httpx2`.
-- State: files, or SQLAlchemy 2 Core with SQLite or PostgreSQL (psycopg 3).
-- Optional extras: `autoair[mcp]` (FastMCP >= 4 on `mcp` >= 2.3), `autoair[ai]`
+- State: files, or SQLAlchemy Core (2.x; 1.4 on Airflow 3.0) with SQLite or PostgreSQL
+  (psycopg 3; psycopg2 on SQLAlchemy 1.4).
+- Optional extras: `autoair[mcp]` (FastMCP >= 4 on `mcp` >= 2.3; not in `all`, not installable
+  with Airflow 3.1), `autoair[ai]`
   (`pydantic-ai-slim`) plus per-provider extras (`ai-anthropic`, `ai-openai`, ..., `ai-all`).
 - Frontend: React 19, Chakra UI v3, @xyflow/react 12, zustand 5 + zundo, CodeMirror 6, RJSF 6,
   i18next, TanStack Query, Yjs, Vite 8, TypeScript 6, vitest, Playwright; Node >= 22.18.

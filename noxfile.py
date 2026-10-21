@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import tempfile
 
 import nox
 
@@ -14,21 +15,42 @@ AIRFLOW_VERSIONS = ["3.0.6", "3.1.8", "3.2.2", "3.3.2"]
 # Pre-releases are tested but allowed to fail in CI until they are final.
 AIRFLOW_PRERELEASES = ["3.4.0b1"]
 
+# Extras installed next to each Airflow: everything that resolves there, so the suite runs
+# what users can install and skips only what is unavailable. Keep in sync with the `extras`
+# of the test matrix in .github/workflows/ci.yml and with
+# website/docs/installation/compatibility.md.
+EXTRAS = "all,mcp,sqlite,postgres,kb-pgvector"
+# autoair[mcp] (FastMCP 4) needs Starlette >= 1.0.1; Airflow 3.1 pins FastAPI < 0.118, i.e.
+# Starlette < 0.49. Its MCP tests skip with that reason.
+EXTRAS_BY_MINOR = {"3.1": "all,sqlite,postgres,kb-pgvector"}
 
-@nox.session(python="3.12")
-@nox.parametrize("airflow", AIRFLOW_VERSIONS, ids=[v.rsplit(".", 1)[0] for v in AIRFLOW_VERSIONS])
-def tests(session: nox.Session, airflow: str) -> None:
+PROVIDERS = (
+    "apache-airflow-providers-standard",
+    "apache-airflow-providers-git",
+    "apache-airflow-providers-common-messaging",
+)
+
+
+def extras_for(airflow: str) -> str:
+    return EXTRAS_BY_MINOR.get(".".join(airflow.split(".")[:2]), EXTRAS)
+
+
+def _install(session: nox.Session, airflow: str, *extra_args: str) -> None:
     session.install(
+        *extra_args,
         "-e",
-        ".[all]",
-        "apache-airflow-providers-git",
-        "apache-airflow-providers-common-messaging",
+        f".[{extras_for(airflow)}]",
         f"apache-airflow=={airflow}",
-        "apache-airflow-providers-standard",
+        *PROVIDERS,
         "pytest",
         "ruff",
     )
-    home = os.path.abspath(session.create_tmp())
+
+
+def _pytest(session: nox.Session) -> None:
+    # Not session.create_tmp(): it points TMPDIR into the virtualenv, so pytest's tmp_path
+    # would sit below the Python installation (which the LSP file peek may read).
+    home = tempfile.mkdtemp(prefix="autoair-nox-airflow-")
     session.run(
         "pytest",
         "-q",
@@ -37,66 +59,36 @@ def tests(session: nox.Session, airflow: str) -> None:
         *session.posargs,
         env={"AIRFLOW_HOME": home, "AIRFLOW__CORE__LOAD_EXAMPLES": "False"},
     )
+
+
+@nox.session(python="3.12")
+@nox.parametrize("airflow", AIRFLOW_VERSIONS, ids=[v.rsplit(".", 1)[0] for v in AIRFLOW_VERSIONS])
+def tests(session: nox.Session, airflow: str) -> None:
+    _install(session, airflow)
+    _pytest(session)
 
 
 @nox.session(python="3.12")
 @nox.parametrize("airflow", AIRFLOW_PRERELEASES, ids=AIRFLOW_PRERELEASES)
 def prerelease(session: nox.Session, airflow: str) -> None:
-    session.install(
-        "--prerelease=allow",
-        "-e",
-        ".[all]",
-        "apache-airflow-providers-git",
-        "apache-airflow-providers-common-messaging",
-        f"apache-airflow=={airflow}",
-        "apache-airflow-providers-standard",
-        "pytest",
-        "ruff",
-    )
-    home = os.path.abspath(session.create_tmp())
-    session.run(
-        "pytest",
-        "-q",
-        "-p",
-        "no:cacheprovider",
-        *session.posargs,
-        env={"AIRFLOW_HOME": home, "AIRFLOW__CORE__LOAD_EXAMPLES": "False"},
-    )
+    _install(session, airflow, "--prerelease=allow")
+    _pytest(session)
 
 
 @nox.session(python="3.10")
 def oldest(session: nox.Session) -> None:
     """Lowest supported Python with the oldest supported Airflow."""
-    session.install(
-        "-e",
-        ".[all]",
-        "apache-airflow-providers-git",
-        "apache-airflow-providers-common-messaging",
-        f"apache-airflow=={AIRFLOW_VERSIONS[0]}",
-        "apache-airflow-providers-standard",
-        "pytest",
-        "ruff",
-    )
-    home = os.path.abspath(session.create_tmp())
-    session.run(
-        "pytest",
-        "-q",
-        "-p",
-        "no:cacheprovider",
-        *session.posargs,
-        env={"AIRFLOW_HOME": home, "AIRFLOW__CORE__LOAD_EXAMPLES": "False"},
-    )
+    _install(session, AIRFLOW_VERSIONS[0])
+    _pytest(session)
 
 
 @nox.session(python="3.12")
 def lint(session: nox.Session) -> None:
     session.install(
         "-e",
-        ".[all]",
+        f".[{extras_for(AIRFLOW_VERSIONS[-1])}]",
         f"apache-airflow=={AIRFLOW_VERSIONS[-1]}",
-        "apache-airflow-providers-standard",
-        "apache-airflow-providers-git",
-        "apache-airflow-providers-common-messaging",
+        *PROVIDERS,
         "ruff",
         "mypy",
         "types-pyyaml",

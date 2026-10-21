@@ -243,3 +243,13 @@ def test_yaml_dag_reports_numeric_hitl_timeout_instead_of_emitting_it():
     )
     result = export_yaml_dag(spec)
     assert any("timedelta" in i.message and i.severity == "error" for i in result.issues)
+
+
+def test_datetime_param_accepts_a_utc_z_suffix(simple_spec_data):
+    # Browsers serialise dates with toISOString ("...Z"); Python 3.10's fromisoformat
+    # rejects the suffix, so codegen must normalise it.
+    simple_spec_data["nodes"][1]["params"]["env"] = {
+        "WHEN": {"$type": "datetime", "value": "2024-01-02T03:04:05Z"}
+    }
+    source = generate_source(DagSpec.model_validate(simple_spec_data))
+    assert "2024, 1, 2, 3, 4, 5" in source

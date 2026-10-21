@@ -65,9 +65,9 @@ class PgvectorStore:
                 from sqlalchemy.engine import make_url
             except ImportError as exc:
                 raise StoreError("kb.store=pgvector needs autoair[kb-pgvector]") from exc
-            url = make_url(self.url)
-            if url.drivername in ("postgresql", "postgres"):
-                url = url.set(drivername="postgresql+psycopg")
+            from autoair.persistence.db import driver_hint, with_postgres_driver
+
+            url = with_postgres_driver(make_url(self.url))
             connect_args: dict[str, Any] = {}
             if self.settings.ssl_mode:
                 connect_args["sslmode"] = self.settings.ssl_mode
@@ -79,9 +79,11 @@ class PgvectorStore:
                     pool_size=self.settings.pool_size,
                     pool_pre_ping=True,
                     connect_args=connect_args,
+                    future=True,
                 )
             except ImportError as exc:
-                raise StoreError("the psycopg driver is missing: autoair[kb-pgvector]") from exc
+                hint = driver_hint("postgresql", extra="kb-pgvector")
+                raise StoreError(f"the psycopg driver is missing: {hint}") from exc
         return self._engine
 
     def _run(self, sql: str, params: Mapping[str, Any] | None = None) -> list[Any]:

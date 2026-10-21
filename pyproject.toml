@@ -73,6 +73,9 @@ format = ["ruff>=0.9"]
 # The extra is empty; install commands and images name it, so a Git dependency added later
 # reaches them without changes.
 git = []
+# FastMCP 4 needs Starlette >= 1.0.1. Airflow 3.1 pins FastAPI < 0.118 (Starlette < 0.49), so
+# this extra does not resolve inside an Airflow 3.1 environment: run the MCP server from its
+# own environment there (`autoair mcp-serve --http`). See installation/compatibility.
 mcp = [
     "fastmcp>=4.0",
     "mcp>=2.3",
@@ -80,12 +83,15 @@ mcp = [
 collab = ["pycrdt>=0.12", "pycrdt-websocket>=0.16"]
 # Optional Redis pub/sub fan-out of collaboration rooms (collab.redis_url).
 collab-redis = ["redis>=5.0"]
-# AutoAir state in a SQL database (database.backend = sqlite | postgresql).
-sqlite = ["sqlalchemy>=2.0"]
-postgres = ["sqlalchemy>=2.0", "psycopg[binary]>=3.2"]
+# AutoAir state in a SQL database (database.backend = sqlite | postgresql). SQLAlchemy 1.4 is
+# allowed because Airflow 3.0 pins sqlalchemy<2 and plugin mode shares Airflow's environment;
+# on 1.4 PostgreSQL goes through psycopg2 (SQLAlchemy 1.4 has no psycopg 3 dialect), which
+# apache-airflow-providers-postgres installs.
+sqlite = ["sqlalchemy>=1.4.49"]
+postgres = ["sqlalchemy>=1.4.49", "psycopg[binary]>=3.2"]
 # Documentation knowledge base stores (kb.store). The default local store needs nothing.
 # pgvector: SQLAlchemy + psycopg 3 (libpq); the vector extension is installed server-side.
-kb-pgvector = ["sqlalchemy>=2.0", "psycopg[binary]>=3.2"]
+kb-pgvector = ["sqlalchemy>=1.4.49", "psycopg[binary]>=3.2"]
 # Elasticsearch is reached over its REST API with AutoAir's own HTTP client (httpx2,
 # outbound.* TLS/proxy settings): no client package. Kept as a stable install name.
 kb-elasticsearch = []
@@ -110,7 +116,9 @@ ai-all = [
 ai-rerank = ["sentence-transformers>=3.0"]
 # Third-party guardrails (enable each with AUTOAIR_AI__GUARDRAILS__EXTERNAL).
 ai-guardrails = ["llm-guard>=0.3"]
-all = ["autoair[standalone,format,git,mcp,ai,ai-anthropic,ai-openai,otel,collab,shell,yaml]"]
+# Everything that installs next to every supported Airflow (3.0-3.x). `mcp` is not part of it
+# because it cannot be installed with Airflow 3.1; elsewhere use autoair[all,mcp].
+all = ["autoair[standalone,format,git,ai,ai-anthropic,ai-openai,otel,collab,shell,yaml]"]
 shell = [
     "shellcheck-py>=0.10",
 ]

@@ -30,6 +30,9 @@ pre-release is tested in a separate nox session). Features that need a newer Air
 trigger rule; 3.2: asset partitions; 3.3: retry policies, `rerun_with_latest_version`, `@result`,
 `@task.stub`; 3.4: `AssetAndTimeSchedule`, `batch_asset_events`, task loops) are
 validated against the installed — or `AUTOAIR_TARGET_AIRFLOW_VERSION` — version.
+Extras per Airflow version (the `mcp` extra does not resolve next to Airflow 3.1; Airflow 3.0
+runs the SQL state backends on SQLAlchemy 1.4 with psycopg2):
+[compatibility matrix](https://ctolon.github.io/autoair/docs/installation/compatibility).
 
 ## Live verification against real services
 Contract tests use in-memory fake servers; the `live` suites run against real ones (skipped

@@ -288,7 +288,8 @@ class LocalGitProvider:
                     sha=sha,
                     author_name=name or None,
                     author_email=email or None,
-                    timestamp=datetime.datetime.fromisoformat(date),
+                    # git may print UTC as "Z", which fromisoformat accepts only from 3.11.
+                    timestamp=datetime.datetime.fromisoformat(date.replace("Z", "+00:00")),
                     message=body.strip(),
                 )
             )

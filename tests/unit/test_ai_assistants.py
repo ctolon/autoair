@@ -35,6 +35,7 @@ from autoair.ai.config import AiSettings, McpServerConfig, TroubleshootFilesyste
 from autoair.ai.testing import FakeLLM
 from autoair.ai.tools import AgentTool
 from autoair.persistence.documents import FileDocumentStore
+from tests.optional import requires_mcp
 
 # --------------------------------------------------------------------------- prompts
 
@@ -410,6 +411,7 @@ def test_mcp_server_config_validation() -> None:
     assert "s3cr3t" not in repr(ok)
 
 
+@requires_mcp
 def test_mcp_tools_in_memory(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     from fastmcp import FastMCP
 

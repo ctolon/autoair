@@ -611,21 +611,28 @@ class Settings(AutoAirBaseSettings):
     def effective_features(self) -> dict[str, bool]:
         """Feature flags after the runtime overrides (admin panel; locked flags excepted),
         policy (``allow_python_code=false`` turns ``python_code`` off) and what is installed
-        (AI in-process needs ``autoair[ai]``). This is what ``/api/meta`` reports and the
-        routers obey."""
+        (AI and MCP in-process need ``autoair[ai]`` / ``autoair[mcp]``). This is what
+        ``/api/meta`` reports and the routers obey."""
         flags = self.configured_features()
         flags["python_code"] = flags["python_code"] and self.allow_python_code
-        flags["ai"] = flags["ai"] and self.feature_unavailable("ai") is None
+        for name in ("ai", "mcp"):
+            flags[name] = flags[name] and self.feature_unavailable(name) is None
         return flags
 
     def feature_unavailable(self, name: str) -> str | None:
         """Why feature ``name`` cannot run in this installation (``None``: it can): AI in
-        this process needs the ``autoair[ai]`` extra unless ``ai.service_url`` proxies it."""
-        if name != "ai" or self.ai.service_url:
-            return None
-        from autoair.ai.availability import ai_unavailable_reason
+        this process needs the ``autoair[ai]`` extra unless ``ai.service_url`` proxies it;
+        MCP needs ``autoair[mcp]`` unless the AI service serves it (``ai.service.proxy_mcp``).
+        """
+        if name == "ai" and not self.ai.service_url:
+            from autoair.ai.availability import ai_unavailable_reason
 
-        return ai_unavailable_reason()
+            return ai_unavailable_reason()
+        if name == "mcp" and not (self.ai.service_url and self.ai.service.proxy_mcp):
+            from autoair.mcp.availability import mcp_unavailable_reason
+
+            return mcp_unavailable_reason()
+        return None
 
     def feature(self, name: str) -> bool:
         """Effective feature flag ``name``; an unknown name is a programming error (a typo

@@ -9,16 +9,21 @@ import anyio
 import httpx2
 import pytest
 from fastapi.testclient import TestClient
-from fastmcp import Client
 
-from autoair.ai.testing import FakeCall, FakeLLM
-from autoair.api.app import Services, build_services
-from autoair.auth import AuthBackend, bearer_passthrough
-from autoair.gateway import AirflowGateway
-from autoair.mcp import RepositoryStore, airflow_credentials, create_mcp_server
-from autoair.mcp.http import create_mcp_asgi_app
-from autoair.settings import Settings
-from autoair.storage import FileSystemRepository
+from tests.optional import importorskip_mcp
+
+importorskip_mcp()
+
+from fastmcp import Client  # noqa: E402
+
+from autoair.ai.testing import FakeCall, FakeLLM  # noqa: E402
+from autoair.api.app import Services, build_services  # noqa: E402
+from autoair.auth import AuthBackend, bearer_passthrough  # noqa: E402
+from autoair.gateway import AirflowGateway  # noqa: E402
+from autoair.mcp import RepositoryStore, airflow_credentials, create_mcp_server  # noqa: E402
+from autoair.mcp.http import create_mcp_asgi_app  # noqa: E402
+from autoair.settings import Settings  # noqa: E402
+from autoair.storage import FileSystemRepository  # noqa: E402
 
 pytestmark = pytest.mark.airflow
 

@@ -275,6 +275,8 @@ def test_proxy_mode_forwards_auth_identity_and_streams(tmp_path: Path) -> None:
     assert forged.status_code == 401
     assert direct.get("/health").json()["service"] == "ai"
     # MCP proxied to the AI service
+    from autoair.mcp.availability import mcp_runtime_available
+
     mcp = client.post(
         "/mcp/",
         json={"jsonrpc": "2.0", "id": 1, "method": "tools/list"},
@@ -283,6 +285,10 @@ def test_proxy_mode_forwards_auth_identity_and_streams(tmp_path: Path) -> None:
             "Accept": "application/json, text/event-stream",
         },
     )
+    if not mcp_runtime_available():
+        # The AI service serves /mcp only with autoair[mcp]; the proxy relays its 404.
+        assert mcp.status_code == 404, mcp.text
+        return
     assert mcp.status_code == 200, mcp.text
     names = {t["name"] for t in mcp.json()["result"]["tools"]}
     assert {"search_installed_docs", "read_source", "write_code"} <= names

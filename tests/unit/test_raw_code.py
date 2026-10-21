@@ -7,11 +7,11 @@ from pydantic import ValidationError
 
 from autoair.codegen import RAW_HEADER, render, render_raw
 from autoair.iam import model as P
-from autoair.mcp.iam import RAW_CODE_FEATURES, required_features, required_permissions
 from autoair.spec import DagSpec
 from autoair.storage.base import canonical_json, is_owned, summary_of, utcnow
 from autoair.validation import Policy, validate_spec
 from autoair.validation.raw import defined_dag_ids, operator_uses
+from tests.optional import requires_mcp
 
 GOOD = """from datetime import datetime
 
@@ -199,7 +199,10 @@ def test_import_check_runs_the_file() -> None:
 # --------------------------------------------------------------------------- MCP classification
 
 
+@requires_mcp
 def test_mcp_raw_saves_need_code_raw() -> None:
+    from autoair.mcp.iam import RAW_CODE_FEATURES, required_features, required_permissions
+
     spec = {"spec": {"dag_id": "x", "raw_code": GOOD}}
     assert P.CODE_RAW in required_permissions("save_dag_spec", spec)
     assert P.CODE_RAW not in required_permissions("save_dag_spec", {"spec": {"dag_id": "x"}})

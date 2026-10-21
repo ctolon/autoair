@@ -12,6 +12,8 @@ FROM apache/airflow:${AIRFLOW_VERSION}
 
 ARG AIRFLOW_VERSION
 ARG AUTOAIR_VERSION=0.0.0+local
+# For AIRFLOW_VERSION=3.1.x drop `mcp`: FastMCP 4 needs Starlette 1.x, which Airflow 3.1's
+# FastAPI pin excludes (website/docs/installation/compatibility.md).
 ARG AUTOAIR_EXTRAS=git,mcp,ai,ai-anthropic,ai-openai,format,postgres,collab,collab-redis,otel,yaml,standalone
 LABEL org.opencontainers.image.title="autoair" \
       org.opencontainers.image.description="AutoAir no-code DAG builder on Apache Airflow ${AIRFLOW_VERSION}" \

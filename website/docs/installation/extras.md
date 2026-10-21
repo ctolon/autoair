@@ -6,6 +6,8 @@ sidebar_label: Extras
 
 The core `autoair` package installs only what every mode needs (FastAPI, Pydantic, httpx2, fsspec, Jinja, jedi, Typer, PyYAML, cryptography, Pillow and the Prometheus client). Everything else is an **extra**. A feature whose extra is missing is either switched off with a log message or reports a clear error that names the extra to install.
 
+Not every extra can be installed next to every Airflow version: `mcp` does not resolve with Airflow 3.1. See [Airflow compatibility](/docs/installation/compatibility) for the matrix.
+
 ## Installing extras
 
 Extras go in square brackets. Quote the requirement so the shell does not expand the brackets.
@@ -31,7 +33,7 @@ Inside an Airflow image, install AutoAir with the extras in the same `pip instal
 | Mode | Recommended extras |
 | --- | --- |
 | Local mode | `standalone,airflow` (add `format` for formatted output) |
-| Airflow plugin | `format,git,mcp` plus `ai` and a provider extra such as `ai-anthropic` for AI (add `collab`, `postgres`, `otel`, `shell` as needed); never `airflow` (Airflow is already installed) and not `standalone` (Airflow's API server serves AutoAir) |
+| Airflow plugin | `format,git,mcp` plus `ai` and a provider extra such as `ai-anthropic` for AI (add `collab`, `postgres`, `otel`, `shell` as needed); never `airflow` (Airflow is already installed) and not `standalone` (Airflow's API server serves AutoAir). On Airflow 3.1 leave out `mcp` and [run the MCP server separately](/docs/installation/compatibility#mcp-next-to-airflow-31) |
 | Standalone server | `standalone,format,git,mcp,collab` plus `postgres` for several replicas and `ai,ai-<provider>` for AI |
 | Separate AI service | `standalone,mcp,ai` plus the `ai-*` provider extras you use (the main server then needs no `ai` extra) |
 
@@ -52,8 +54,8 @@ Inside an Airflow image, install AutoAir with the extras in the same `pip instal
 | Extra | Installs | Enables | Turned on by |
 | --- | --- | --- | --- |
 | `git` | nothing | Stable install name for the Git deploy target | `AUTOAIR_STORAGE__MODE=git`, `AUTOAIR_STORAGE__GIT__PROVIDER`, `AUTOAIR_STORAGE__GIT__REPO` and credentials (`AUTOAIR_STORAGE__GIT__CONN_ID` or `AUTOAIR_STORAGE__GIT__TOKEN`); every option is listed under [`storage.git`](/docs/reference/configuration#storagegit). The Git target talks to GitHub, GitLab, Bitbucket and Azure DevOps through their REST APIs; `storage.git.provider=local` (any remote) and `gitea` (Gitea or Forgejo) run the `git` command-line tool, which must be on `PATH`. |
-| `sqlite` | `sqlalchemy` | AutoAir state (saved templates, the audit trail, reviews and deploy proposals, the deploy target chosen in the UI, custom icons, AI memory, the AI audit log, AI knowledge overrides, per-user AI model settings, collaboration room snapshots, users seen and replica heartbeats) in one SQLite file | `AUTOAIR_DATABASE__BACKEND=sqlite`, optionally `AUTOAIR_DATABASE__URL=sqlite:////var/lib/autoair/autoair.db` (default `<state>/autoair.db`). Suits several workers on one host. |
-| `postgres` | `sqlalchemy`, `psycopg[binary]` | AutoAir state in PostgreSQL, shared by every replica | `AUTOAIR_DATABASE__BACKEND=postgresql`, `AUTOAIR_DATABASE__URL=postgresql+psycopg://autoair@db:5432/autoair`, `AUTOAIR_DATABASE__PASSWORD`. Missing driver: "cannot load the postgresql driver (...): pip install 'autoair[postgres]'". |
+| `sqlite` | `sqlalchemy` (1.4.49 or newer; Airflow 3.0 installs 1.4) | AutoAir state (saved templates, the audit trail, reviews and deploy proposals, the deploy target chosen in the UI, custom icons, AI memory, the AI audit log, AI knowledge overrides, per-user AI model settings, collaboration room snapshots, users seen and replica heartbeats) in one SQLite file | `AUTOAIR_DATABASE__BACKEND=sqlite`, optionally `AUTOAIR_DATABASE__URL=sqlite:////var/lib/autoair/autoair.db` (default `<state>/autoair.db`). Suits several workers on one host. |
+| `postgres` | `sqlalchemy`, `psycopg[binary]` | AutoAir state in PostgreSQL, shared by every replica | `AUTOAIR_DATABASE__BACKEND=postgresql`, `AUTOAIR_DATABASE__URL=postgresql+psycopg://autoair@db:5432/autoair`, `AUTOAIR_DATABASE__PASSWORD`. Missing driver: "cannot load the postgresql driver (...): pip install 'autoair[postgres]'". On Airflow 3.0 (SQLAlchemy 1.4) the driver is psycopg2: see [PostgreSQL on Airflow 3.0](/docs/installation/compatibility#postgresql-on-airflow-30). |
 
 :::note
 The `git` extra is empty: every Git provider uses either the host's REST API (over httpx2, a core dependency) or the `git` CLI, so AutoAir needs no Python Git library. The extra only keeps `autoair[git]` (and `autoair[all]`) installable under a stable name; a Git deploy target works without it as long as the `git` binary is installed where the `local` or `gitea` provider runs. (Airflow's `GitDagBundle` needs `apache-airflow-providers-git` on the Airflow side, which brings its own dependencies.)
@@ -72,7 +74,7 @@ Object storage targets (`AUTOAIR_STORAGE__MODE=object`) use fsspec, which is a c
 
 | Extra | Installs | Enables | Turned on by |
 | --- | --- | --- | --- |
-| `mcp` | `fastmcp`, `mcp` | The MCP endpoint at `/mcp` (plugin: `/autoair/mcp/`), `autoair mcp` (stdio) and `autoair mcp-serve` | `AUTOAIR_FEATURES__MCP=true` (default). Without the packages the server logs "MCP endpoint disabled: ... (install autoair[mcp])". Writes are controlled by `ai.mcp.allow_writes`. |
+| `mcp` | `fastmcp`, `mcp` | The MCP endpoint at `/mcp` (plugin: `/autoair/mcp/`), `autoair mcp` (stdio) and `autoair mcp-serve` | `AUTOAIR_FEATURES__MCP=true` (default). Without the packages the server logs "MCP endpoint disabled: ... (install autoair[mcp])", `/api/meta` reports `mcp_unavailable_reason` and the admin *Features* tab shows `mcp` as *Not installed*. Writes are controlled by `ai.mcp.allow_writes`. Cannot be installed next to Airflow 3.1 ([why](/docs/installation/compatibility)). |
 | `ai` | `pydantic-ai-slim` | The AI runtime ([pydantic-ai](https://ai.pydantic.dev), as used by Airflow's common.ai provider; compatible with it in one environment). Without it AI is off: `/api/meta` reports `ai_unavailable_reason`, the admin panel shows the hint, only `GET /api/ai/status` answers, the AI MCP tools are hidden and the admin *Features* tab shows `ai` as *Not installed* and `autoair ai-serve` exits with the extra to install. | Install it with a provider extra, then configure `AUTOAIR_AI__PROVIDER`, `AUTOAIR_AI__MODEL`, `AUTOAIR_AI__API_KEY` (or `AUTOAIR_AI__LLM_CONN_ID`, a `pydanticai` connection). |
 | `ai-anthropic` | `pydantic-ai-slim[anthropic]` (the `anthropic` SDK) | Claude | `AUTOAIR_AI__PROVIDER=anthropic` |
 | `ai-openai` | `pydantic-ai-slim[openai]` (the `openai` SDK) | OpenAI, Azure OpenAI and OpenAI-compatible servers (vLLM, LM Studio, LiteLLM) | `AUTOAIR_AI__PROVIDER=openai` / `azure`; `AUTOAIR_AI__BASE_URL` for compatible servers |
@@ -91,7 +93,7 @@ The knowledge base works without these extras on its default `local` store (SQLi
 
 | Extra | Installs | Enables | Turned on by |
 | --- | --- | --- | --- |
-| `kb-pgvector` | `sqlalchemy`, `psycopg[binary]` | The `pgvector` knowledge-base store in PostgreSQL | `AUTOAIR_KB__STORE=pgvector`, optionally `AUTOAIR_KB__PGVECTOR__URL` (default: AutoAir's own database when `database.backend=postgresql`) |
+| `kb-pgvector` | `sqlalchemy` (1.4.49 or newer), `psycopg[binary]` (psycopg2 on SQLAlchemy 1.4) | The `pgvector` knowledge-base store in PostgreSQL | `AUTOAIR_KB__STORE=pgvector`, optionally `AUTOAIR_KB__PGVECTOR__URL` (default: AutoAir's own database when `database.backend=postgresql`) |
 | `kb-elasticsearch` | nothing | Stable install name for the `elasticsearch` store, which uses the REST API over httpx2 | `AUTOAIR_KB__STORE=elasticsearch`, `AUTOAIR_KB__ELASTICSEARCH__URL` |
 
 See [Knowledge base](/docs/ai/knowledge-base).
@@ -108,10 +110,11 @@ Without a language server the editors keep the built-in jedi completion, hover a
 
 ### `all`
 
-`autoair[all]` is a shortcut for `standalone,format,git,mcp,ai,ai-anthropic,ai-openai,otel,collab,shell,yaml`. It does **not** include `airflow`, `sqlite`, `postgres`, `collab-redis`, `kb-pgvector`, `kb-elasticsearch`, the other `ai-*` extras (`ai-google`, `ai-bedrock`, ..., `ai-rerank`, `ai-guardrails`), `lsp` or `lsp-pyright`; add those explicitly.
+`autoair[all]` is a shortcut for `standalone,format,git,ai,ai-anthropic,ai-openai,otel,collab,shell,yaml`: everything that installs next to every supported Airflow. It does **not** include `mcp` (it cannot be installed with Airflow 3.1), `airflow`, `sqlite`, `postgres`, `collab-redis`, `kb-pgvector`, `kb-elasticsearch`, the other `ai-*` extras (`ai-google`, `ai-bedrock`, ..., `ai-rerank`, `ai-guardrails`), `lsp` or `lsp-pyright`; add those explicitly.
 
 ```bash
-pip install 'autoair[all,postgres]'
+pip install 'autoair[all,mcp,postgres]'   # Airflow 3.0, 3.2 and newer, or standalone
+pip install 'autoair[all,postgres]'       # Airflow 3.1
 ```
 
 ## Checking what is active

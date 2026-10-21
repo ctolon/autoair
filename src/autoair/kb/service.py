@@ -11,6 +11,7 @@ import asyncio
 import logging
 import re
 import threading
+import time
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
@@ -34,6 +35,11 @@ from autoair.kb.stores import build_store, kb_base_dir
 from autoair.kb.stores.base import Filters, KbStore, StoreError, clean_filters, query_tokens
 
 log = logging.getLogger("autoair.kb")
+
+# How long start_refresh waits for the background run to record itself, and how often it
+# looks (seconds). Starting only claims the lease and writes the status document.
+_START_TIMEOUT = 10.0
+_START_POLL = 0.02
 
 
 def _snippet(text: str, tokens: Sequence[str], size: int) -> str:
@@ -310,9 +316,17 @@ class KnowledgeBase:
                 except Exception:
                     log.exception("knowledge-base refresh failed")
 
-            self._thread = threading.Thread(target=target, name="autoair-kb-refresh", daemon=True)
-            self._thread.start()
-        return self.run_status()
+            thread = threading.Thread(target=target, name="autoair-kb-refresh", daemon=True)
+            self._thread = thread
+            thread.start()
+        # Return once the run is recorded as running (or already over): a client that polls
+        # the status right after the 202 must not see the previous run, or no run, as final.
+        deadline = time.monotonic() + _START_TIMEOUT
+        status = self.run_status()
+        while status.state != "running" and thread.is_alive() and time.monotonic() < deadline:
+            thread.join(_START_POLL)
+            status = self.run_status()
+        return status
 
     def wait(self, timeout: float | None = None) -> None:
         thread = self._thread

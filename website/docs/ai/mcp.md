@@ -14,8 +14,10 @@ AutoAir speaks the [Model Context Protocol](https://modelcontextprotocol.io) in 
   such as a metrics, ticketing or runbook server.
 
 The server needs the `mcp` extra (`pip install 'autoair[mcp]'`: FastMCP 4.x on the official `mcp` SDK
-2.x). Without it the `/mcp` endpoint is not mounted and start-up logs
-*MCP endpoint disabled … (install autoair[mcp])*.
+2.x). Without it the `/mcp` endpoint is not mounted, start-up logs
+*MCP endpoint disabled … (install autoair[mcp])* and `/api/meta` reports `mcp_unavailable_reason`.
+FastMCP 4 cannot be installed next to Airflow 3.1; there, run the server in its own environment
+([Airflow compatibility](/docs/installation/compatibility#mcp-next-to-airflow-31)).
 
 ## Where the server runs
 

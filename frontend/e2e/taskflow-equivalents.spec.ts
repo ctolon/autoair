@@ -6,6 +6,8 @@ import { DeployedDags } from "./cleanup";
  * Operators that take Python objects (python_callable…) are configured with Python references
  * (with the @task.* node suggested as the inline alternative); custom operators from Airflow's
  * plugins folder appear in the palette; both deploy, import and run inside Airflow.
+ * The custom operators (`demo_ops`) live in e2e/fixtures/airflow-plugins: copy that folder
+ * into `$AIRFLOW_HOME/plugins` of the Airflow under test (CI's E2E job does).
  */
 const dags = new DeployedDags("taskflow-equivalents");
 test.afterAll(async ({ request }) => {

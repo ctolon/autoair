@@ -11,7 +11,7 @@ AutoAir is one Python package, `autoair`. Its wheel contains the backend, the CL
 | Component | Requirement |
 | --- | --- |
 | Python | 3.10 or newer (CI runs 3.10 and 3.12) |
-| Apache Airflow | 3.0 or newer, below 4. CI matrix: 3.0.6, 3.1.8, 3.2.2, 3.3.2, plus the 3.4.0b1 pre-release (allowed to fail) |
+| Apache Airflow | 3.0 or newer, below 4. CI matrix: 3.0.6, 3.1.8, 3.2.2, 3.3.2, plus the 3.4.0b1 pre-release (allowed to fail). The `mcp` extra cannot be installed next to Airflow 3.1: see [Airflow compatibility](/docs/installation/compatibility) |
 | Airflow REST API | API v2 (`/api/v2/...`), reachable from AutoAir in standalone mode |
 | Node.js | 22, only to build the frontend from a source checkout |
 | Optional services | PostgreSQL for shared state, Redis for collaboration fan-out, a Git host or object storage as deploy target, an LLM provider for AI |

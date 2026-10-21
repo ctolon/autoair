@@ -9,7 +9,11 @@ building, validating, reviewing and deploying DAGs.
 ## MCP server (FastMCP)
 
 Built on [FastMCP](https://gofastmcp.com) 4.x (`pip install 'autoair[mcp]'`), which runs on the
-official `mcp` SDK 2.x. Every tool has typed Pydantic inputs and outputs (`outputSchema`),
+official `mcp` SDK 2.x. FastMCP 4 needs Starlette >= 1.0.1, which Airflow 3.1's FastAPI pin
+excludes: next to Airflow 3.1 the extra cannot be installed, `features.mcp` is reported
+unavailable (`autoair/mcp/availability.py`, `Settings.feature_unavailable`) and the server runs
+in a separate environment (`autoair mcp-serve --http`, or the AI service with
+`ai.service.proxy_mcp`). Every tool has typed Pydantic inputs and outputs (`outputSchema`),
 an LLM-oriented description that says *when* to use it, MCP annotations
 (`readOnlyHint` / `destructiveHint` / `idempotentHint` / `openWorldHint`) and size limits
 (paging with `offset` → `next_offset`, log tails, truncated code).

@@ -28,7 +28,7 @@ SCRIPT = textwrap.dedent(
     from autoair.ai.llm import build_llm
     from autoair.api.app import build_services, create_app
     from autoair.auth import AuthBackend
-    from autoair.mcp.server import create_mcp_server
+    from autoair.mcp.availability import mcp_runtime_available
     from autoair.settings import Settings
     from fastapi.testclient import TestClient
 
@@ -62,21 +62,25 @@ SCRIPT = textwrap.dedent(
         sorted({f["category"] for f in secrets.json().get("findings", [])}),
     ]
 
-    mcp = create_mcp_server(services)
-    out["mcp_tools"] = sorted(t.name for t in asyncio.run(mcp.list_tools()))
+    out["mcp_available"] = mcp_runtime_available()
+    if out["mcp_available"]:  # autoair[mcp] cannot be installed next to Airflow 3.1
+        from autoair.mcp.server import create_mcp_server
 
-    async def mcp_scan():
-        from fastmcp import Client
+        mcp = create_mcp_server(services)
+        out["mcp_tools"] = sorted(t.name for t in asyncio.run(mcp.list_tools()))
 
-        async with Client(mcp) as c:
-            res = await c.call_tool("scan_dag_leaks", {"spec": leaky}, raise_on_error=False)
-            ai = await c.call_tool(
-                "review_dag_spec", {"spec": leaky, "use_ai": True}, raise_on_error=False
-            )
-            return [res.is_error, len((res.structured_content or {}).get("findings", [])),
-                    ai.is_error]
+        async def mcp_scan():
+            from fastmcp import Client
 
-    out["mcp_scan"] = asyncio.run(mcp_scan())
+            async with Client(mcp) as c:
+                res = await c.call_tool("scan_dag_leaks", {"spec": leaky}, raise_on_error=False)
+                ai = await c.call_tool(
+                    "review_dag_spec", {"spec": leaky, "use_ai": True}, raise_on_error=False
+                )
+                return [res.is_error, len((res.structured_content or {}).get("findings", [])),
+                        ai.is_error]
+
+        out["mcp_scan"] = asyncio.run(mcp_scan())
 
     from typer.testing import CliRunner
     from autoair.cli import app as cli
@@ -130,6 +134,8 @@ def test_autoair_runs_with_ai_off_without_the_extra(tmp_path: Path) -> None:
     code, categories = out["secrets"]
     assert code == 200
     assert categories  # the hard-coded token is found
+    if not out["mcp_available"]:
+        return  # the MCP half needs autoair[mcp]; test_api_v2 covers its absence
     tools = set(out["mcp_tools"])
     assert {"generate_dag_from_prompt", "fix_dag_spec", "write_code"}.isdisjoint(tools)
     assert {"validate_dag_spec", "get_dag_spec"} <= tools  # the deterministic tools stay

@@ -6042,6 +6042,12 @@ export type MetaInfo = {
      */
     mcp_enabled: boolean;
     /**
+     * Mcp Unavailable Reason
+     *
+     * Why MCP is off although features.mcp is on (e.g. the autoair[mcp] extra is not installed, or cannot be next to Airflow 3.1).
+     */
+    mcp_unavailable_reason?: string | null;
+    /**
      * Collab Enabled
      */
     collab_enabled: boolean;

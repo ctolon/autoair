@@ -8,6 +8,24 @@ minor versions may contain breaking changes; they are listed under **Changed** o
 
 ## [Unreleased]
 
+### Changed
+- `autoair[all]` no longer includes `mcp`: FastMCP 4 needs Starlette 1.x, which Airflow 3.1's
+  FastAPI pin excludes, so `all` now installs next to every supported Airflow. Use
+  `autoair[all,mcp]` on Airflow 3.0, 3.2 and newer or standalone. The `sqlite`, `postgres` and
+  `kb-pgvector` extras accept SQLAlchemy 1.4.49 or newer. New page: Installation →
+  Compatibility (extras per Airflow version).
+
+### Fixed
+- The SQLite and PostgreSQL state backends and the pgvector knowledge-base store work on
+  SQLAlchemy 1.4, the version Airflow 3.0 installs (previously an `ImportError` on
+  `sqlalchemy.Connection`). On SQLAlchemy 1.4 PostgreSQL goes through psycopg2.
+- Without `autoair[mcp]` the MCP feature is reported unavailable with the reason
+  (`/api/meta` `mcp_unavailable_reason`, admin *Features* tab) instead of only being unmounted.
+- Python 3.10: git history timestamps ending in `Z` and `$type: datetime` parameters sent by
+  the browser (`toISOString`) no longer fail to parse.
+- Python DAG import on Airflow 3.2: `CronTriggerTimetable("@daily", ...)` is recognised as a
+  preset again (SDK timetables keep the preset unresolved).
+
 ## [0.1.0] - Unreleased
 
 First public release.

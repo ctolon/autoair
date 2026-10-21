@@ -14,7 +14,6 @@ from fastapi.testclient import TestClient
 from autoair import sections
 from autoair.api.app import build_services, create_app
 from autoair.auth import AuthBackend
-from autoair.mcp.server import create_mcp_server
 from autoair.settings import Settings
 from autoair.templates import (
     OperatorBlueprint,
@@ -26,6 +25,7 @@ from autoair.templates import (
     blueprint_spec,
 )
 from autoair.validation import Problem
+from tests.optional import requires_mcp
 
 pytestmark = pytest.mark.airflow
 
@@ -273,8 +273,11 @@ def test_template_write_and_owner_team_rules(tmp_path):
     assert c.delete("/api/templates/notify-step", headers=admin).json() == {"deleted": True}
 
 
+@requires_mcp
 def test_mcp_tools_create_version_and_delete(tmp_path):
     from fastmcp import Client
+
+    from autoair.mcp.server import create_mcp_server
 
     services = _services(tmp_path, ai={"enabled": False})
     mcp = create_mcp_server(services)
@@ -337,6 +340,7 @@ def test_mcp_tools_create_version_and_delete(tmp_path):
     assert "template_delete" in actions
 
 
+@requires_mcp
 def test_mcp_template_tools_follow_template_write(tmp_path):
     c = _iam_client(tmp_path)
     headers = {

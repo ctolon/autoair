@@ -3,8 +3,12 @@
 
 * SQLite: WAL journal, ``busy_timeout`` and ``BEGIN IMMEDIATE`` write transactions, so
   several processes on one host serialise their read-modify-write cycles;
-* PostgreSQL (psycopg 3): pooled connections, ``sslmode``/``sslrootcert``, transaction-level
-  advisory locks for leader-only work (schema migrations, AI audit retention, memory).
+* PostgreSQL (psycopg 3; psycopg2 on SQLAlchemy 1.4): pooled connections,
+  ``sslmode``/``sslrootcert``, transaction-level advisory locks for leader-only work (schema
+  migrations, AI audit retention, memory).
+
+Works on SQLAlchemy 1.4 (the version Airflow 3.0 pins) and 2.x: engines are ``future=True``
+and only APIs both lines have are used (see ``persistence/sql.py::_returning``).
 """
 
 from __future__ import annotations
@@ -36,9 +40,47 @@ def sqlalchemy_available() -> bool:
     return True
 
 
+def sqlalchemy_major() -> int:
+    """Major version of the installed SQLAlchemy (``0`` when it is missing)."""
+    try:
+        import sqlalchemy
+    except ImportError:
+        return 0
+    return int(sqlalchemy.__version__.split(".", 1)[0])
+
+
+def postgres_driver() -> str:
+    """SQLAlchemy driver name for PostgreSQL: psycopg 3 on SQLAlchemy 2; psycopg2 on 1.4,
+    which has no psycopg 3 dialect (Airflow 3.0 pins ``sqlalchemy<2``; the Airflow postgres
+    provider installs psycopg2)."""
+    return "postgresql+psycopg" if sqlalchemy_major() >= 2 else "postgresql+psycopg2"
+
+
+def with_postgres_driver(url: Any) -> Any:
+    """``url`` (a SQLAlchemy ``URL``) with the psycopg driver the installed SQLAlchemy has:
+    a bare ``postgresql://`` gets the default driver, and ``postgresql+psycopg://`` (the
+    documented form) falls back to psycopg2 on SQLAlchemy 1.4. Other drivers are kept."""
+    name = url.drivername
+    if name in ("postgresql", "postgres") or (
+        name == "postgresql+psycopg" and sqlalchemy_major() < 2
+    ):
+        return url.set(drivername=postgres_driver())
+    return url
+
+
+def driver_hint(dialect: str, extra: str = "postgres") -> str:
+    """Install hint for a missing database driver (``extra``: the autoair extra to name)."""
+    if dialect == "postgresql" and sqlalchemy_major() < 2:
+        return (
+            "SQLAlchemy 1.4 (Airflow 3.0) drives PostgreSQL through psycopg2: "
+            "pip install psycopg2-binary (or apache-airflow-providers-postgres)"
+        )
+    return f"pip install 'autoair[{extra}]'"
+
+
 def resolve_url(settings: DatabaseSettings, default_sqlite_path: Path | None = None) -> str:
-    """The effective SQLAlchemy URL (``postgresql://`` uses psycopg 3, the password setting
-    is merged in)."""
+    """The effective SQLAlchemy URL (``postgresql://`` uses psycopg 3, or psycopg2 on
+    SQLAlchemy 1.4; the password setting is merged in)."""
     from sqlalchemy.engine import make_url
 
     if settings.backend == "file":
@@ -56,8 +98,8 @@ def resolve_url(settings: DatabaseSettings, default_sqlite_path: Path | None = N
             f"database.url is a {url.get_backend_name()} URL but database.backend is "
             f"{settings.backend!r}"
         )
-    if settings.backend == "postgresql" and url.drivername in ("postgresql", "postgres"):
-        url = url.set(drivername="postgresql+psycopg")
+    if settings.backend == "postgresql":
+        url = with_postgres_driver(url)
     if settings.password is not None:
         url = url.set(password=settings.password.get_secret_value())
     return url.render_as_string(hide_password=False)
@@ -101,7 +143,12 @@ class Database:
             memory = database in ("", ":memory:") or "mode=memory" in self.url
             if not memory:
                 Path(database).expanduser().parent.mkdir(parents=True, exist_ok=True)
+                from sqlalchemy.pool import QueuePool
+
+                # SQLAlchemy 2 pools file databases by default; 1.4 (Airflow 3.0) uses
+                # NullPool, which rejects the pool_* arguments.
                 kwargs.update(
+                    poolclass=QueuePool,
                     pool_size=settings.pool_size,
                     max_overflow=settings.max_overflow,
                     pool_timeout=settings.pool_timeout,
@@ -130,7 +177,7 @@ class Database:
             self.engine = create_engine(self.url, connect_args=connect_args, **kwargs)
         except ImportError as exc:  # driver missing (psycopg)
             raise DatabaseError(
-                f"cannot load the {self.dialect} driver ({exc}): pip install 'autoair[postgres]'"
+                f"cannot load the {self.dialect} driver ({exc}): {driver_hint(self.dialect)}"
             ) from exc
         if self.dialect == "sqlite":
             busy_ms = int(settings.pool_timeout * 1000)
@@ -277,9 +324,13 @@ __all__ = [
     "Database",
     "DatabaseError",
     "database_for",
+    "driver_hint",
     "masked_url",
+    "postgres_driver",
     "reset_databases",
     "resolve_url",
     "sqlalchemy_available",
+    "sqlalchemy_major",
     "transaction",
+    "with_postgres_driver",
 ]

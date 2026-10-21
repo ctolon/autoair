@@ -18,11 +18,11 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 
-from autoair.mcp.iam import IamMiddleware
 from autoair.storage.config import GitStorageSettings, StorageSettings
 from autoair.storage.request_token import git_token_required
 from tests.git_http import GitHttpServer, bare_repo
 from tests.integration.test_iam_api import SIMPLE, as_role, make_services
+from tests.optional import requires_mcp
 
 pytestmark = [
     pytest.mark.airflow,
@@ -157,7 +157,7 @@ def test_delete_and_promote_take_the_token(tmp_path: Path, host: GitHttpServer) 
     assert gone.status_code == 200, gone.text
 
 
-def test_required_mode_and_mcp(tmp_path: Path, host: GitHttpServer) -> None:
+def test_required_mode(tmp_path: Path, host: GitHttpServer) -> None:
     c = client_for(tmp_path, host.url("dags.git"), request_token="required")
     missing = deploy(c, headers(token=None))
     assert missing.status_code == 400
@@ -172,6 +172,13 @@ def test_required_mode_and_mcp(tmp_path: Path, host: GitHttpServer) -> None:
     info = c.get("/api/deploy-target", headers=as_role("Admin")).json()
     assert info["request_token"]["mode"] == "required"
     assert info["policy"]["request_token"] == "required"
+
+
+@requires_mcp
+def test_required_mode_refuses_mcp_writes(tmp_path: Path, host: GitHttpServer) -> None:
+    from autoair.mcp.iam import IamMiddleware
+
+    c = client_for(tmp_path, host.url("dags.git"), request_token="required")
     # MCP writes never carry a token: refused while dry runs still answer
     services = c.services  # type: ignore[attr-defined]
     assert git_token_required(services) is True
@@ -372,6 +379,7 @@ def mcp_call(c: TestClient, name: str, args: dict[str, Any], token: str | None) 
     return resp
 
 
+@requires_mcp
 def test_mcp_header_token_flag_off_is_refused(tmp_path: Path, host: GitHttpServer) -> None:
     c = client_for(tmp_path, host.url("dags.git"))
     r = mcp_call(c, "save_dag_spec", {"spec": SIMPLE, "confirm": True}, TOKEN)
@@ -382,6 +390,7 @@ def test_mcp_header_token_flag_off_is_refused(tmp_path: Path, host: GitHttpServe
     assert not pushes(host)  # nothing written with any credentials
 
 
+@requires_mcp
 def test_mcp_deploys_and_deletes_with_the_header_token(
     tmp_path: Path, host: GitHttpServer, caplog: pytest.LogCaptureFixture
 ) -> None:
@@ -424,6 +433,7 @@ def test_mcp_deploys_and_deletes_with_the_header_token(
             assert secret not in text
 
 
+@requires_mcp
 def test_mcp_header_token_follows_the_rest_rules(tmp_path: Path) -> None:
     remote = bare_repo(tmp_path / "srv")
     insecure = client_for(tmp_path / "a", f"file://{remote}", https=False, mcp_request_token=True)

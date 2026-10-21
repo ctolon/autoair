@@ -19,6 +19,7 @@ const sidebars: SidebarsConfig = {
       link: {type: 'doc', id: 'installation/overview'},
       items: [
         'installation/extras',
+        'installation/compatibility',
         'installation/local',
         'installation/plugin',
         'installation/standalone',

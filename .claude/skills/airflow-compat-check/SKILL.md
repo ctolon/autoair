@@ -43,7 +43,8 @@ uv run nox -s prerelease                # 3.4 pre-release (allowed to fail in CI
 uv run nox                              # full matrix (slow: one venv per version)
 ```
 
-Nox sessions install `.[all]` plus the pinned Airflow into `.nox/` and use a temporary
+Nox sessions install the extras from `extras_for()` in `noxfile.py` (`all,mcp,...`; no
+`mcp` on 3.1, whose Starlette pin FastMCP 4 cannot meet) plus the pinned Airflow into `.nox/` and use a temporary
 `AIRFLOW_HOME`; they do not touch the shared demo.
 
 ## Review questions

@@ -19,7 +19,8 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Connection, func, inspect, select, text
+from sqlalchemy import func, inspect, select, text
+from sqlalchemy.engine import Connection  # top-level export only from SQLAlchemy 2.0
 
 if TYPE_CHECKING:
     from autoair.persistence.db import Database

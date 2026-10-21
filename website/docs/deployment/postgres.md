@@ -12,7 +12,7 @@ PostgreSQL does **not** hold the DAGs. Specs and generated files always live in 
 |---|---|---|
 | `file` (default) | none | One replica, or replicas on one shared volume with sticky sessions |
 | `sqlite` | `autoair[sqlite]` | Several worker processes on one host |
-| `postgresql` | `autoair[postgres]` (SQLAlchemy 2, psycopg 3) | Several replicas on several hosts |
+| `postgresql` | `autoair[postgres]` (SQLAlchemy 2 with psycopg 3; on Airflow 3.0 SQLAlchemy 1.4 with psycopg2) | Several replicas on several hosts |
 
 What each state item becomes in SQL and why it is safe is listed in [State and scaling](/docs/admin/scaling).
 
@@ -55,7 +55,7 @@ AUTOAIR_DATABASE__CONNECT_ARGS='{"connect_timeout": 10, "application_name": "aut
 AUTOAIR_DATABASE__MIGRATE_ON_START=false          # an init job runs `autoair db upgrade`
 ```
 
-A `postgresql://` URL is treated as `postgresql+psycopg://` (psycopg 3). Credentials in the URL are masked when the configuration is exposed; keeping the password in `database.password` keeps it out of the URL entirely.
+A `postgresql://` URL is treated as `postgresql+psycopg://` (psycopg 3); on SQLAlchemy 1.4 (Airflow 3.0) it, and `postgresql+psycopg://`, use psycopg2 ([details](/docs/installation/compatibility#postgresql-on-airflow-30)). Credentials in the URL are masked when the configuration is exposed; keeping the password in `database.password` keeps it out of the URL entirely.
 
 | Setting | Default | Purpose |
 |---|---|---|

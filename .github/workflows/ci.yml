@@ -70,19 +70,23 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        # `extras`: every extra that resolves next to that Airflow (noxfile.py extras_for,
+        # website/docs/installation/compatibility.md). autoair[mcp] needs Starlette >= 1.0.1,
+        # which Airflow 3.1's FastAPI pin excludes, so 3.1 runs without it and its MCP tests
+        # skip with that reason. Airflow 3.0 brings SQLAlchemy 1.4: the SQL extras run on it.
         include:
           # Oldest supported Airflow on the oldest and newest Python it supports.
-          - { python: "3.10", airflow: "3.0.6" }
-          - { python: "3.12", airflow: "3.0.6" }
+          - { python: "3.10", airflow: "3.0.6", extras: "all,mcp,sqlite,postgres,kb-pgvector" }
+          - { python: "3.12", airflow: "3.0.6", extras: "all,mcp,sqlite,postgres,kb-pgvector" }
           # Every minor in between (see noxfile.py AIRFLOW_VERSIONS).
-          - { python: "3.12", airflow: "3.1.8" }
-          - { python: "3.12", airflow: "3.2.2" }
+          - { python: "3.12", airflow: "3.1.8", extras: "all,sqlite,postgres,kb-pgvector" }
+          - { python: "3.12", airflow: "3.2.2", extras: "all,mcp,sqlite,postgres,kb-pgvector" }
           # Latest Airflow on every supported Python.
-          - { python: "3.10", airflow: "3.3.2" }
-          - { python: "3.11", airflow: "3.3.2" }
-          - { python: "3.12", airflow: "3.3.2" }
-          - { python: "3.13", airflow: "3.3.2" }
-          - { python: "3.14", airflow: "3.3.2" }
+          - { python: "3.10", airflow: "3.3.2", extras: "all,mcp,sqlite,postgres,kb-pgvector" }
+          - { python: "3.11", airflow: "3.3.2", extras: "all,mcp,sqlite,postgres,kb-pgvector" }
+          - { python: "3.12", airflow: "3.3.2", extras: "all,mcp,sqlite,postgres,kb-pgvector" }
+          - { python: "3.13", airflow: "3.3.2", extras: "all,mcp,sqlite,postgres,kb-pgvector" }
+          - { python: "3.14", airflow: "3.3.2", extras: "all,mcp,sqlite,postgres,kb-pgvector" }
     env:
       AIRFLOW__CORE__LOAD_EXAMPLES: "False"
     steps:
@@ -95,10 +99,11 @@ jobs:
             pyproject.toml
             uv.lock
           cache-suffix: af${{ matrix.airflow }}
-      - name: Install AutoAir + Airflow ${{ matrix.airflow }}
+      # uv pip resolves afresh for this Airflow (UV_FROZEN applies to uv sync/run only).
+      - name: Install AutoAir [${{ matrix.extras }}] + Airflow ${{ matrix.airflow }}
         run: |
           uv venv --python "${{ matrix.python }}"
-          uv pip install -e ".[all]" \
+          uv pip install -e ".[${{ matrix.extras }}]" \
             "apache-airflow==${{ matrix.airflow }}" \
             apache-airflow-providers-standard apache-airflow-providers-git \
             apache-airflow-providers-common-messaging pytest
@@ -152,6 +157,18 @@ jobs:
       - run: >-
           uv run pytest -q tests/unit/test_persistence_contract.py
           tests/integration/test_persistence_api.py tests/integration/test_collab_replicas.py
+        env:
+          AUTOAIR_TEST_POSTGRES_URL: postgresql+psycopg://postgres:test-only@localhost:5432/autoair_test
+      # Airflow 3.0 pins SQLAlchemy < 2, which drives PostgreSQL through psycopg2.
+      - name: Same tests on SQLAlchemy 1.4 + psycopg2 (Airflow 3.0)
+        run: |
+          uv venv "$RUNNER_TEMP/af30" --python "$PYTHON_VERSION"
+          VIRTUAL_ENV="$RUNNER_TEMP/af30" uv pip install -e ".[postgres,collab]" \
+            "apache-airflow==3.0.6" apache-airflow-providers-standard psycopg2-binary pytest
+          export AIRFLOW_HOME="$RUNNER_TEMP/airflow"
+          "$RUNNER_TEMP/af30/bin/python" -c "import sqlalchemy; assert sqlalchemy.__version__.startswith('1.4')"
+          "$RUNNER_TEMP/af30/bin/pytest" -q -p no:cacheprovider tests/unit/test_persistence_contract.py \
+            tests/integration/test_persistence_api.py tests/integration/test_collab_replicas.py
         env:
           AUTOAIR_TEST_POSTGRES_URL: postgresql+psycopg://postgres:test-only@localhost:5432/autoair_test
 
@@ -262,7 +279,13 @@ jobs:
       - name: Start Airflow (standalone) with the AutoAir plugin
         run: |
           export AIRFLOW_HOME="$RUNNER_TEMP/airflow"
-          nohup ./scripts/dev-airflow.sh > "$RUNNER_TEMP/airflow.log" 2>&1 &
+          # Custom operators the taskflow-equivalents spec expects in Airflow's plugins folder.
+          mkdir -p "$AIRFLOW_HOME/plugins"
+          cp -R frontend/e2e/fixtures/airflow-plugins/. "$AIRFLOW_HOME/plugins/"
+          # Own session, so the stop step below can end the whole process group. The leader
+          # records its own pid ($! may be a setsid that forked and exited).
+          setsid bash -c 'echo $$ > "$RUNNER_TEMP/airflow.pid"; exec ./scripts/dev-airflow.sh' \
+            > "$RUNNER_TEMP/airflow.log" 2>&1 < /dev/null &
           for _ in $(seq 1 120); do
             curl -sf -o /dev/null "$AIRFLOW_URL/api/v2/version" && \
               curl -sf -o /dev/null "$AIRFLOW_URL/autoair/api/health" && exit 0
@@ -283,6 +306,11 @@ jobs:
       - name: Airflow log
         if: ${{ failure() }}
         run: tail -300 "$RUNNER_TEMP/airflow.log"
+      # `uv run airflow standalone` holds the uv cache lock; setup-uv's post-job
+      # `uv cache prune` waits for it and fails after 300 s while the server still runs.
+      - name: Stop Airflow
+        if: ${{ always() }}
+        run: ./.github/scripts/stop-process-group.sh "$RUNNER_TEMP/airflow.pid"
 
   # ------------------------------------------------------------------------------ Docs
   website:
@@ -412,12 +440,20 @@ jobs:
           enable-cache: true
           cache-dependency-glob: uv.lock
       - run: uv sync --all-extras
-      - run: ./scripts/live-auth-${{ matrix.manager }}.sh > live.log 2>&1 &
+      - name: Start Airflow with the ${{ matrix.manager }} auth manager
+        run: |
+          setsid bash -c 'echo $$ > "$RUNNER_TEMP/airflow.pid"; exec "$0"' \
+            "./scripts/live-auth-${{ matrix.manager }}.sh" > live.log 2>&1 < /dev/null &
       - run: |
           for _ in $(seq 1 120); do curl -sf localhost:${{ matrix.port }}/api/v2/version && break; sleep 3; done
           AUTOAIR_LIVE_AIRFLOW_URL=http://localhost:${{ matrix.port }} uv run pytest -m live tests/live/test_auth_managers.py
       - if: ${{ failure() }}
         run: tail -200 live.log
+      # The server runs under `uv run`, which holds the uv cache lock: stop it before
+      # setup-uv's post-job `uv cache prune`, which otherwise times out and fails the job.
+      - name: Stop Airflow
+        if: ${{ always() }}
+        run: ./.github/scripts/stop-process-group.sh "$RUNNER_TEMP/airflow.pid"
 
   live-gitlab:
     name: Live · GitLab deploy target

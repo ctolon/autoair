@@ -266,7 +266,8 @@ class CodegenContext:
             if tag == "datetime":
                 dt = value["value"]
                 if isinstance(dt, str):
-                    dt = datetime.datetime.fromisoformat(dt)
+                    # Browsers send "...Z" (toISOString); Python 3.10 rejects the suffix.
+                    dt = datetime.datetime.fromisoformat(dt.replace("Z", "+00:00"))
                 return self.datetime(dt)
             if tag == "import":
                 ref = PythonRef.model_validate(value)  # identifier path: no injection

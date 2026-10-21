@@ -29,8 +29,10 @@ def _pg_url(settings: Any, kb: KbSettings) -> str:
             raise StoreError(str(exc)) from exc
         from sqlalchemy.engine import URL
 
+        from autoair.persistence.db import postgres_driver
+
         return URL.create(
-            "postgresql+psycopg",
+            postgres_driver(),
             username=conn.login or None,
             password=conn.password or None,
             host=conn.host or None,

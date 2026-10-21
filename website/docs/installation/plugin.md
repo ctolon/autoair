@@ -47,6 +47,8 @@ ENV AUTOAIR_CATALOG_FILE=/opt/airflow/autoair-catalog.json \
     AUTOAIR_CACHE_DIR=/tmp/autoair-cache
 ```
 
+On Airflow 3.1 leave `mcp` out of the extras: it cannot be installed next to Airflow 3.1 ([Airflow compatibility](/docs/installation/compatibility)).
+
 Build the wheel first (`make build` produces `dist/autoair-*.whl` with the frontend included), then:
 
 ```bash

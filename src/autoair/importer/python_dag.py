@@ -175,7 +175,29 @@ def _preset_of(dag: Any, tt: Any) -> str | None:
         entry = _CRON_SOURCES.get(id(tt))
         if entry is not None and entry[0] is tt:
             written = entry[1]
+    if written is None:
+        # Airflow 3.2's Task SDK timetables are attrs classes that keep the preset as the
+        # expression (no CronMixin hook runs to record it).
+        expr = _expression(tt)
+        written = expr if expr and expr.startswith("@") else None
     return _PRESETS.get(written.strip().lower()) if written else None
+
+
+def _expression(tt: Any) -> str | None:
+    value = getattr(tt, "_expression", None) or getattr(tt, "expression", None)
+    return value if isinstance(value, str) else None
+
+
+def _resolve_preset(expr: str | None) -> str | None:
+    """``@daily`` -> ``0 0 * * *`` (a timetable that kept the preset unresolved)."""
+    if not expr or not expr.startswith("@"):
+        return expr
+    try:
+        from airflow.utils.dates import cron_presets
+    except ImportError:  # pragma: no cover - present in every Airflow 3.x
+        return expr
+    resolved: str = cron_presets.get(_PRESETS.get(expr.strip().lower(), expr), expr)
+    return resolved
 
 
 # ``<run_with> <tmp>/airflow-scripts/<dag_id>/<sha256[:16]>/<name> `` (see codegen's
@@ -301,10 +323,9 @@ def _schedule(dag: Any, warnings: list[str]) -> dict[str, Any]:
             # The spec's preset is generated in the DAG timezone (see codegen), so the
             # preset round-trips as long as the timetable uses that timezone.
             return {"type": "preset", "preset": preset}
-        expr = getattr(tt, "_expression", None) or getattr(tt, "expression", None)
         out = {
             "type": "cron",
-            "expression": expr,
+            "expression": _resolve_preset(_expression(tt)),
             "data_interval": kind == "CronDataIntervalTimetable",
         }
         if tz_name:

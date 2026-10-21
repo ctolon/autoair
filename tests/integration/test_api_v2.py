@@ -117,6 +117,8 @@ def test_ai_unavailable_without_llm(client):
 
 
 def test_mcp_endpoint_mounted(client):
+    from autoair.mcp.availability import mcp_runtime_available
+
     response = client.post(
         "/mcp/",
         json={"jsonrpc": "2.0", "id": 1, "method": "tools/list"},
@@ -125,7 +127,16 @@ def test_mcp_endpoint_mounted(client):
             "Content-Type": "application/json",
         },
     )
+    if not mcp_runtime_available():
+        # Without autoair[mcp] (e.g. next to Airflow 3.1) /mcp is not mounted and the meta
+        # endpoint says why.
+        assert response.status_code == 404
+        meta = client.get("/api/meta").json()
+        assert meta["mcp_enabled"] is False
+        assert "autoair[mcp]" in meta["mcp_unavailable_reason"]
+        return
     assert response.status_code in (200, 202, 400, 406)
+    assert client.get("/api/meta").json()["mcp_unavailable_reason"] is None
 
 
 def test_marketplace_endpoints(tmp_path: Path):

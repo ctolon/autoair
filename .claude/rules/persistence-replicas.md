@@ -16,8 +16,9 @@ Procedure for new state, a table or a migration: skill `add-persistence-document
 `docs/architecture/state-and-scaling.md` first: it lists every piece of state and whether it is
 replica-safe, and new state is added to its inventory.
 
-- Backends: `database.backend` = `file` (default) | `sqlite` | `postgresql` (SQLAlchemy 2 Core,
-  psycopg 3). `document_store(settings, "<collection>", ...)` returns the SQL or file store; there
+- Backends: `database.backend` = `file` (default) | `sqlite` | `postgresql` (SQLAlchemy Core,
+  2.x with psycopg 3, or 1.4 with psycopg2 on Airflow 3.0: use the `_returning()` /
+  `postgres_driver()` helpers in `persistence/sql.py` and `db.py`, not 2.0-only APIs). `document_store(settings, "<collection>", ...)` returns the SQL or file store; there
   is no central registry, so grep before picking a collection name.
 - Writes are versioned: `update(key, fn)` under a per-document lock, or `put(...,
   expected_version=...)` with a retry on `DocumentConflict` (HTTP 409). Never a blind `get` then

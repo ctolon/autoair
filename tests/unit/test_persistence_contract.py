@@ -23,7 +23,13 @@ from autoair.iam.login import LoginLimiter
 from autoair.iam.proposals import Proposal, ProposalStore, ReviewRecord
 from autoair.persistence import migrations
 from autoair.persistence.config import DatabaseSettings
-from autoair.persistence.db import Database, DatabaseError, database_for, resolve_url
+from autoair.persistence.db import (
+    Database,
+    DatabaseError,
+    database_for,
+    postgres_driver,
+    resolve_url,
+)
 from autoair.persistence.documents import (
     ANY,
     DocumentConflict,
@@ -449,12 +455,32 @@ def test_shared_secret_is_created_once(sql: Database) -> None:
     assert sql.shared_secret("k") == first
 
 
+def test_sqlite_without_returning(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """SQLAlchemy 1.4 (Airflow 3.0) cannot compile RETURNING for SQLite: the rowcount and
+    read-back path must keep the same contract (CAS versions, insert-if-absent, memory)."""
+    from autoair.persistence import sql as sql_module
+
+    monkeypatch.setattr(sql_module, "_returning", lambda _conn, _kind: False)
+    settings = _Settings(
+        database=DatabaseSettings(**database_settings("sqlite", tmp_path)),
+        state_dir=tmp_path / "state",
+    )
+    b = SimpleNamespace(kind="sqlite", db=database_for(settings), tmp=tmp_path, settings=settings)
+    try:
+        test_document_crud_and_versions(b)
+        test_concurrent_updates_lose_nothing(b)
+        test_memory_add_is_idempotent_and_bounded(b)
+        test_shared_secret_is_created_once(b.db)
+    finally:
+        drop_tables(settings)
+
+
 def test_url_resolution_and_masking(tmp_path: Path) -> None:
     pg = DatabaseSettings(
         backend="postgresql", url="postgresql://autoair@db:5432/autoair", password="s3cret"
     )
     url = resolve_url(pg)
-    assert url.startswith("postgresql+psycopg://autoair:s3cret@db")
+    assert url.startswith(f"{postgres_driver()}://autoair:s3cret@db")
     from autoair.persistence.db import masked_url
 
     assert "s3cret" not in masked_url(url)
@@ -464,6 +490,25 @@ def test_url_resolution_and_masking(tmp_path: Path) -> None:
         resolve_url(DatabaseSettings(backend="postgresql"))
     default = resolve_url(DatabaseSettings(backend="sqlite"), tmp_path / "a.db")
     assert default == f"sqlite:///{tmp_path / 'a.db'}"
+
+
+def test_postgres_driver_follows_the_installed_sqlalchemy() -> None:
+    import sqlalchemy
+    from sqlalchemy.engine import make_url
+
+    from autoair.persistence.db import with_postgres_driver
+
+    sa2 = int(sqlalchemy.__version__.split(".")[0]) >= 2
+    # SQLAlchemy 1.4 (Airflow 3.0) has no psycopg 3 dialect: the documented
+    # postgresql+psycopg:// URL falls back to psycopg2 there.
+    expected = "postgresql+psycopg" if sa2 else "postgresql+psycopg2"
+    assert postgres_driver() == expected
+    for raw in ("postgresql://h/db", "postgres://h/db", "postgresql+psycopg://h/db"):
+        assert with_postgres_driver(make_url(raw)).drivername == expected
+    # An explicitly chosen other driver is kept.
+    assert with_postgres_driver(make_url("postgresql+pg8000://h/db")).drivername == (
+        "postgresql+pg8000"
+    )
 
 
 def test_migrate_on_start_off_refuses_an_old_schema(tmp_path: Path) -> None:

@@ -109,6 +109,11 @@ class MetaInfo(BaseModel):
         "not installed).",
     )
     mcp_enabled: bool
+    mcp_unavailable_reason: str | None = Field(
+        default=None,
+        description="Why MCP is off although features.mcp is on (e.g. the autoair[mcp] extra "
+        "is not installed, or cannot be next to Airflow 3.1).",
+    )
     collab_enabled: bool
     features: dict[str, bool] = Field(
         default_factory=dict,
@@ -176,6 +181,9 @@ async def get_meta(services: ServicesDep, principal: PrincipalDep) -> MetaInfo:
         if s.configured_features()["ai"]
         else None,
         mcp_enabled=features["mcp"],
+        mcp_unavailable_reason=s.feature_unavailable("mcp")
+        if s.configured_features()["mcp"]
+        else None,
         collab_enabled=features["collab"],
         features=features,
         expose_config=s.expose_config,

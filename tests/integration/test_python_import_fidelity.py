@@ -6,6 +6,7 @@ from typing import Any
 
 import pytest
 
+from autoair._compat import sdk_symbol_module
 from autoair.codegen import generate_source
 from autoair.importer.code_sync import sync_code
 from autoair.importer.python_dag import import_python_source
@@ -171,9 +172,12 @@ with DAG("s", schedule={written!r}):
 
 
 def test_preset_timetable_in_the_dag_timezone_is_preserved():
-    source = """
+    # airflow.sdk exports timetables from 3.2 on; 3.0/3.1 only have airflow.timetables.*.
+    timetable_module = sdk_symbol_module("CronTriggerTimetable")
+    source = f"""
 import pendulum
-from airflow.sdk import DAG, CronTriggerTimetable
+from airflow.sdk import DAG
+from {timetable_module} import CronTriggerTimetable
 from airflow.providers.standard.operators.empty import EmptyOperator
 start = pendulum.datetime(2024, 1, 1, tz="Europe/Berlin")
 with DAG("a", schedule=CronTriggerTimetable("@weekly", timezone="Europe/Berlin"), start_date=start):

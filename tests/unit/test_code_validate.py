@@ -54,7 +54,9 @@ def test_python_clean_module():
 def test_json_strict_with_line_and_column():
     r = run("json", '{\n  "a": 1,\n}')
     assert not r.ok
-    assert (r.diagnostics[0].line, r.diagnostics[0].column) == (3, 1)
+    # Python <= 3.12 points at the closing brace; 3.13+ reports the trailing comma itself
+    # ("Illegal trailing comma before end of object").
+    assert (r.diagnostics[0].line, r.diagnostics[0].column) in {(3, 1), (2, 9)}
     assert run("json", "").ok
     assert run("json", '{"a": [1, 2]}').ok
 

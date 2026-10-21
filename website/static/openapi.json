@@ -482,6 +482,28 @@
         }
       }
     },
+    "/catalog/diagnostics": {
+      "get": {
+        "tags": [
+          "catalog"
+        ],
+        "summary": "Catalog Diagnostics",
+        "description": "What the catalog build scanned and found, what was filtered out and why, failed\nmodules and applied package metadata (catalog:refresh permission).",
+        "operationId": "getCatalogDiagnostics",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CatalogDiagnostics"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/airflow/connections": {
       "get": {
         "tags": [
@@ -3384,7 +3406,7 @@
           "ai"
         ],
         "summary": "Mcp Server Tools",
-        "description": "Connect to an allowed external MCP server and list its tools (allow-list applied).",
+        "description": "Connect to an allowed external MCP server and list its tools (allow-list applied).\nThe caller must be allowed to use ``agent`` (troubleshooting: airflow:read; admin\nassistant: ai:admin or admin:panel).",
         "operationId": "aiMcpServerTools",
         "parameters": [
           {
@@ -3666,6 +3688,68 @@
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/AnalysisApplied"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TroubleshootAnalysis"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/ai/troubleshoot/analyses/{analysis_id}/actions/{action_id}": {
+      "post": {
+        "tags": [
+          "ai"
+        ],
+        "summary": "Decide Action",
+        "description": "Execute (hitl: the user's approval of this one action; needs ``run:manage`` and\n``features.runs``) or reject one proposed Airflow action of an analysis. Executing an\naction that already succeeded or was skipped returns the analysis unchanged.",
+        "operationId": "decideTroubleshootAction",
+        "parameters": [
+          {
+            "name": "analysis_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Analysis Id"
+            }
+          },
+          {
+            "name": "action_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Action Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ActionDecision"
               }
             }
           }
@@ -4194,15 +4278,36 @@
         ],
         "summary": "Generate Code",
         "operationId": "generateCode",
+        "parameters": [
+          {
+            "name": "environment",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 250
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Render with this environment's overlay and connection/variable mapping applied (the read-only environment preview). Raw code DAGs render unchanged.",
+              "title": "Environment"
+            },
+            "description": "Render with this environment's overlay and connection/variable mapping applied (the read-only environment preview). Raw code DAGs render unchanged."
+          }
+        ],
         "requestBody": {
+          "required": true,
           "content": {
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/DagSpec"
               }
             }
-          },
-          "required": true
+          }
         },
         "responses": {
           "200": {
@@ -4355,6 +4460,90 @@
                   "additionalProperties": true,
                   "type": "object",
                   "title": "Response Getspecschema"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/review/rules": {
+      "post": {
+        "tags": [
+          "review"
+        ],
+        "summary": "Review Rules",
+        "description": "Best-practice review by rules: retries, timeouts, idempotency, Airflow 3 idioms,\nownership and docs. Findings carry JSON patches; ``proposed_spec`` has them applied.",
+        "operationId": "reviewDagRules",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RulesRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FindingsReport"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/lint/secrets": {
+      "post": {
+        "tags": [
+          "review"
+        ],
+        "summary": "Scan Secrets",
+        "description": "Leak scan by rules: hard-coded secrets, credentials exposed through logs, templates,\nXCom or command lines, and unbounded resources. Secret values are masked.",
+        "operationId": "scanDagSecrets",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RulesRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FindingsReport"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
                 }
               }
             }
@@ -4669,10 +4858,10 @@
             "content": {
               "application/json": {
                 "schema": {
+                  "type": "array",
                   "items": {
                     "$ref": "#/components/schemas/TemplateSummary"
                   },
-                  "type": "array",
                   "title": "Response Listtemplates"
                 }
               }
@@ -4685,16 +4874,55 @@
           "templates"
         ],
         "summary": "Save Template",
+        "description": "Create a template, or publish a new version of a saved one (operator templates get\nthe next version number; older versions stay readable under `/versions`).",
         "operationId": "saveTemplate",
+        "parameters": [
+          {
+            "name": "if-match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Etag of the template as last read: the write happens only if nobody changed it since (409 otherwise).",
+              "title": "If-Match"
+            },
+            "description": "Etag of the template as last read: the write happens only if nobody changed it since (409 otherwise)."
+          },
+          {
+            "name": "if-none-match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "`*`: create only; 409 when a template with this id exists.",
+              "title": "If-None-Match"
+            },
+            "description": "`*`: create only; 409 when a template with this id exists."
+          }
+        ],
         "requestBody": {
+          "required": true,
           "content": {
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/TemplateInput"
               }
             }
-          },
-          "required": true
+          }
         },
         "responses": {
           "200": {
@@ -4776,6 +5004,24 @@
               "type": "string",
               "title": "Template Id"
             }
+          },
+          {
+            "name": "if-match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Etag of the template as last read: the write happens only if nobody changed it since (409 otherwise).",
+              "title": "If-Match"
+            },
+            "description": "Etag of the template as last read: the write happens only if nobody changed it since (409 otherwise)."
           }
         ],
         "responses": {
@@ -4785,6 +5031,104 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/DeleteTemplateResult"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/templates/{template_id}/versions": {
+      "get": {
+        "tags": [
+          "templates"
+        ],
+        "summary": "List Template Versions",
+        "description": "Stored versions of a template, newest first (operator templates keep a history).",
+        "operationId": "listTemplateVersions",
+        "parameters": [
+          {
+            "name": "template_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Template Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/TemplateVersionInfo"
+                  },
+                  "title": "Response Listtemplateversions"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/templates/{template_id}/versions/{version}": {
+      "get": {
+        "tags": [
+          "templates"
+        ],
+        "summary": "Get Template Version",
+        "operationId": "getTemplateVersion",
+        "parameters": [
+          {
+            "name": "template_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Template Id"
+            }
+          },
+          {
+            "name": "version",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Version"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Template"
                 }
               }
             }
@@ -5109,6 +5453,24 @@
               ],
               "title": "If-Match"
             }
+          },
+          {
+            "name": "X-AutoAir-Git-Token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Git token for this one write (storage.git.request_token): used instead of the configured credentials, never stored or logged. HTTPS only.",
+              "title": "X-Autoair-Git-Token"
+            },
+            "description": "Git token for this one write (storage.git.request_token): used instead of the configured credentials, never stored or logged. HTTPS only."
           }
         ],
         "requestBody": {
@@ -5204,6 +5566,24 @@
               ],
               "title": "If-Match"
             }
+          },
+          {
+            "name": "X-AutoAir-Git-Token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Git token for this one write (storage.git.request_token): used instead of the configured credentials, never stored or logged. HTTPS only.",
+              "title": "X-Autoair-Git-Token"
+            },
+            "description": "Git token for this one write (storage.git.request_token): used instead of the configured credentials, never stored or logged. HTTPS only."
           }
         ],
         "responses": {
@@ -5564,6 +5944,24 @@
               "type": "string",
               "title": "Etag"
             }
+          },
+          {
+            "name": "X-AutoAir-Git-Token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Git token for this one write (storage.git.request_token): used instead of the configured credentials, never stored or logged. HTTPS only.",
+              "title": "X-Autoair-Git-Token"
+            },
+            "description": "Git token for this one write (storage.git.request_token): used instead of the configured credentials, never stored or logged. HTTPS only."
           }
         ],
         "requestBody": {
@@ -5890,7 +6288,7 @@
           "vcs"
         ],
         "summary": "Promote Environment",
-        "description": "Open a promotion pull request. With AutoAir's services (not in a bare router) the\ncommit/PR carry the deploy context, the user's own git credentials are used in\nper_user mode, and the promotion is audited (autoair.governance).",
+        "description": "Open a promotion pull request. With AutoAir's services (not in a bare router) the\ncommit/PR carry the deploy context, the git token typed for this request (header\nX-AutoAir-Git-Token, storage.git.request_token) or the user's own git credentials\n(per_user mode) are used, and the promotion is audited (autoair.governance).",
         "operationId": "promoteEnvironment",
         "parameters": [
           {
@@ -5901,6 +6299,24 @@
               "type": "string",
               "title": "Dag Id"
             }
+          },
+          {
+            "name": "X-AutoAir-Git-Token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Git token for this one write (storage.git.request_token): used instead of the configured credentials, never stored or logged. HTTPS only.",
+              "title": "X-Autoair-Git-Token"
+            },
+            "description": "Git token for this one write (storage.git.request_token): used instead of the configured credentials, never stored or logged. HTTPS only."
           }
         ],
         "requestBody": {
@@ -6150,8 +6566,29 @@
           "deploy-target"
         ],
         "summary": "Get Git Credentials",
-        "description": "Which Airflow connection the caller's git deploys use (per-user credentials: their\nown connection, looked up with their token so Airflow's RBAC applies).",
+        "description": "Which credentials the caller's git deploys use: a token typed per deploy\n(storage.git.request_token), the forced or shared connection, or their own connection\n(per-user credentials, looked up with their token so Airflow's RBAC applies).",
         "operationId": "getGitCredentials",
+        "parameters": [
+          {
+            "name": "team",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 250
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Team whose deploy target (team_storage) applies.",
+              "title": "Team"
+            },
+            "description": "Team whose deploy target (team_storage) applies."
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -6159,6 +6596,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/GitCredentialChoice"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
                 }
               }
             }
@@ -6486,7 +6933,7 @@
           "admin"
         ],
         "summary": "Admin Audit Csv",
-        "description": "The filtered audit trail as CSV (formula-like cells are neutralised).",
+        "description": "The filtered audit trail as CSV (formula-like cells are neutralised). ``limit``\ndefaults to ``admin.export_default`` and may not exceed ``admin.export_limit``.",
         "operationId": "adminAuditCsv",
         "parameters": [
           {
@@ -6579,10 +7026,16 @@
             "in": "query",
             "required": false,
             "schema": {
-              "type": "integer",
-              "maximum": 50000,
-              "minimum": 1,
-              "default": 10000,
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "maximum": 1000000,
+                  "minimum": 1
+                },
+                {
+                  "type": "null"
+                }
+              ],
               "title": "Limit"
             }
           }
@@ -6891,6 +7344,88 @@
         }
       }
     },
+    "/admin/features": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Admin Features",
+        "description": "Every feature flag: configured value, runtime override, effective value, lock.",
+        "operationId": "adminFeatures",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FeatureFlagsView"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/features/{name}": {
+      "put": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Admin Set Feature",
+        "description": "Set (``value``) or remove (``null``) the runtime override of one flag.",
+        "operationId": "adminSetFeature",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "maxLength": 64,
+              "title": "Name"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FeatureOverrideRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FeatureFlagsView"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown flag"
+          },
+          "409": {
+            "description": "Flag is locked"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/admin/mcp-servers": {
       "get": {
         "tags": [
@@ -7055,6 +7590,449 @@
           }
         }
       }
+    },
+    "/kb/status": {
+      "get": {
+        "tags": [
+          "kb"
+        ],
+        "summary": "Status",
+        "description": "Index size, store, search mode, sources and the last / running refresh.",
+        "operationId": "kbStatus",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KbStatus"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/kb/sources": {
+      "get": {
+        "tags": [
+          "kb"
+        ],
+        "summary": "Sources",
+        "operationId": "kbSources",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SourceInfo"
+                  },
+                  "type": "array",
+                  "title": "Response Kbsources"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/kb/search": {
+      "get": {
+        "tags": [
+          "kb"
+        ],
+        "summary": "Search",
+        "description": "Hybrid search (BM25 + embeddings, RRF, optional reranker) with citations.",
+        "operationId": "kbSearch",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500,
+              "title": "Q"
+            }
+          },
+          {
+            "name": "component",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "maxItems": 20
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Component"
+            }
+          },
+          {
+            "name": "package",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9_.+:-]{1,120}$"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Package"
+            }
+          },
+          {
+            "name": "version",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9_.+:-]{1,120}$"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Version"
+            }
+          },
+          {
+            "name": "source",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^[a-z0-9][a-z0-9_-]{0,40}$"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Source"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 50,
+              "minimum": 1,
+              "default": 8,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KbSearchResult"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/kb/sources/{source_id}": {
+      "put": {
+        "tags": [
+          "kb"
+        ],
+        "summary": "Put Source",
+        "description": "Override a configured source at runtime (enabled, components, versions).",
+        "operationId": "kbPutSource",
+        "parameters": [
+          {
+            "name": "source_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-z0-9][a-z0-9_-]{0,40}$",
+              "title": "Source Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SourceOverride"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SourceInfo"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/kb/sources/{source_id}/override": {
+      "delete": {
+        "tags": [
+          "kb"
+        ],
+        "summary": "Reset Source",
+        "description": "Drop the admin-panel override of a source (back to the configuration).",
+        "operationId": "kbResetSource",
+        "parameters": [
+          {
+            "name": "source_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-z0-9][a-z0-9_-]{0,40}$",
+              "title": "Source Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SourceInfo"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/kb/refresh": {
+      "post": {
+        "tags": [
+          "kb"
+        ],
+        "summary": "Refresh",
+        "description": "Start a refresh or rebuild in the background (409 while one runs anywhere).",
+        "operationId": "kbRefresh",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RefreshRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KbRunStatus"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/kb/cancel": {
+      "post": {
+        "tags": [
+          "kb"
+        ],
+        "summary": "Cancel",
+        "description": "Ask the running refresh to stop (it keeps what it indexed).",
+        "operationId": "kbCancel",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KbRunStatus"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/kb/export": {
+      "get": {
+        "tags": [
+          "kb"
+        ],
+        "summary": "Export",
+        "description": "Download the index as a KB bundle (zip, unsigned; sign with `autoair kb build`).",
+        "operationId": "kbExport",
+        "parameters": [
+          {
+            "name": "source",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "maxItems": 50
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Source"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/zip": {}
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/kb/import": {
+      "post": {
+        "tags": [
+          "kb"
+        ],
+        "summary": "Import Bundle",
+        "description": "Import a KB bundle (request body: the zip; bound by server.max_body_bytes - use\n`autoair kb import` for larger bundles). Checksums are verified, signatures when\nkb.bundle.public_keys is set.",
+        "operationId": "kbImport",
+        "parameters": [
+          {
+            "name": "source_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-z0-9][a-z0-9_-]{0,40}$",
+              "default": "bundle",
+              "title": "Source Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportReport"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/zip": {
+              "schema": {
+                "type": "string",
+                "format": "binary"
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -7070,6 +8048,18 @@
             "title": "Enabled",
             "description": "False when features.ai is off.",
             "default": true
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason",
+            "description": "Why AI is off or unconfigured (e.g. the autoair[ai] extra is missing)."
           },
           "provider": {
             "anyOf": [
@@ -7150,12 +8140,9 @@
           },
           "runtime": {
             "type": "string",
-            "enum": [
-              "loop",
-              "graph"
-            ],
             "title": "Runtime",
-            "default": "loop"
+            "description": "Agent runtime.",
+            "default": "pydantic-ai"
           },
           "streaming": {
             "type": "boolean",
@@ -7190,6 +8177,119 @@
           "configured"
         ],
         "title": "AIStatus"
+      },
+      "ActionDecision": {
+        "properties": {
+          "decision": {
+            "type": "string",
+            "enum": [
+              "execute",
+              "reject"
+            ],
+            "title": "Decision"
+          },
+          "comment": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Comment"
+          }
+        },
+        "type": "object",
+        "required": [
+          "decision"
+        ],
+        "title": "ActionDecision"
+      },
+      "ActionResult": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "succeeded",
+              "skipped",
+              "failed"
+            ],
+            "title": "Status"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "description": "English text (logs, audit, older clients).",
+            "default": ""
+          },
+          "code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Code",
+            "description": "Stable message code; the UI shows troubleshoot.result.<code> with params."
+          },
+          "params": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "object",
+            "title": "Params",
+            "description": "Interpolation values of the code's message."
+          },
+          "at": {
+            "type": "string",
+            "title": "At"
+          },
+          "by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "By"
+          },
+          "automatic": {
+            "type": "boolean",
+            "title": "Automatic",
+            "description": "Executed by apply mode.",
+            "default": false
+          },
+          "affected": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Affected",
+            "description": "Task instances changed."
+          }
+        },
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "title": "ActionResult"
       },
       "AdminOverview": {
         "properties": {
@@ -7347,7 +8447,7 @@
           "runtime": {
             "type": "string",
             "title": "Runtime",
-            "default": "loop"
+            "default": "pydantic-ai"
           },
           "guardrails": {
             "items": {
@@ -7362,6 +8462,11 @@
             "type": "object",
             "title": "Extra",
             "description": "Further fields of a custom final answer (AgentTask.final_model)."
+          },
+          "messages": {
+            "items": {},
+            "type": "array",
+            "title": "Messages"
           }
         },
         "type": "object",
@@ -7547,12 +8652,21 @@
       },
       "AirflowAction": {
         "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id",
+            "default": ""
+          },
           "action": {
             "type": "string",
             "enum": [
               "clear",
               "retry",
+              "clear_run",
               "mark_success",
+              "mark_failed",
+              "mark_run_success",
+              "mark_run_failed",
               "fix_connection",
               "adjust_pool",
               "other"
@@ -7567,14 +8681,142 @@
           },
           "instructions": {
             "type": "string",
-            "title": "Instructions"
+            "title": "Instructions",
+            "default": ""
+          },
+          "dag_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dag Id"
+          },
+          "run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Id"
+          },
+          "task_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task Id"
+          },
+          "map_index": {
+            "type": "integer",
+            "title": "Map Index",
+            "default": -1
+          },
+          "include_downstream": {
+            "type": "boolean",
+            "title": "Include Downstream",
+            "default": false
+          },
+          "include_upstream": {
+            "type": "boolean",
+            "title": "Include Upstream",
+            "default": false
+          },
+          "only_failed": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Only Failed"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "instruction",
+              "proposed",
+              "blocked",
+              "rejected",
+              "running",
+              "succeeded",
+              "skipped",
+              "failed"
+            ],
+            "title": "Status",
+            "default": "instruction"
+          },
+          "blocked": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "not_allowed",
+                  "other_dag",
+                  "other_run",
+                  "missing_task",
+                  "upstream_not_allowed",
+                  "downstream_not_allowed",
+                  "limit",
+                  "duplicate",
+                  "permission",
+                  "feature_off"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Blocked",
+            "description": "Why the action cannot be executed."
+          },
+          "results": {
+            "items": {
+              "$ref": "#/components/schemas/ActionResult"
+            },
+            "type": "array",
+            "title": "Results"
+          },
+          "claimed_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Claimed By",
+            "description": "Who claimed the last execution (status running)."
+          },
+          "claimed_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Claimed At",
+            "description": "When that claim was made."
           }
         },
         "type": "object",
-        "required": [
-          "instructions"
-        ],
-        "title": "AirflowAction"
+        "title": "AirflowAction",
+        "description": "A proposed Airflow action as stored with the analysis (older analyses only have\n``action``, ``target`` and ``instructions``)."
       },
       "AirflowCapabilities": {
         "properties": {
@@ -7919,41 +9161,11 @@
             "title": "Model",
             "description": "Model for this request (one of /ai/status `models`; default: configured)."
           },
-          "runtime": {
-            "anyOf": [
-              {
-                "type": "string",
-                "enum": [
-                  "auto",
-                  "loop",
-                  "graph"
-                ]
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Runtime",
-            "description": "Agent runtime (default: ai.agent.runtime)."
-          },
           "research": {
             "type": "boolean",
             "title": "Research",
             "description": "Give the agent the research tools.",
             "default": true
-          },
-          "thread_id": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 100
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Thread Id",
-            "description": "Graph runtime: checkpoint thread to use."
           }
         },
         "type": "object",
@@ -8395,6 +9607,14 @@
             },
             "type": "array",
             "title": "Tools"
+          },
+          "mcp_servers": {
+            "items": {
+              "$ref": "#/components/schemas/McpServerOption"
+            },
+            "type": "array",
+            "title": "Mcp Servers",
+            "description": "External MCP servers attached to this assistant's turns (by default all of them; send `mcp` in the chat request to choose)."
           }
         },
         "type": "object",
@@ -9076,6 +10296,113 @@
         "type": "object",
         "title": "Callbacks"
       },
+      "CatalogDiagnostics": {
+        "properties": {
+          "sources": {
+            "items": {
+              "$ref": "#/components/schemas/CatalogSourceInfo"
+            },
+            "type": "array",
+            "title": "Sources",
+            "default": []
+          },
+          "filtered": {
+            "items": {
+              "$ref": "#/components/schemas/CatalogFiltered"
+            },
+            "type": "array",
+            "title": "Filtered",
+            "default": []
+          },
+          "parse_errors": {
+            "items": {
+              "$ref": "#/components/schemas/CatalogError"
+            },
+            "type": "array",
+            "title": "Parse Errors",
+            "default": []
+          },
+          "metadata": {
+            "items": {
+              "$ref": "#/components/schemas/CatalogMetadataSource"
+            },
+            "type": "array",
+            "title": "Metadata",
+            "default": []
+          },
+          "strategy": {
+            "type": "string",
+            "enum": [
+              "static",
+              "import"
+            ],
+            "title": "Strategy"
+          },
+          "cache_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cache Key"
+          },
+          "loaded_from_cache": {
+            "type": "boolean",
+            "title": "Loaded From Cache",
+            "default": false
+          },
+          "built_at": {
+            "type": "number",
+            "title": "Built At",
+            "description": "Build time (epoch seconds)."
+          },
+          "build_seconds": {
+            "type": "number",
+            "title": "Build Seconds"
+          },
+          "loaded_at": {
+            "type": "number",
+            "title": "Loaded At",
+            "description": "When this process loaded the catalog (epoch s)."
+          },
+          "operators": {
+            "type": "integer",
+            "title": "Operators"
+          },
+          "notifiers": {
+            "type": "integer",
+            "title": "Notifiers"
+          },
+          "providers": {
+            "type": "integer",
+            "title": "Providers"
+          },
+          "errors": {
+            "items": {
+              "$ref": "#/components/schemas/CatalogError"
+            },
+            "type": "array",
+            "title": "Errors",
+            "description": "Modules that failed to import or be analysed.",
+            "default": []
+          }
+        },
+        "type": "object",
+        "required": [
+          "strategy",
+          "built_at",
+          "build_seconds",
+          "loaded_at",
+          "operators",
+          "notifiers",
+          "providers"
+        ],
+        "title": "CatalogDiagnostics",
+        "description": "``GET /api/catalog/diagnostics``: the build's diagnostics plus the load-time filters."
+      },
       "CatalogError": {
         "properties": {
           "module": {
@@ -9098,6 +10425,177 @@
           "error"
         ],
         "title": "CatalogError"
+      },
+      "CatalogFiltered": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name",
+            "description": "Operator class path, module or distribution."
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "operator",
+              "module",
+              "distribution"
+            ],
+            "title": "Kind"
+          },
+          "reason": {
+            "type": "string",
+            "title": "Reason",
+            "description": "operator_allow, operator_deny, discovery.skip_class_pattern, discovery.skip_module_pattern, discovery.exclude_distributions, policy.forbidden_operators, policy.privileged_operators."
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail",
+            "description": "The matching pattern."
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "kind",
+          "reason"
+        ],
+        "title": "CatalogFiltered",
+        "description": "Something discovery or the configuration left out of the palette."
+      },
+      "CatalogMetadataSource": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "file",
+              "entry_point"
+            ],
+            "title": "Kind"
+          },
+          "origin": {
+            "type": "string",
+            "title": "Origin",
+            "description": "File path, or `name = module:attr` of the entry point."
+          },
+          "package": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Package"
+          },
+          "distribution": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Distribution"
+          },
+          "operators": {
+            "type": "integer",
+            "title": "Operators",
+            "description": "Operators it applied to.",
+            "default": 0
+          },
+          "icons": {
+            "type": "integer",
+            "title": "Icons",
+            "description": "Package icons it provided.",
+            "default": 0
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          }
+        },
+        "type": "object",
+        "required": [
+          "kind",
+          "origin"
+        ],
+        "title": "CatalogMetadataSource",
+        "description": "A package metadata file or entry point read by the build."
+      },
+      "CatalogSourceInfo": {
+        "properties": {
+          "source": {
+            "type": "string",
+            "title": "Source",
+            "description": "Source type (ProvidersSource, PathsSource\u2026)."
+          },
+          "detail": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Detail",
+            "description": "What it scans: folders, packages, distributions, modules.",
+            "default": []
+          },
+          "modules": {
+            "type": "integer",
+            "title": "Modules",
+            "description": "Candidate modules it yielded.",
+            "default": 0
+          },
+          "providers": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Providers",
+            "description": "Provider/package labels it yielded.",
+            "default": []
+          },
+          "operators": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Operators",
+            "description": "Operator class paths found.",
+            "default": []
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          }
+        },
+        "type": "object",
+        "required": [
+          "source"
+        ],
+        "title": "CatalogSourceInfo",
+        "description": "One catalog source of a build and what it contributed."
       },
       "CatalogStats": {
         "properties": {
@@ -9265,6 +10763,22 @@
               }
             ],
             "title": "Error"
+          },
+          "history": {
+            "anyOf": [
+              {
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "History",
+            "description": "The turn's pydantic-ai messages (stored with the thread, never returned)."
           }
         },
         "type": "object",
@@ -9400,6 +10914,22 @@
             "title": "Research",
             "description": "Developer: give it the research tools.",
             "default": true
+          },
+          "mcp": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/McpSelection"
+                },
+                "type": "array",
+                "maxItems": 10
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mcp",
+            "description": "External MCP servers (and tools) to attach. Default: every server scoped to this assistant (ai.mcp_client.servers[].agents); [] attaches none."
           }
         },
         "type": "object",
@@ -9742,6 +11272,43 @@
           "items"
         ],
         "title": "CompletionList"
+      },
+      "ComponentInfo": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "family": {
+            "type": "string",
+            "enum": [
+              "apache",
+              "astronomer"
+            ],
+            "title": "Family"
+          },
+          "default": {
+            "type": "boolean",
+            "title": "Default"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "family",
+          "default"
+        ],
+        "title": "ComponentInfo"
       },
       "ConfigChange": {
         "properties": {
@@ -10347,7 +11914,7 @@
             "anyOf": [
               {
                 "type": "string",
-                "pattern": "^(builtin|custom):[a-z0-9][a-z0-9-]{0,80}$"
+                "pattern": "^(builtin|custom|package):[a-z0-9][a-z0-9-]{0,80}$"
               },
               {
                 "type": "null"
@@ -11494,6 +13061,19 @@
             },
             "type": "array",
             "title": "Edges"
+          },
+          "raw_code": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2000000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Raw Code",
+            "description": "Raw code DAG: the complete DAG file, written by hand and deployed as it is (no generated code, no spec rules; validated by syntax, lint, secret, policy and import checks). Set: nodes and edges must be empty, output_mode is python and environment overlays do not change the file. Absent: a spec-backed (visual) DAG."
           }
         },
         "additionalProperties": false,
@@ -12795,6 +14375,23 @@
             "type": "boolean",
             "title": "Require Approval",
             "description": "Live deploys need another reviewer's approval of the version."
+          },
+          "git_token": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "off",
+                  "optional",
+                  "required"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Git Token",
+            "description": "Git targets: deploys take a token typed by the user (storage.git.request_token after the kill switch and forced-connection rule; required: the quick deploy opens the deploy dialog). Null: not a git target."
           }
         },
         "type": "object",
@@ -12855,6 +14452,17 @@
                 "type": "null"
               }
             ]
+          },
+          "request_token": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RequestTokenInfo"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Git targets: whether deploys take a token typed by the user (header X-AutoAir-Git-Token) and which token the git host needs."
           }
         },
         "type": "object",
@@ -12931,6 +14539,26 @@
             ],
             "title": "Commit Author",
             "default": "auto"
+          },
+          "request_token": {
+            "type": "string",
+            "enum": [
+              "off",
+              "optional",
+              "required"
+            ],
+            "title": "Request Token",
+            "default": "optional"
+          },
+          "request_token_overrides_forced": {
+            "type": "boolean",
+            "title": "Request Token Overrides Forced",
+            "default": false
+          },
+          "request_token_allow_insecure": {
+            "type": "boolean",
+            "title": "Request Token Allow Insecure",
+            "default": false
           }
         },
         "type": "object",
@@ -13674,6 +15302,178 @@
         ],
         "title": "ExplainStep"
       },
+      "FeatureFlagState": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description",
+            "default": ""
+          },
+          "configured": {
+            "type": "boolean",
+            "title": "Configured",
+            "description": "Value from the configuration (files, env, defaults)."
+          },
+          "override": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Override",
+            "description": "Runtime override set in the admin panel (None: none)."
+          },
+          "effective": {
+            "type": "boolean",
+            "title": "Effective",
+            "description": "What the server obeys now (as /api/meta reports)."
+          },
+          "locked": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "features_locked",
+                  "env"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Locked",
+            "description": "Why admins cannot change it: listed in features_locked, or set through the environment (AUTOAIR_FEATURES__<NAME>)."
+          },
+          "constrained": {
+            "type": "boolean",
+            "title": "Constrained",
+            "description": "Kept off by another setting (allow_python_code) or by the installation (see unavailable) whatever the flag says.",
+            "default": false
+          },
+          "unavailable": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unavailable",
+            "description": "Why the feature cannot run here (e.g. the autoair[ai] extra is not installed); it cannot be switched on."
+          },
+          "updated_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated By"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "configured",
+          "effective"
+        ],
+        "title": "FeatureFlagState"
+      },
+      "FeatureFlagsView": {
+        "properties": {
+          "flags": {
+            "items": {
+              "$ref": "#/components/schemas/FeatureFlagState"
+            },
+            "type": "array",
+            "title": "Flags"
+          },
+          "can_write": {
+            "type": "boolean",
+            "title": "Can Write",
+            "description": "The caller has admin:config."
+          },
+          "refresh_seconds": {
+            "type": "number",
+            "title": "Refresh Seconds",
+            "description": "features_override_ttl: how long other replicas may take to pick up a change."
+          },
+          "shared": {
+            "type": "boolean",
+            "title": "Shared",
+            "description": "Overrides are stored in a SQL database shared by the replicas (false: files in this deployment's state folder)."
+          }
+        },
+        "type": "object",
+        "required": [
+          "flags",
+          "can_write",
+          "refresh_seconds",
+          "shared"
+        ],
+        "title": "FeatureFlagsView"
+      },
+      "FeatureOverrideRequest": {
+        "properties": {
+          "value": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value",
+            "description": "New value; null removes the runtime override."
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 500,
+            "minLength": 3,
+            "title": "Reason",
+            "description": "Why (audited)."
+          }
+        },
+        "type": "object",
+        "required": [
+          "value",
+          "reason"
+        ],
+        "title": "FeatureOverrideRequest"
+      },
       "FieldChange": {
         "properties": {
           "path": {
@@ -14274,6 +16074,17 @@
               }
             ],
             "title": "Error"
+          },
+          "request_token": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RequestTokenInfo"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Whether deploys of this target take a token typed by the user (off/optional/required) and the token the git host needs (null: not a git target)."
           }
         },
         "type": "object",
@@ -14697,6 +16508,37 @@
             "type": "boolean",
             "title": "User Credentials Fallback",
             "description": "per_user: use the shared credentials when the user has no readable connection (otherwise such deploys are refused).",
+            "default": false
+          },
+          "request_token": {
+            "type": "string",
+            "enum": [
+              "off",
+              "optional",
+              "required"
+            ],
+            "title": "Request Token",
+            "description": "Git token the user types for one deploy, delete, promotion or pull request (header X-AutoAir-Git-Token, never stored, logged or audited): off = the header is refused; optional = a token, when given, replaces the configured credentials for that one write; required = every git write needs one (the configured connection, if any, only serves reads; MCP git writes need mcp_request_token and the header). A team target uses its own team_storage.<team>.git.request_token, but off here turns request tokens off for every target. With forced_conn_id set, tokens are refused unless request_token_overrides_forced.",
+            "default": "optional",
+            "secret": false
+          },
+          "request_token_overrides_forced": {
+            "type": "boolean",
+            "title": "Request Token Overrides Forced",
+            "description": "A request token may replace the admin-forced connection (forced_conn_id) for that one write. Default: the forced connection always wins and the X-AutoAir-Git-Token header is refused.",
+            "default": false
+          },
+          "mcp_request_token": {
+            "type": "boolean",
+            "title": "Mcp Request Token",
+            "description": "MCP over HTTP: save_dag_spec / delete_dag_spec take the user's git token from the X-AutoAir-Git-Token header of the MCP request (set in the MCP client's server configuration; never a tool argument, so it stays out of the model's context and transcripts). request_token, the forced-connection rule and the HTTPS rule apply as for the REST API. Off: such a header is refused.",
+            "default": false,
+            "secret": false
+          },
+          "request_token_allow_insecure": {
+            "type": "boolean",
+            "title": "Request Token Allow Insecure",
+            "description": "Accept X-AutoAir-Git-Token over plain HTTP from a non-loopback client (the scheme and client address honour server.proxy_headers / forwarded_allow_ips), and send it to http:// git hosts. Only for test setups.",
             "default": false
           },
           "commit_author": {
@@ -15198,7 +17040,7 @@
             "anyOf": [
               {
                 "type": "string",
-                "pattern": "^(builtin|custom):[a-z0-9][a-z0-9-]{0,80}$"
+                "pattern": "^(builtin|custom|package):[a-z0-9][a-z0-9-]{0,80}$"
               },
               {
                 "type": "null"
@@ -15247,7 +17089,8 @@
             "type": "string",
             "enum": [
               "builtin",
-              "custom"
+              "custom",
+              "package"
             ],
             "title": "Kind"
           },
@@ -15388,6 +17231,54 @@
         "type": "object",
         "title": "ImportErrorInfo"
       },
+      "ImportReport": {
+        "properties": {
+          "pages": {
+            "type": "integer",
+            "title": "Pages",
+            "default": 0
+          },
+          "changed": {
+            "type": "integer",
+            "title": "Changed",
+            "default": 0
+          },
+          "unchanged": {
+            "type": "integer",
+            "title": "Unchanged",
+            "default": 0
+          },
+          "removed": {
+            "type": "integer",
+            "title": "Removed",
+            "default": 0
+          },
+          "chunks": {
+            "type": "integer",
+            "title": "Chunks",
+            "default": 0
+          },
+          "signed": {
+            "type": "boolean",
+            "title": "Signed",
+            "default": false
+          },
+          "signature_verified": {
+            "type": "boolean",
+            "title": "Signature Verified",
+            "default": false
+          },
+          "sources": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Sources"
+          }
+        },
+        "type": "object",
+        "title": "ImportReport"
+      },
       "ImportedDag": {
         "properties": {
           "dag_id": {
@@ -15475,6 +17366,467 @@
         ],
         "title": "IntervalSchedule",
         "description": "``DeltaTriggerTimetable`` (default) or ``DeltaDataIntervalTimetable``."
+      },
+      "KbError": {
+        "properties": {
+          "level": {
+            "type": "string",
+            "enum": [
+              "error",
+              "warning",
+              "info"
+            ],
+            "title": "Level",
+            "default": "error"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "message"
+        ],
+        "title": "KbError"
+      },
+      "KbHit": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "heading": {
+            "type": "string",
+            "title": "Heading",
+            "default": ""
+          },
+          "url": {
+            "type": "string",
+            "title": "Url"
+          },
+          "snippet": {
+            "type": "string",
+            "title": "Snippet"
+          },
+          "text": {
+            "type": "string",
+            "title": "Text",
+            "default": ""
+          },
+          "source": {
+            "type": "string",
+            "title": "Source"
+          },
+          "component": {
+            "type": "string",
+            "title": "Component"
+          },
+          "package": {
+            "type": "string",
+            "title": "Package"
+          },
+          "version": {
+            "type": "string",
+            "title": "Version"
+          },
+          "updated": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated"
+          },
+          "score": {
+            "type": "number",
+            "title": "Score",
+            "default": 0.0
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "url",
+          "snippet",
+          "source",
+          "component",
+          "package",
+          "version"
+        ],
+        "title": "KbHit",
+        "description": "A search result with everything a citation needs."
+      },
+      "KbProgress": {
+        "properties": {
+          "source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
+          },
+          "unit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit"
+          },
+          "phase": {
+            "type": "string",
+            "title": "Phase",
+            "default": "idle"
+          },
+          "done": {
+            "type": "integer",
+            "title": "Done",
+            "default": 0
+          },
+          "total": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total"
+          }
+        },
+        "type": "object",
+        "title": "KbProgress"
+      },
+      "KbRunStatus": {
+        "properties": {
+          "state": {
+            "type": "string",
+            "enum": [
+              "idle",
+              "running",
+              "failed"
+            ],
+            "title": "State",
+            "default": "idle"
+          },
+          "run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Id"
+          },
+          "mode": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "refresh",
+                  "rebuild",
+                  "import"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mode"
+          },
+          "owner": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner",
+            "description": "Replica running the refresh."
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "last_refresh": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Refresh",
+            "description": "End of the last refresh."
+          },
+          "last_success": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Success",
+            "description": "End of the last full refresh."
+          },
+          "outcome": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "ok",
+                  "partial",
+                  "failed",
+                  "cancelled"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Outcome"
+          },
+          "cancel_requested": {
+            "type": "boolean",
+            "title": "Cancel Requested",
+            "default": false
+          },
+          "progress": {
+            "$ref": "#/components/schemas/KbProgress"
+          },
+          "sources": {
+            "items": {
+              "$ref": "#/components/schemas/SourceRun"
+            },
+            "type": "array",
+            "title": "Sources"
+          },
+          "errors": {
+            "items": {
+              "$ref": "#/components/schemas/KbError"
+            },
+            "type": "array",
+            "title": "Errors"
+          },
+          "embedding_model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Embedding Model"
+          }
+        },
+        "type": "object",
+        "title": "KbRunStatus",
+        "description": "The persisted status of the knowledge base of one store (shared by replicas)."
+      },
+      "KbSearchResult": {
+        "properties": {
+          "query": {
+            "type": "string",
+            "title": "Query"
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "hybrid",
+              "lexical",
+              "empty"
+            ],
+            "title": "Mode",
+            "description": "hybrid: BM25 + embeddings; lexical: BM25 only; empty: nothing indexed."
+          },
+          "reranked": {
+            "type": "boolean",
+            "title": "Reranked",
+            "default": false
+          },
+          "hits": {
+            "items": {
+              "$ref": "#/components/schemas/KbHit"
+            },
+            "type": "array",
+            "title": "Hits"
+          }
+        },
+        "type": "object",
+        "required": [
+          "query",
+          "mode"
+        ],
+        "title": "KbSearchResult"
+      },
+      "KbStatus": {
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled"
+          },
+          "online": {
+            "type": "boolean",
+            "title": "Online"
+          },
+          "store": {
+            "$ref": "#/components/schemas/StoreStats"
+          },
+          "run": {
+            "$ref": "#/components/schemas/KbRunStatus"
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "hybrid",
+              "lexical"
+            ],
+            "title": "Mode",
+            "default": "lexical"
+          },
+          "embedder": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Embedder",
+            "description": "Embedding model, if any."
+          },
+          "reranker": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reranker"
+          },
+          "refresh_interval_hours": {
+            "type": "number",
+            "title": "Refresh Interval Hours",
+            "default": 0
+          },
+          "next_refresh": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Refresh"
+          },
+          "sources": {
+            "items": {
+              "$ref": "#/components/schemas/SourceInfo"
+            },
+            "type": "array",
+            "title": "Sources"
+          },
+          "components": {
+            "items": {
+              "$ref": "#/components/schemas/ComponentInfo"
+            },
+            "type": "array",
+            "title": "Components"
+          },
+          "providers": {
+            "type": "string",
+            "title": "Providers",
+            "default": "installed"
+          }
+        },
+        "type": "object",
+        "required": [
+          "enabled",
+          "online",
+          "store",
+          "run"
+        ],
+        "title": "KbStatus"
       },
       "KnowledgeContent": {
         "properties": {
@@ -16545,9 +18897,33 @@
             ],
             "title": "Ai Model"
           },
+          "ai_unavailable_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ai Unavailable Reason",
+            "description": "Why AI is off although features.ai is on (e.g. the autoair[ai] extra is not installed)."
+          },
           "mcp_enabled": {
             "type": "boolean",
             "title": "Mcp Enabled"
+          },
+          "mcp_unavailable_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mcp Unavailable Reason",
+            "description": "Why MCP is off although features.mcp is on (e.g. the autoair[mcp] extra is not installed, or cannot be next to Airflow 3.1)."
           },
           "collab_enabled": {
             "type": "boolean",
@@ -16559,7 +18935,7 @@
             },
             "type": "object",
             "title": "Features",
-            "description": "Effective feature flags (AUTOAIR_FEATURES__*, deprecated *_enabled switches and policy applied): hide what is false."
+            "description": "Effective feature flags (AUTOAIR_FEATURES__*, runtime overrides and policy applied): hide what is false."
           },
           "expose_config": {
             "type": "string",
@@ -16944,7 +19320,7 @@
             "anyOf": [
               {
                 "type": "string",
-                "pattern": "^(builtin|custom):[a-z0-9][a-z0-9-]{0,80}$"
+                "pattern": "^(builtin|custom|package):[a-z0-9][a-z0-9-]{0,80}$"
               },
               {
                 "type": "null"
@@ -17395,6 +19771,42 @@
             "title": "Equivalent Decorator",
             "description": "TaskFlow alternative (``@task.<name>``) where the callable is written in the builder instead of referenced, e.g. ``branch`` for BranchPythonOperator."
           },
+          "group": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Group",
+            "description": "Palette group (catalog.groups or the package metadata); unset: the provider/package."
+          },
+          "group_order": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Group Order",
+            "description": "Sort key of the palette group (lower first)."
+          },
+          "docs_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Docs Url",
+            "description": "Documentation link (package metadata)."
+          },
           "params_schema": {
             "additionalProperties": true,
             "type": "object",
@@ -17451,6 +19863,15 @@
             ],
             "title": "Required Airflow",
             "description": "Airflow version specifier required by the provider."
+          },
+          "examples": {
+            "items": {
+              "$ref": "#/components/schemas/OperatorExample"
+            },
+            "type": "array",
+            "title": "Examples",
+            "description": "Example parameter sets (package metadata).",
+            "default": []
           }
         },
         "type": "object",
@@ -17463,6 +19884,41 @@
           "params_schema"
         ],
         "title": "OperatorDetail"
+      },
+      "OperatorExample": {
+        "properties": {
+          "title": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Title"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "params": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Params",
+            "description": "Operator params."
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "title"
+        ],
+        "title": "OperatorExample",
+        "description": "A ready-made parameter set (package metadata ``examples``)."
       },
       "OperatorNode": {
         "properties": {
@@ -17490,7 +19946,7 @@
             "anyOf": [
               {
                 "type": "string",
-                "pattern": "^(builtin|custom):[a-z0-9][a-z0-9-]{0,80}$"
+                "pattern": "^(builtin|custom|package):[a-z0-9][a-z0-9-]{0,80}$"
               },
               {
                 "type": "null"
@@ -17982,6 +20438,42 @@
             ],
             "title": "Equivalent Decorator",
             "description": "TaskFlow alternative (``@task.<name>``) where the callable is written in the builder instead of referenced, e.g. ``branch`` for BranchPythonOperator."
+          },
+          "group": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Group",
+            "description": "Palette group (catalog.groups or the package metadata); unset: the provider/package."
+          },
+          "group_order": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Group Order",
+            "description": "Sort key of the palette group (lower first)."
+          },
+          "docs_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Docs Url",
+            "description": "Documentation link (package metadata)."
           }
         },
         "type": "object",
@@ -19375,7 +21867,7 @@
             "anyOf": [
               {
                 "type": "string",
-                "pattern": "^(builtin|custom):[a-z0-9][a-z0-9-]{0,80}$"
+                "pattern": "^(builtin|custom|package):[a-z0-9][a-z0-9-]{0,80}$"
               },
               {
                 "type": "null"
@@ -19871,6 +22363,38 @@
         ],
         "title": "Readiness"
       },
+      "RefreshRequest": {
+        "properties": {
+          "mode": {
+            "type": "string",
+            "enum": [
+              "refresh",
+              "rebuild"
+            ],
+            "title": "Mode",
+            "description": "refresh: incremental (unchanged pages are skipped); rebuild: drop and re-index the selected sources.",
+            "default": "refresh"
+          },
+          "sources": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array",
+                "maxItems": 50
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sources",
+            "description": "Source ids (default: every enabled source)."
+          }
+        },
+        "type": "object",
+        "title": "RefreshRequest"
+      },
       "RemediationStep": {
         "properties": {
           "title": {
@@ -19954,6 +22478,92 @@
           "alive"
         ],
         "title": "ReplicaInfo"
+      },
+      "RequestTokenHint": {
+        "properties": {
+          "provider": {
+            "type": "string",
+            "title": "Provider"
+          },
+          "token_type": {
+            "type": "string",
+            "title": "Token Type",
+            "description": "Token kind to create on the host."
+          },
+          "scopes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Scopes",
+            "description": "Scopes/permissions needed."
+          },
+          "docs_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Docs Url"
+          }
+        },
+        "type": "object",
+        "required": [
+          "provider",
+          "token_type"
+        ],
+        "title": "RequestTokenHint",
+        "description": "What kind of token the user should create on the git host."
+      },
+      "RequestTokenInfo": {
+        "properties": {
+          "mode": {
+            "type": "string",
+            "enum": [
+              "off",
+              "optional",
+              "required"
+            ],
+            "title": "Mode",
+            "description": "off: not accepted; optional: replaces the configured credentials when given; required: every git write needs one."
+          },
+          "header": {
+            "type": "string",
+            "title": "Header",
+            "default": "X-AutoAir-Git-Token"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason",
+            "description": "Why tokens are off (global switch, forced connection)."
+          },
+          "hint": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RequestTokenHint"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "mode"
+        ],
+        "title": "RequestTokenInfo",
+        "description": "Whether (and how) deploys of a git target take a token typed by the user."
       },
       "RetryPolicySpec": {
         "properties": {
@@ -20213,6 +22823,19 @@
           "message"
         ],
         "title": "RuffDiagnostic"
+      },
+      "RulesRequest": {
+        "properties": {
+          "spec": {
+            "$ref": "#/components/schemas/DagSpec",
+            "description": "The DAG to check (as open in the editor)."
+          }
+        },
+        "type": "object",
+        "required": [
+          "spec"
+        ],
+        "title": "RulesRequest"
       },
       "RulesUpdate": {
         "properties": {
@@ -20676,6 +23299,253 @@
         ],
         "title": "SourceBody"
       },
+      "SourceInfo": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "kind": {
+            "type": "string",
+            "title": "Kind"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled"
+          },
+          "usable": {
+            "type": "boolean",
+            "title": "Usable",
+            "description": "Can be read now (e.g. official needs kb.online)."
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason",
+            "description": "Why it is not usable."
+          },
+          "reason_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason Code",
+            "description": "Stable code of reason (disabled, air_gapped) for the UI's translation."
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          },
+          "conn_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Conn Id"
+          },
+          "ref": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ref"
+          },
+          "layout": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Layout"
+          },
+          "components": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Components"
+          },
+          "versions": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Versions"
+          },
+          "overridden": {
+            "type": "boolean",
+            "title": "Overridden",
+            "description": "Changed in the admin panel.",
+            "default": false
+          },
+          "pages": {
+            "type": "integer",
+            "title": "Pages",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "kind",
+          "title",
+          "enabled",
+          "usable"
+        ],
+        "title": "SourceInfo",
+        "description": "A configured source with the admin overrides applied."
+      },
+      "SourceOverride": {
+        "properties": {
+          "enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enabled"
+          },
+          "components": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array",
+                "maxItems": 20
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Components"
+          },
+          "versions": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array",
+                "maxItems": 20
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Versions"
+          }
+        },
+        "type": "object",
+        "title": "SourceOverride",
+        "description": "Admin-panel changes of one source (``None`` keeps the configured value)."
+      },
+      "SourceRun": {
+        "properties": {
+          "source": {
+            "type": "string",
+            "title": "Source"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "ok",
+              "partial",
+              "failed",
+              "skipped"
+            ],
+            "title": "State",
+            "default": "ok"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "units": {
+            "type": "integer",
+            "title": "Units",
+            "default": 0
+          },
+          "pages_seen": {
+            "type": "integer",
+            "title": "Pages Seen",
+            "default": 0
+          },
+          "pages_changed": {
+            "type": "integer",
+            "title": "Pages Changed",
+            "default": 0
+          },
+          "pages_unchanged": {
+            "type": "integer",
+            "title": "Pages Unchanged",
+            "default": 0
+          },
+          "pages_removed": {
+            "type": "integer",
+            "title": "Pages Removed",
+            "default": 0
+          },
+          "pages_failed": {
+            "type": "integer",
+            "title": "Pages Failed",
+            "default": 0
+          },
+          "chunks_written": {
+            "type": "integer",
+            "title": "Chunks Written",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "required": [
+          "source"
+        ],
+        "title": "SourceRun",
+        "description": "What the last refresh did with one source."
+      },
       "SourceStatus": {
         "properties": {
           "name": {
@@ -20957,6 +23827,16 @@
               }
             ],
             "title": "Etag"
+          },
+          "document_type": {
+            "type": "string",
+            "enum": [
+              "spec",
+              "raw"
+            ],
+            "title": "Document Type",
+            "description": "spec: built in the visual editor (generated code); raw: a raw code DAG (hand-written file, DagSpec.raw_code).",
+            "default": "spec"
           }
         },
         "type": "object",
@@ -21123,6 +24003,94 @@
         },
         "type": "object",
         "title": "StorageSettings"
+      },
+      "StoreStats": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "title": "Kind"
+          },
+          "location": {
+            "type": "string",
+            "title": "Location",
+            "description": "Where the index lives (no credentials)."
+          },
+          "ok": {
+            "type": "boolean",
+            "title": "Ok",
+            "default": true
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "pages": {
+            "type": "integer",
+            "title": "Pages",
+            "default": 0
+          },
+          "chunks": {
+            "type": "integer",
+            "title": "Chunks",
+            "default": 0
+          },
+          "vectors": {
+            "type": "integer",
+            "title": "Vectors",
+            "default": 0
+          },
+          "embedding_model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Embedding Model"
+          },
+          "by_component": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "By Component",
+            "description": "Pages per component."
+          },
+          "by_source": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "By Source",
+            "description": "Pages per source."
+          },
+          "versions": {
+            "additionalProperties": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "type": "object",
+            "title": "Versions",
+            "description": "Versions indexed per component."
+          }
+        },
+        "type": "object",
+        "required": [
+          "kind",
+          "location"
+        ],
+        "title": "StoreStats"
       },
       "StoredSpecResponse": {
         "properties": {
@@ -21423,7 +24391,7 @@
             "anyOf": [
               {
                 "type": "string",
-                "pattern": "^(builtin|custom):[a-z0-9][a-z0-9-]{0,80}$"
+                "pattern": "^(builtin|custom|package):[a-z0-9][a-z0-9-]{0,80}$"
               },
               {
                 "type": "null"
@@ -21841,7 +24809,7 @@
             "anyOf": [
               {
                 "type": "string",
-                "pattern": "^(builtin|custom):[a-z0-9][a-z0-9-]{0,80}$"
+                "pattern": "^(builtin|custom|package):[a-z0-9][a-z0-9-]{0,80}$"
               },
               {
                 "type": "null"
@@ -21861,6 +24829,42 @@
             ],
             "title": "Operator Class",
             "description": "Operator templates: the task type (operator class path, @task.<decorator> or custom handler)."
+          },
+          "docs_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Docs Url",
+            "description": "Operator templates: a documentation link (http or https)."
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At",
+            "description": "When this version was saved (UTC)."
+          },
+          "updated_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated By",
+            "description": "Who saved this version."
           },
           "spec": {
             "anyOf": [
@@ -21891,6 +24895,18 @@
                 "type": "null"
               }
             ]
+          },
+          "etag": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Etag",
+            "description": "Opaque version of the stored document: send it as `If-Match` to update or delete only if nobody changed the template since (409 otherwise)."
           }
         },
         "type": "object",
@@ -21971,13 +24987,26 @@
             "anyOf": [
               {
                 "type": "string",
-                "pattern": "^(builtin|custom):[a-z0-9][a-z0-9-]{0,80}$"
+                "pattern": "^(builtin|custom|package):[a-z0-9][a-z0-9-]{0,80}$"
               },
               {
                 "type": "null"
               }
             ],
             "title": "Icon"
+          },
+          "docs_url": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 500,
+                "pattern": "^https?://\\S+$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Docs Url"
           },
           "spec": {
             "anyOf": [
@@ -22140,7 +25169,7 @@
             "anyOf": [
               {
                 "type": "string",
-                "pattern": "^(builtin|custom):[a-z0-9][a-z0-9-]{0,80}$"
+                "pattern": "^(builtin|custom|package):[a-z0-9][a-z0-9-]{0,80}$"
               },
               {
                 "type": "null"
@@ -22160,6 +25189,42 @@
             ],
             "title": "Operator Class",
             "description": "Operator templates: the task type (operator class path, @task.<decorator> or custom handler)."
+          },
+          "docs_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Docs Url",
+            "description": "Operator templates: a documentation link (http or https)."
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At",
+            "description": "When this version was saved (UTC)."
+          },
+          "updated_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated By",
+            "description": "Who saved this version."
           }
         },
         "type": "object",
@@ -22170,6 +25235,64 @@
           "builtin"
         ],
         "title": "TemplateSummary"
+      },
+      "TemplateVersionInfo": {
+        "properties": {
+          "version": {
+            "type": "string",
+            "title": "Version"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          },
+          "updated_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated By"
+          },
+          "operator_class": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Operator Class"
+          },
+          "current": {
+            "type": "boolean",
+            "title": "Current",
+            "description": "This is the version tasks are validated against."
+          }
+        },
+        "type": "object",
+        "required": [
+          "version",
+          "title",
+          "current"
+        ],
+        "title": "TemplateVersionInfo",
+        "description": "One stored version of an operator template (newest first in listings)."
       },
       "TestDagRequest": {
         "properties": {
@@ -22670,6 +25793,17 @@
             "type": "array",
             "title": "Airflow Actions"
           },
+          "actions_mode": {
+            "type": "string",
+            "enum": [
+              "read_only",
+              "hitl",
+              "apply"
+            ],
+            "title": "Actions Mode",
+            "description": "How the Airflow actions of this analysis run.",
+            "default": "read_only"
+          },
           "findings": {
             "items": {
               "$ref": "#/components/schemas/Finding"
@@ -22818,6 +25952,31 @@
             },
             "type": "array",
             "title": "Mcp Servers"
+          },
+          "actions_mode": {
+            "type": "string",
+            "enum": [
+              "read_only",
+              "hitl",
+              "apply"
+            ],
+            "title": "Actions Mode",
+            "description": "The most permissive Airflow-action mode this caller may choose (ai.troubleshoot.airflow_actions; read_only without run:manage or features.runs).",
+            "default": "read_only"
+          },
+          "allowed_actions": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Allowed Actions",
+            "description": "Action types that may be executed."
+          },
+          "max_actions": {
+            "type": "integer",
+            "title": "Max Actions",
+            "description": "Executable actions per analysis.",
+            "default": 0
           }
         },
         "type": "object",
@@ -22929,6 +26088,23 @@
               }
             ],
             "title": "Rerun Of"
+          },
+          "airflow_actions": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "read_only",
+                  "hitl",
+                  "apply"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Airflow Actions",
+            "description": "Mode for the proposed Airflow actions; only as permissive as ai.troubleshoot.airflow_actions (default: that setting)."
           }
         },
         "type": "object",
@@ -23287,8 +26463,14 @@
                 "enum": [
                   "anthropic",
                   "openai",
+                  "azure",
                   "gemini",
-                  "ollama"
+                  "google-cloud",
+                  "ollama",
+                  "bedrock",
+                  "groq",
+                  "mistral",
+                  "cohere"
                 ]
               },
               {
@@ -23370,8 +26552,14 @@
                 "enum": [
                   "anthropic",
                   "openai",
+                  "azure",
                   "gemini",
-                  "ollama"
+                  "google-cloud",
+                  "ollama",
+                  "bedrock",
+                  "groq",
+                  "mistral",
+                  "cohere"
                 ]
               },
               {

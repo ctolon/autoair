@@ -9,6 +9,8 @@ from the Airflow UI. AI agents can use the same operations through AutoAir's **M
 * **Airflow 3.0 or later, below 4.** CI covers 3.0.6, 3.1.8, 3.2.2 and 3.3.2, plus the 3.4.0b1
   pre-release, on Python 3.10–3.14. Generated imports follow the target Airflow version (for
   example, timetables come from `airflow.timetables.*` on 3.0/3.1 and from `airflow.sdk` on 3.2+).
+  The `mcp` extra cannot be installed next to Airflow 3.1 (FastMCP 4 needs Starlette 1.x); see
+  the [compatibility matrix](https://ctolon.github.io/autoair/docs/installation/compatibility).
 * Runs **inside Airflow** as a plugin (Browse → *DAG Builder* and an *AutoAir* tab on every DAG
   page on 3.1+; a full page at `/autoair/ui/` on 3.0) **or standalone** (`autoair serve`).
 

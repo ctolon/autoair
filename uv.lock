@@ -974,8 +974,6 @@ airflow = [
     { name = "apache-airflow-providers-standard", version = "1.20.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
 ]
 all = [
-    { name = "fastmcp" },
-    { name = "mcp" },
     { name = "opentelemetry-exporter-otlp-proto-http" },
     { name = "opentelemetry-instrumentation-fastapi" },
     { name = "opentelemetry-sdk" },
@@ -1075,7 +1073,7 @@ dev = [
 requires-dist = [
     { name = "apache-airflow", marker = "extra == 'airflow'", specifier = ">=3.0,<4" },
     { name = "apache-airflow-providers-standard", marker = "extra == 'airflow'", specifier = ">=1.0" },
-    { name = "autoair", extras = ["standalone", "format", "git", "mcp", "ai", "ai-anthropic", "ai-openai", "otel", "collab", "shell", "yaml"], marker = "extra == 'all'" },
+    { name = "autoair", extras = ["standalone", "format", "git", "ai", "ai-anthropic", "ai-openai", "otel", "collab", "shell", "yaml"], marker = "extra == 'all'" },
     { name = "basedpyright", marker = "extra == 'lsp-pyright'", specifier = ">=1.20" },
     { name = "cryptography", specifier = ">=42" },
     { name = "fastapi", specifier = ">=0.115" },
@@ -1115,9 +1113,9 @@ requires-dist = [
     { name = "ruff", marker = "extra == 'format'", specifier = ">=0.9" },
     { name = "sentence-transformers", marker = "extra == 'ai-rerank'", specifier = ">=3.0" },
     { name = "shellcheck-py", marker = "extra == 'shell'", specifier = ">=0.10" },
-    { name = "sqlalchemy", marker = "extra == 'kb-pgvector'", specifier = ">=2.0" },
-    { name = "sqlalchemy", marker = "extra == 'postgres'", specifier = ">=2.0" },
-    { name = "sqlalchemy", marker = "extra == 'sqlite'", specifier = ">=2.0" },
+    { name = "sqlalchemy", marker = "extra == 'kb-pgvector'", specifier = ">=1.4.49" },
+    { name = "sqlalchemy", marker = "extra == 'postgres'", specifier = ">=1.4.49" },
+    { name = "sqlalchemy", marker = "extra == 'sqlite'", specifier = ">=1.4.49" },
     { name = "typer", specifier = ">=0.16" },
     { name = "uvicorn", extras = ["standard"], marker = "extra == 'standalone'", specifier = ">=0.30" },
 ]

@@ -60,7 +60,7 @@ Keep these in a secret store and back them up: losing the encryption key makes s
 | `sqlite` | `autoair[sqlite]` | One host, several worker processes (one SQLite file, WAL journal, `BEGIN IMMEDIATE` write transactions). |
 | `postgresql` | `autoair[postgres]` | Several replicas on several hosts. Transactions, row versions, unique constraints, advisory locks, `LISTEN/NOTIFY`. |
 
-The code talks to small repository protocols; each has a file implementation (with the same on-disk layout as before) and a SQL implementation (SQLAlchemy 2 Core). API shapes are the same on every backend. Configuration and migrations: [Database](/docs/admin/database).
+The code talks to small repository protocols; each has a file implementation (with the same on-disk layout as before) and a SQL implementation (SQLAlchemy Core, 1.4 or 2). API shapes are the same on every backend. Configuration and migrations: [Database](/docs/admin/database).
 
 ## Persistent state
 

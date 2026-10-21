@@ -543,7 +543,7 @@
         "icon": {
           "anyOf": [
             {
-              "pattern": "^(builtin|custom):[a-z0-9][a-z0-9-]{0,80}$",
+              "pattern": "^(builtin|custom|package):[a-z0-9][a-z0-9-]{0,80}$",
               "type": "string"
             },
             {
@@ -1788,7 +1788,7 @@
         "icon": {
           "anyOf": [
             {
-              "pattern": "^(builtin|custom):[a-z0-9][a-z0-9-]{0,80}$",
+              "pattern": "^(builtin|custom|package):[a-z0-9][a-z0-9-]{0,80}$",
               "type": "string"
             },
             {
@@ -1883,7 +1883,7 @@
         "icon": {
           "anyOf": [
             {
-              "pattern": "^(builtin|custom):[a-z0-9][a-z0-9-]{0,80}$",
+              "pattern": "^(builtin|custom|package):[a-z0-9][a-z0-9-]{0,80}$",
               "type": "string"
             },
             {
@@ -2472,7 +2472,7 @@
         "icon": {
           "anyOf": [
             {
-              "pattern": "^(builtin|custom):[a-z0-9][a-z0-9-]{0,80}$",
+              "pattern": "^(builtin|custom|package):[a-z0-9][a-z0-9-]{0,80}$",
               "type": "string"
             },
             {
@@ -3028,7 +3028,7 @@
         "icon": {
           "anyOf": [
             {
-              "pattern": "^(builtin|custom):[a-z0-9][a-z0-9-]{0,80}$",
+              "pattern": "^(builtin|custom|package):[a-z0-9][a-z0-9-]{0,80}$",
               "type": "string"
             },
             {
@@ -3516,6 +3516,20 @@
       },
       "title": "Edges",
       "type": "array"
+    },
+    "raw_code": {
+      "anyOf": [
+        {
+          "maxLength": 2000000,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Raw code DAG: the complete DAG file, written by hand and deployed as it is (no generated code, no spec rules; validated by syntax, lint, secret, policy and import checks). Set: nodes and edges must be empty, output_mode is python and environment overlays do not change the file. Absent: a spec-backed (visual) DAG.",
+      "title": "Raw Code"
     }
   },
   "required": [
