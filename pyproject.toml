@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "autoair"
 dynamic = ["readme"]
-version = "0.1.0"
+version = "0.2.0"
 description = "Type-safe, extensible no-code DAG builder for Apache Airflow 3"
 license = "Apache-2.0"
 license-files = ["LICENSE", "NOTICE"]

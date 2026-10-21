@@ -111,6 +111,11 @@ def test_go_gofmt_errors_are_deduplicated():
 
 @pytest.mark.skipif(shutil.which("javac") is None, reason="javac missing")
 def test_java_is_syntax_only():
+    from autoair.sections import _ACTIVE, EditorSettings
+
+    # A cold JVM can need more than the default 15 s on a busy CI runner; a timed-out javac
+    # is reported as "not validated", which is correct but would not test the parser.
+    _ACTIVE[EditorSettings] = EditorSettings(validate_timeout=120)
     bad = run("java", "public class Job {\n  void f() { int x = foo(; }\n}\n")
     assert not bad.ok
     assert bad.diagnostics[0].line == 2

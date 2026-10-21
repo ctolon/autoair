@@ -75,9 +75,9 @@ AutoAir is a visual and code-based DAG builder for Apache Airflow 3. It aims to 
 - Container image, Helm values for the official Airflow chart, and a Docker Compose demo.
 - Supported versions: Apache Airflow 3.0 to 3.3 (3.4 pre-release tested), Python 3.10 to 3.14.
 
-## In development for 0.2.0
+## Released in 0.2.0
 
-These are implemented on the main branch and ship with the next release.
+Details and upgrade notes: [changelog](https://github.com/ctolon/autoair/blob/main/CHANGELOG.md).
 
 - **Editing existing Python DAGs.** Source policies (`generate`, `preserve`, `strict-preserve`) patch a hand-written file with LibCST instead of regenerating it, and deploys detect files changed outside AutoAir. See [Editing existing Python DAGs](/docs/user-guide/editing-python-dags).
 - **Astronomer Blueprint steps.** See [Blueprint steps](/docs/user-guide/blueprints).

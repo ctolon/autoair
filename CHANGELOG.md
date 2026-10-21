@@ -8,6 +8,8 @@ minor versions may contain breaking changes; they are listed under **Changed** o
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-22
+
 ### Added
 - Kustomize manifests for Kubernetes (`deploy/kustomize`): a hardened base for `autoair serve`
   (non-root, read-only root file system, no service account token, probes on `/api/health` and
@@ -425,5 +427,6 @@ First public release.
 - Supports Apache Airflow ≥ 3.0, < 4 (CI: 3.0.6, 3.1.8, 3.2.2, 3.3.2, plus the 3.4
   pre-release) on Python 3.10–3.14.
 
-[Unreleased]: https://github.com/ctolon/autoair/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/ctolon/autoair/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/ctolon/autoair/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/ctolon/autoair/releases/tag/v0.1.0
