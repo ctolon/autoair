@@ -1,0 +1,38 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: autoair
+  labels:
+    app.kubernetes.io/name: autoair
+    app.kubernetes.io/component: server
+    release: prometheus
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: autoair
+      app.kubernetes.io/component: server
+  endpoints:
+    - port: http
+      path: /api/metrics
+      interval: 30s
+      scrapeTimeout: 10s
+---
+# Selects nothing unless components/validator is used.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: autoair-validator
+  labels:
+    app.kubernetes.io/name: autoair-validator
+    app.kubernetes.io/component: validator
+    release: prometheus
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: autoair-validator
+      app.kubernetes.io/component: validator
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 30s
+      scrapeTimeout: 10s

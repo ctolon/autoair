@@ -225,7 +225,10 @@
     "keepMineHelp": "Discard their changes and deploy your version",
     "ejectedTitle": "The DAG file was edited by hand",
     "ejectedHelp": "The generated file no longer matches what AutoAir wrote (it was \"ejected\" and edited directly). Deploying will overwrite those manual edits.",
-    "force": "Overwrite (force)"
+    "force": "Overwrite (force)",
+    "handWrittenTitle": "This DAG keeps a hand-written file",
+    "handWrittenHelp": "The DAG file is the hand-written file AutoAir keeps for this DAG. Deploying will replace it with the file of this version.",
+    "forceOff": "AutoAir does not overwrite this file here. Apply your change to the file with preserve (Python output) or keep the DAG as raw code; an administrator can allow overwrites with preserve.allow_force_overwrite."
   },
   "trigger": {
     "title": "Trigger DAG run",
@@ -753,7 +756,9 @@
     "dagFactoryHelp": "One-way export for teams using astronomer/dag-factory.",
     "specHelp": "The document AutoAir stores and deploys.",
     "pythonEditHelp": "The generated DAG file. Edit it and apply: the code is imported back into the canvas (undoable).",
-    "rawHelp": "The DAG file as deployed (edit it in the main editor)."
+    "rawHelp": "The DAG file as deployed (edit it in the main editor).",
+    "pythonKeptHelp": "DAG file kept by AutoAir (hand-written, read-only).",
+    "pythonKeptEditHelp": "The hand-written DAG file AutoAir keeps, with the canvas changes applied. Edit it and apply: the code is imported back into the canvas (undoable)."
   },
   "runs": {
     "run": "Run",
@@ -989,6 +994,7 @@
     "unknownParam": "“{{name}}” is not a parameter of {{operator}}.",
     "duplicateNode": "Two nodes share the id “{{id}}”.",
     "cycle": "These tasks depend on each other in a loop: {{path}}.",
+    "taskGroupCycle": "These task groups depend on each other in a cycle: {{members}}. A dependency into or out of any task of a group counts for the whole group. Airflow 3.4 warns about this and Airflow 3.5 is planned to reject the DAG: move tasks between groups so that each group depends on the others in one direction only.",
     "dates": "The end date must be after the start date.",
     "selfLoop": "A task cannot depend on itself.",
     "noteEdge": "Notes cannot be connected to tasks.",
@@ -1025,10 +1031,20 @@
     "rawDagId": "The code does not define a DAG with dag_id '{{id}}' (found: {{found}}): the dag_id in the code must match the document's.",
     "rawPrivileged": "{{name}} runs arbitrary commands and is disabled by policy (allow_privileged_operators).",
     "rawForbidden": "{{name}} is forbidden by policy.",
+    "importServiceClosed": "The import check service is unavailable ({{reason}}). Deploys are blocked until it answers again; ask an administrator to check the validator service.",
+    "importServiceOpen": "The import check service is unavailable ({{reason}}). The DAG was not imported with Airflow, so import errors are not detected.",
     "rawImportMissing": "Airflow imported the file but found no DAG '{{id}}' (found: {{found}}).",
     "dagIdTeamPrefix": "The dag_id must start with the team prefix '{{prefix}}'.",
     "dagIdPrefix": "The dag_id must start with '{{prefix}}'.",
-    "dagIdPattern": "The dag_id must match the pattern '{{pattern}}'."
+    "dagIdPattern": "The dag_id must match the pattern '{{pattern}}'.",
+    "blueprintUnknown": "Blueprint “{{name}}” v{{version}} is not in the blueprint catalog: install its package in AutoAir's environment or configure blueprints.template_dirs.",
+    "blueprintRuntime": "The Airflow environment needs airflow-blueprint and the module “{{module}}” to parse this DAG.",
+    "blueprintOutputMode": "Blueprint steps cannot be expressed in YAML Dags: use the python or loader output mode.",
+    "blueprintLoop": "Blueprint steps cannot be placed in a loop group.",
+    "blueprintPlainJson": "Blueprint config values must be plain JSON (no XCom references, timedeltas or other tagged values).",
+    "blueprintOutdated": "A newer version of “{{name}}” is available.",
+    "xcomBlueprint": "XCom must reference a task, not a blueprint step.",
+    "blueprintDisabled": "Blueprint steps are switched off on this server (features.blueprints)."
   },
   "operatorTemplates": {
     "saveTitle": "Save as operator template",
@@ -1098,7 +1114,11 @@
     "previewHint": "This is the code deployed to this environment: its overlay and connection/variable mapping applied. Editing stays on the base: applying this code back would copy the environment's values into every environment.",
     "previewBack": "Back to the base",
     "emptyHelp": "The DAG has no tasks yet. Write them in the code below and apply it, start from a template or create a raw code DAG.",
-    "emptyReadOnly": "The DAG has no tasks yet."
+    "emptyReadOnly": "The DAG has no tasks yet.",
+    "handWritten": "Hand-written file",
+    "preservedHelp": "This DAG keeps its hand-written file: you see the file a deploy writes, with the canvas changes patched in. Edits you apply here become that file.",
+    "preservedLoading": "Loading the hand-written file…",
+    "preservedError": "The hand-written file cannot be shown with the current changes ({{error}}). Editing is off until the change can be applied; see the deploy dialog for the options."
   },
   "endpoint": {
     "title": "Trigger endpoint",
@@ -1168,14 +1188,19 @@
       "invalid": "invalid",
       "ejected": "ejected",
       "pending_approval": "awaiting approval",
-      "error": "failed"
+      "error": "failed",
+      "source_refused": "not applicable to the file"
     },
     "planned": "{{count}} to deploy, {{skipped}} existing not confirmed",
     "deploy_one": "Deploy {{count}} DAG",
     "deploy_other": "Deploy {{count}} DAGs",
     "close": "Close",
     "skippedFiles_one": "{{count}} file without a DAG or excluded is not listed.",
-    "skippedFiles_other": "{{count}} files without a DAG or excluded are not listed."
+    "skippedFiles_other": "{{count}} files without a DAG or excluded are not listed.",
+    "filePolicy": "DAG files",
+    "filePolicyPreserve": "Keep the imported files (later edits are patched in)",
+    "filePolicyGenerate": "Generate files from the specs",
+    "filePolicyHelp": "Kept files are deployed as written, with comments and formatting; a file that imports helper modules the deploy target lacks is refused. Generated files are self-contained."
   },
   "gitToken": {
     "label": "Git token",
@@ -1328,5 +1353,79 @@
     "deleteUsedHere_other": "The open DAG has {{count}} tasks created from this template.",
     "deleteConfirm": "Delete template",
     "alreadyGone": "The template was already deleted"
+  },
+  "source": {
+    "dagFile": "DAG file",
+    "noDiff": "No changes to the DAG file.",
+    "diffTruncated": "The diff is cut here; the full file is written on deploy.",
+    "diffLabel": "Changes to the DAG file",
+    "notApplicable": "The source policy does not apply here: loader and YAML files are always generated, raw code DAGs are deployed as written.",
+    "previewing": "Preparing the file preview…",
+    "previewFailed": "No file preview: {{error}}",
+    "policy": {
+      "generate": "Generate",
+      "preserve": "Preserve",
+      "strict-preserve": "Strict preserve"
+    },
+    "action": {
+      "generate": "The DAG file is generated from the spec.",
+      "preserve": "Your change is patched into the existing file; the rest of it stays as written.",
+      "unchanged": "The existing file already matches: it is written as it is.",
+      "blocked": "Stopped: the existing DAG file is not replaced without your choice.",
+      "refused": "Stopped: this change cannot be applied to the existing file.",
+      "not_applicable": "The source policy does not apply to this DAG."
+    },
+    "state": {
+      "ejected": "{{file}} was changed outside AutoAir since the last deploy.",
+      "foreign": "{{file}} is a hand-written file AutoAir did not create.",
+      "hand_written": "{{file}} is the hand-written file AutoAir keeps for this DAG."
+    },
+    "code": {
+      "unmappable": "not located",
+      "unsupported": "not supported",
+      "risky": "strict",
+      "conflict": "conflict",
+      "roundtrip": "round trip",
+      "syntax": "syntax",
+      "import": "import",
+      "policy": "policy",
+      "permission": "permission",
+      "ejected": "ejected",
+      "foreign": "hand-written"
+    },
+    "refusalsTitle": "Why it cannot be applied",
+    "operations_one": "{{count}} edit to the file",
+    "operations_other": "{{count}} edits to the file",
+    "blockedTitle": "The existing DAG file is not replaced",
+    "blockedHelp": "Regenerating the file would discard what it contains. Apply your change to the file instead (comments and formatting are kept), or keep the file as a raw code DAG.",
+    "refusedTitle": "This change cannot be applied to the existing file",
+    "refusedHelp": "AutoAir edits hand-written files only where it can apply exactly your change, and never regenerates them on its own. Keep the file as a raw code DAG, or switch the DAG to generated code deliberately.",
+    "applyPreserve": "Apply to the file",
+    "overwrite": "Overwrite the file",
+    "confirmOverwrite": "I understand: the changes made outside AutoAir are discarded.",
+    "keepRaw": "Keep as raw code DAG",
+    "switchGenerate": "Switch to generated code",
+    "preservePreview": "What applying your change would write",
+    "deployedWithWarnings": "Deployed with notes on the DAG file",
+    "contentHidden": "The file in the deploy target is a hand-written file AutoAir did not write: its content is not shown.",
+    "blockedAction": {
+      "hand_written": "Stopped: generating code would replace the hand-written file AutoAir keeps for this DAG.",
+      "ejected": "Stopped: the DAG file was changed outside AutoAir.",
+      "foreign": "Stopped: the DAG file is a hand-written file AutoAir did not create."
+    },
+    "overwritePermission": "Replacing it with generated code needs the permission deploy:overwrite_ejected.",
+    "overwriteOff": "Replacing it with generated code is turned off here (preserve.allow_force_overwrite): apply changes with preserve or keep the DAG as raw code.",
+    "blockedTitleBy": {
+      "hand_written": "Generating code would replace the hand-written DAG file",
+      "ejected": "The DAG file was changed outside AutoAir",
+      "foreign": "The DAG file was not created by AutoAir"
+    },
+    "blockedHelpBy": {
+      "hand_written": "AutoAir keeps this DAG's hand-written file and never regenerates it on its own. Apply your change to the file instead (comments and formatting are kept), or keep the file as a raw code DAG.",
+      "ejected": "Regenerating the file would discard those changes. Apply your change to the file instead (comments and formatting are kept), or keep the file as a raw code DAG.",
+      "foreign": "AutoAir never overwrites a hand-written file it did not create. Apply your change to the file instead (comments and formatting are kept), or keep the file as a raw code DAG."
+    },
+    "confirmOverwriteHandWritten": "I understand: the hand-written file is replaced by generated code.",
+    "policyDraftNote": "Changes the DAG's source policy when you deploy (undoable). Cancel keeps the current policy."
   }
 }

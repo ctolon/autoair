@@ -40,9 +40,42 @@ function spliceText(text: Y.Text, next: string): void {
   if (inserted) text.insert(start, inserted);
 }
 
-const persistNode = ({ id, type, position, parentId, data, style }: BuilderNode) =>
-  JSON.stringify({ id, type, position, parentId, data, style });
-const persistEdge = ({ id, source, target, label }: BuilderEdge) => JSON.stringify({ id, source, target, label });
+// Serialisations per (immutable) store object: every local change compares the whole document
+// with the shared one, and a drag changes one node per frame, not hundreds.
+const nodeJson = new WeakMap<BuilderNode, string>();
+const edgeJson = new WeakMap<BuilderEdge, string>();
+const settingsJson = new WeakMap<DagSettings, string>();
+
+function persistNode(n: BuilderNode): string {
+  let json = nodeJson.get(n);
+  if (json === undefined) {
+    const { id, type, position, parentId, data, style } = n;
+    json = JSON.stringify({ id, type, position, parentId, data, style });
+    nodeJson.set(n, json);
+  }
+  return json;
+}
+
+function persistEdge(e: BuilderEdge): string {
+  let json = edgeJson.get(e);
+  if (json === undefined) {
+    const { id, source, target, label } = e;
+    json = JSON.stringify({ id, source, target, label });
+    edgeJson.set(e, json);
+  }
+  return json;
+}
+
+/** The shared settings of a DAG (everything but raw code, which syncs as text). */
+function persistSettings(dag: DagSettings): string {
+  let json = settingsJson.get(dag);
+  if (json === undefined) {
+    const { raw_code: _code, ...settings } = dag;
+    json = JSON.stringify(settings);
+    settingsJson.set(dag, json);
+  }
+  return json;
+}
 
 const isEmpty = (doc: Y.Doc): boolean => {
   const m = maps(doc);
@@ -65,8 +98,8 @@ function writeLocal(doc: Y.Doc, s: Pick<BuilderState, "dag" | "nodes" | "edges">
   doc.transact(() => {
     writeCollection(m.nodes, s.nodes, persistNode);
     writeCollection(m.edges, s.edges, persistEdge);
-    const { raw_code: code, ...settings } = s.dag;
-    const dag = JSON.stringify(settings);
+    const code = s.dag.raw_code;
+    const dag = persistSettings(s.dag);
     if (m.dag.get("settings") !== dag) m.dag.set("settings", dag);
     if (code === undefined || code === null) {
       if (m.dag.has("raw")) m.dag.delete("raw");

@@ -30,7 +30,11 @@ from autoair.validation import (
     _organisation_rules,
     _regexes,
 )
-from autoair.validation.dagbag_check import ImportCheckResult, check_source
+from autoair.validation.dagbag_check import (
+    ImportCheckResult,
+    ImportCheckUnavailable,
+    check_source,
+)
 
 # TaskFlow decorators that run what the matching operator runs (``@task.bash``).
 _DECORATOR_OPERATORS: Mapping[str, str] = {
@@ -244,6 +248,17 @@ def _operators(tree: ast.Module, policy: Policy) -> list[Problem]:
     return problems
 
 
+def preserved_file_problems(code: str, policy: Policy) -> list[Problem]:
+    """Checks of a source-preserving deploy's file (the hand-written parts the spec does not
+    model): hard-coded secrets and privileged / forbidden operators, like a raw code DAG."""
+    try:
+        tree = ast.parse(code)
+    except SyntaxError as exc:
+        return [_problem("syntax", exc.msg or "invalid syntax", line=exc.lineno or 1)]
+    problems = _secrets(code, policy) + _operators(tree, policy)
+    return [p.model_copy(update={"field": "source"}) for p in problems]
+
+
 def blocked_operators(code: str, policy: Policy) -> list[str]:
     """Class paths in ``code`` that ``policy`` refuses (privileged while not allowed, or
     forbidden); empty for code that does not parse (validation reports it)."""
@@ -325,7 +340,12 @@ def validate_raw(
     if import_check and not any(p.severity == "error" for p in problems):
         source = render_raw(spec)
         shift = source.count("\n") - (code if code.endswith("\n") else code + "\n").count("\n")
-        result = check_source(source, filename=f"{spec.dag_id}.py", timeout=import_timeout)
+        try:
+            result = check_source(source, filename=f"{spec.dag_id}.py", timeout=import_timeout)
+        except ImportCheckUnavailable as exc:
+            problems.append(_problem("import_service", str(exc), severity=exc.severity))
+            result = None
+    if result is not None:
         for err in result.import_errors:
             problems.append(_problem("import", err, line=_error_line(err, spec.dag_id, shift)))
         if result.ok and spec.dag_id not in result.dag_ids:
@@ -347,4 +367,10 @@ def _error_line(message: str, dag_id: str, shift: int) -> int | None:
     return line if line >= 1 else None
 
 
-__all__ = ["blocked_operators", "defined_dag_ids", "operator_uses", "validate_raw"]
+__all__ = [
+    "blocked_operators",
+    "defined_dag_ids",
+    "operator_uses",
+    "preserved_file_problems",
+    "validate_raw",
+]

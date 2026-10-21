@@ -4,7 +4,7 @@ description: Which AutoAir extras can be installed next to each supported Airflo
 sidebar_label: Compatibility
 ---
 
-AutoAir supports Apache Airflow 3.0 or newer, below 4, on Python 3.10 to 3.14. In plugin mode AutoAir runs inside Airflow's Python environment, so every extra has to resolve against the versions Airflow pins. Most extras install everywhere; two gaps come from Airflow itself.
+AutoAir supports Apache Airflow 3.0 or newer, below 4, on Python 3.10 to 3.14. Airflow 3.4 itself requires Python 3.11 or newer, so on Python 3.10 pip installs Airflow 3.3 at most; AutoAir keeps supporting Python 3.10 with Airflow 3.0 to 3.3. In plugin mode AutoAir runs inside Airflow's Python environment, so every extra has to resolve against the versions Airflow pins. Most extras install everywhere; two gaps come from Airflow itself.
 
 ## Extras per Airflow version
 
@@ -17,7 +17,7 @@ AutoAir supports Apache Airflow 3.0 or newer, below 4, on Python 3.10 to 3.14. I
 | `ai`, `ai-*` | yes | yes | yes | yes | yes |
 | `otel`, `collab`, `collab-redis`, `standalone`, `format`, `shell`, `yaml`, `git` | yes | yes | yes | yes | yes |
 
-CI installs exactly these combinations: the Airflow 3.1 job runs without `mcp` and its MCP tests are skipped with the reason; every other job installs `all,mcp,sqlite,postgres,kb-pgvector`. The versions tested are 3.0.6, 3.1.8, 3.2.2, 3.3.2 and 3.4.0b1.
+CI installs exactly these combinations: the Airflow 3.1 job runs without `mcp` and its MCP tests are skipped with the reason; every other job installs `all,mcp,sqlite,postgres,kb-pgvector`. The versions tested are 3.0.6, 3.1.8, 3.2.2, 3.3.2 and 3.4.0b2.
 
 ## The pins behind it
 
@@ -29,10 +29,24 @@ What `apache-airflow-core` requires, and what a fresh resolver picks today:
 | 3.1.8 | `>=1.4.54` (2.x) | `>=0.116,<0.118` | `<0.49` (0.48) | `>=2.11` |
 | 3.2.2 | `>=2.0.48` | `>=0.129` | `>=1.0.1` | `>=2.11` |
 | 3.3.2 | `>=2.0.50` | `>=0.129,<0.137` | `>=1.0.1` | `>=2.11` |
-| 3.4.0b1 | `>=2.0.50,!=2.1.0` | `>=0.129,<0.137` | `>=1.3.1` | `>=2.11` |
+| 3.4.0b2 | `>=2.0.50,!=2.1.0` | `>=0.129,<0.137` | `>=1.3.1` | `>=2.12` |
 
 - **MCP on Airflow 3.1.** Every FastMCP 4 release requires Starlette 1.0.1 or newer. Airflow 3.1 caps FastAPI below 0.118, and those FastAPI releases cap Starlette below 0.49, so `autoair[mcp]` cannot be resolved next to Airflow 3.1. Older FastMCP lines are not an option: FastMCP 3 and 2 are built on the `mcp` SDK 1.x and `httpx` (AutoAir uses `mcp` 2.x and `httpx2`), and the newest FastMCP 3 releases need Starlette 1.0.1 as well.
 - **SQLAlchemy on Airflow 3.0.** Airflow 3.0 keeps SQLAlchemy below 2.0. AutoAir's SQL state backends and the pgvector store use only APIs that SQLAlchemy 1.4 and 2.x share, so the `sqlite`, `postgres` and `kb-pgvector` extras accept SQLAlchemy 1.4.49 or newer and use whatever Airflow has installed.
+
+## Airflow 3.4
+
+Airflow 3.4.0 is not final yet; CI tests the newest pre-release (3.4.0b2) in a job that may fail without blocking. What changes for AutoAir on 3.4:
+
+| Change in Airflow 3.4 | What AutoAir does |
+| --- | --- |
+| Plugin views can be scoped with `applies_to` | `plugin.dag_tab_tags` (for example `["autoair"]`) shows the **AutoAir** tab only on DAGs with one of those tags. Empty (the default) keeps the tab on every DAG page, where a hand-written DAG can be imported. Before 3.4 the setting is ignored and logged. |
+| `PUT /parseDagFile/{file_token}` answers `403` for a file with no registered DAG unless the caller has the `REPARSE_ALL` view (admins by default) | A deploy to a local folder still succeeds when Airflow refuses the reparse request (verified against 3.4.0b2: `403` for a user without that view, also for a viewer on a registered DAG; a second request while one is queued gets `409`, which AutoAir reports as "reparse already requested"). The deploy message names the refusal and says that Airflow picks the file up on its next bundle refresh, instead of reporting that Airflow could not be contacted. |
+| An `up_for_retry` task instance carries the upcoming try number; the failed try is `try_number - 1` | The run panel's log view, the AI troubleshooter, the AI fix action and the MCP `get_task_log` tool open the failed try's log, not the upcoming try that has no log yet (`retry_try_is_next` in `GET /api/airflow/capabilities`). |
+| Task groups that depend on each other in a cycle are deprecated (`TaskGroupCycleDeprecationWarning`); Airflow 3.5 is planned to reject them | Validation reports a `task_group_cycle` warning on every Airflow version, naming the groups and tasks involved. |
+| Python 3.10 support removed | See the first paragraph: Python 3.10 users stay on Airflow 3.3. |
+
+`ui_translations`, also new in 3.4, overrides or adds strings of Airflow's own UI namespaces. Airflow shows plugin menu and tab names as they are configured, without a translation lookup, so it cannot translate the **DAG Builder** and **AutoAir** labels; set `plugin.nav_name` and `plugin.dag_tab_name` instead. AutoAir's own screens follow the language chosen in Airflow's UI.
 
 ## MCP next to Airflow 3.1
 

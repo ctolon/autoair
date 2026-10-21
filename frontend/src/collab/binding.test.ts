@@ -7,7 +7,7 @@ import { useBuilder } from "../store/builder";
 import { type Binding, bind, maps, readSaved } from "./binding";
 
 const spec: DagSpec = {
-  spec_version: 2,
+  spec_version: 3,
   dag_id: "shared",
   output_mode: "python",
   nodes: [

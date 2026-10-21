@@ -187,6 +187,7 @@ class GuardGenerated(unittest.TestCase):
             "frontend/src/lib/generated/jinjaContext.gen.ts",
             "website/docs/reference/configuration.md",
             "tests/golden/expected/etl_full.py",
+            "src/autoair/docs/pages.json",
             "uv.lock",
         ]:
             with self.subTest(rel=rel):

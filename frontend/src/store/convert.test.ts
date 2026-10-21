@@ -4,7 +4,7 @@ import type { DagSpec } from "../api/gen/types.gen";
 import { fromSpec, toSpec } from "./convert";
 
 const spec: DagSpec = {
-  spec_version: 2,
+  spec_version: 3,
   dag_id: "demo",
   output_mode: "python",
   schedule: { type: "cron", expression: "0 6 * * *" },

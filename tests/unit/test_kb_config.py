@@ -23,8 +23,12 @@ def test_defaults_are_air_gapped_and_everything_sensible() -> None:
         "helm_chart",
         "airflowctl",
         "astronomer_airflow",
+        "autoair",
     ]
-    assert [s.id for s in kb.sources] == ["official"]
+    assert [(s.id, s.kind) for s in kb.sources] == [
+        ("official", "official"),
+        ("autoair", "autoair"),
+    ]
     assert kb.fetch.include_api_reference is False
     assert Settings().feature("kb") is True
 

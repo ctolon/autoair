@@ -108,6 +108,12 @@ See [Knowledge base](/docs/ai/knowledge-base).
 
 Without a language server the editors keep the built-in jedi completion, hover and signature help. Bash IntelliSense through a language server needs `npm i -g bash-language-server` (`lsp.bash_command`); without it shell fields keep the built-in completion and ShellCheck. Limits: `lsp.max_sessions` (16), `lsp.max_sessions_per_user` (4), `lsp.idle_timeout` (600 s), `lsp.start_timeout` (30 s), `lsp.memory_limit_mb` (2048), `lsp.cpu_limit_seconds` (3600) and `lsp.max_message_bytes` (8 MiB); see [`lsp`](/docs/reference/configuration#lsp) in the configuration reference.
 
+### Astronomer Blueprint
+
+| Extra | Installs | Enables | Turned on by |
+| --- | --- | --- | --- |
+| `blueprint` | `airflow-blueprint>=0.3,<1` | Config schemas, task previews and config validation of [Blueprint steps](/docs/user-guide/blueprints) (templates are imported in a child process). Airflow needs the package too, to parse the generated DAGs | `features.blueprints` (default on) and templates from entry points, `blueprints.template_dirs` or `blueprints.modules` |
+
 ### `all`
 
 `autoair[all]` is a shortcut for `standalone,format,git,ai,ai-anthropic,ai-openai,otel,collab,shell,yaml`: everything that installs next to every supported Airflow. It does **not** include `mcp` (it cannot be installed with Airflow 3.1), `airflow`, `sqlite`, `postgres`, `collab-redis`, `kb-pgvector`, `kb-elasticsearch`, the other `ai-*` extras (`ai-google`, `ai-bedrock`, ..., `ai-rerank`, `ai-guardrails`), `lsp` or `lsp-pyright`; add those explicitly.

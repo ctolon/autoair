@@ -174,6 +174,16 @@
       "match": "^autoair/kb/config\\.py::",
       "decision": "config",
       "setting": "(default / validation bound / pattern of the kb.* setting declared here)"
+    },
+    {
+      "match": "^autoair/blueprints/config\\.py::kwarg::Field\\(",
+      "decision": "config",
+      "setting": "(default / validation bound of the blueprints.* setting declared here)"
+    },
+    {
+      "match": "^autoair/preserve/config\\.py::kwarg::Field\\(",
+      "decision": "config",
+      "setting": "(default / validation bound of the preserve.* setting declared here)"
     }
   ],
   "decisions": {
@@ -405,6 +415,10 @@
       "decision": "keep",
       "reason": "request validation bound (thread title)"
     },
+    "autoair/api/routers/ai_assistants.py::ToolApprovalDecision::kwarg::Field(max_length=)": {
+      "decision": "keep",
+      "reason": "request validation bound (decisions per request; a paused run has at most one model turn of pending tool calls)"
+    },
     "autoair/api/routers/ai_assistants.py::TroubleshootOptions::kwarg::Field(default=)": {
       "decision": "keep",
       "reason": "response model default; the value comes from ai.troubleshoot.max_actions"
@@ -436,6 +450,18 @@
     "autoair/api/routers/airflow.py::NextRunsRequest::kwarg::Field(le=)": {
       "decision": "keep",
       "reason": "API bound of the next-run preview count"
+    },
+    "autoair/api/routers/blueprints.py::<module>::constant::_NAME": {
+      "decision": "keep",
+      "reason": "the blueprint project's own contract (airflow-blueprint): registered blueprint names are snake_case (Blueprint name rule), bounded path parameter"
+    },
+    "autoair/api/routers/blueprints.py::get_blueprint::kwarg::Path(ge=)": {
+      "decision": "keep",
+      "reason": "the blueprint project's own contract (airflow-blueprint): blueprint versions start at 1"
+    },
+    "autoair/api/routers/blueprints.py::get_blueprint::kwarg::Path(le=)": {
+      "decision": "keep",
+      "reason": "bound of a client-controlled path parameter (input validation, not an environment value)"
     },
     "autoair/api/routers/deploy_target.py::get_git_credentials::kwarg::Query(max_length=)": {
       "decision": "keep",
@@ -653,6 +679,10 @@
       "decision": "keep",
       "reason": "Prometheus metric definition (metric names/labels are a monitoring contract)"
     },
+    "autoair/api/routers/ops.py::<module>::constant::IMPORT_CHECKS": {
+      "decision": "keep",
+      "reason": "Prometheus metric definition (metric names/labels are a monitoring contract)"
+    },
     "autoair/api/routers/ops.py::<module>::constant::LATENCY": {
       "decision": "keep",
       "reason": "Prometheus metric definition (names/buckets are a monitoring contract)"
@@ -668,6 +698,10 @@
     "autoair/api/routers/runs.py::<module>::constant::MAX_TIMEOUT": {
       "decision": "keep",
       "reason": "schema ceiling; the effective limit is runner.max_timeout"
+    },
+    "autoair/api/routers/specs.py::<module>::constant::_NEXT_REFRESH": {
+      "decision": "keep",
+      "reason": "deploy result message text"
     },
     "autoair/api/routers/specs.py::ProposalDeployRequest::kwarg::Field(max_length=)": {
       "decision": "keep",
@@ -704,6 +738,74 @@
     "autoair/audit.py::FileAuditRepository.query::default::offset": {
       "decision": "keep",
       "reason": "API default (first page)"
+    },
+    "autoair/blueprints/catalog.py::<module>::constant::DISTRIBUTION": {
+      "decision": "keep",
+      "reason": "the blueprint project's own contract (airflow-blueprint): PyPI distribution name of the blueprint project"
+    },
+    "autoair/blueprints/catalog.py::<module>::constant::ENTRY_POINT_GROUP": {
+      "decision": "keep",
+      "reason": "the blueprint project's own contract (airflow-blueprint): entry-point group shared blueprint packages advertise"
+    },
+    "autoair/blueprints/catalog.py::<module>::constant::_BASE_NAME": {
+      "decision": "keep",
+      "reason": "the blueprint project's own contract (airflow-blueprint): base class name the registry's AST pre-filter matches"
+    },
+    "autoair/blueprints/catalog.py::<module>::constant::_IDENT": {
+      "decision": "keep",
+      "reason": "Python identifier syntax (module path parts)"
+    },
+    "autoair/blueprints/catalog.py::<module>::constant::_SNAKE": {
+      "decision": "keep",
+      "reason": "the blueprint project's own contract (airflow-blueprint): blueprint name rule"
+    },
+    "autoair/blueprints/catalog.py::_first_sentence::regex::re.match:e8ea17e5": {
+      "decision": "keep",
+      "reason": "first sentence of a docstring (display only)"
+    },
+    "autoair/blueprints/catalog.py::name_and_version::regex::re.match:d11577e0": {
+      "decision": "keep",
+      "reason": "the blueprint project's own contract (airflow-blueprint): V<n> class-name suffix of Blueprint.parse_name_and_version"
+    },
+    "autoair/blueprints/catalog.py::to_snake_case::regex::re.sub:499b75b6": {
+      "decision": "keep",
+      "reason": "the blueprint project's own contract (airflow-blueprint): Blueprint._to_snake_case, mirrored so names match the registry"
+    },
+    "autoair/blueprints/catalog.py::to_snake_case::regex::re.sub:69bb3aa6": {
+      "decision": "keep",
+      "reason": "the blueprint project's own contract (airflow-blueprint): Blueprint._to_snake_case, mirrored so names match the registry"
+    },
+    "autoair/blueprints/models.py::BlueprintPreviewRequest::kwarg::Field(max_length=)": {
+      "decision": "keep",
+      "reason": "bound of a client-controlled field (input validation)"
+    },
+    "autoair/blueprints/models.py::BlueprintPreviewRequest::kwarg::Field(max_length=)#1": {
+      "decision": "keep",
+      "reason": "Airflow's task id length limit (250)"
+    },
+    "autoair/blueprints/models.py::BlueprintPreviewRequest::regex::pattern:16ec48c5": {
+      "decision": "keep",
+      "reason": "the blueprint project's own contract (airflow-blueprint): blueprint name rule"
+    },
+    "autoair/blueprints/models.py::BlueprintPreviewRequest::regex::pattern:bb55db4e": {
+      "decision": "keep",
+      "reason": "Airflow's KEY_REGEX for task/group ids"
+    },
+    "autoair/blueprints/preview.py::<module>::constant::_MAX_ERROR_LINES": {
+      "decision": "keep",
+      "reason": "lines of an import traceback shown in the preview (display only)"
+    },
+    "autoair/blueprints/worker.py::<module>::constant::MARKER": {
+      "decision": "keep",
+      "reason": "stdout marker of the child-process protocol (internal)"
+    },
+    "autoair/blueprints/worker.py::<module>::constant::PREVIEW_DAG_ID": {
+      "decision": "keep",
+      "reason": "dag_id of the throwaway preview DAG (never deployed)"
+    },
+    "autoair/blueprints/worker.py::<module>::constant::PREVIEW_STEP_ID": {
+      "decision": "keep",
+      "reason": "step_id of the catalog's default preview (display only)"
     },
     "autoair/catalog/discovery.py::<module>::constant::PROVIDER_ENTRY_POINT_GROUP": {
       "decision": "keep",
@@ -1017,6 +1119,10 @@
       "decision": "keep",
       "reason": "CLI option default of the AI/MCP commands (AI area; overridable per invocation)"
     },
+    "autoair/cli.py::validator_serve::default::port": {
+      "decision": "keep",
+      "reason": "CLI --port default of `autoair validator-serve` (option, documented; Helm/Compose set it)"
+    },
     "autoair/codegen/__init__.py::<module>::constant::RAW_HEADER": {
       "decision": "keep",
       "reason": "ownership header of deployed raw code files (format constant; carries the marker deploy targets look for)"
@@ -1253,6 +1359,302 @@
       "decision": "keep",
       "reason": "redacts credentials from URLs"
     },
+    "autoair/docs/build.py::<module>::constant::DATA_FILE": {
+      "decision": "keep",
+      "reason": "build-time packaging of the repository's own website sources (autoair.docs.build): Docusaurus/MDX syntax, the site layout (website/docs, site.config.ts, sync-reference.mjs) and the data-file format; nothing depends on the deployment (the site URL comes from website/site.config.ts or the DOCS_* variables)"
+    },
+    "autoair/docs/build.py::<module>::constant::FORMAT": {
+      "decision": "keep",
+      "reason": "build-time packaging of the repository's own website sources (autoair.docs.build): Docusaurus/MDX syntax, the site layout (website/docs, site.config.ts, sync-reference.mjs) and the data-file format; nothing depends on the deployment (the site URL comes from website/site.config.ts or the DOCS_* variables)"
+    },
+    "autoair/docs/build.py::<module>::constant::KIND": {
+      "decision": "keep",
+      "reason": "build-time packaging of the repository's own website sources (autoair.docs.build): Docusaurus/MDX syntax, the site layout (website/docs, site.config.ts, sync-reference.mjs) and the data-file format; nothing depends on the deployment (the site URL comes from website/site.config.ts or the DOCS_* variables)"
+    },
+    "autoair/docs/build.py::<module>::constant::_ADMONITION": {
+      "decision": "keep",
+      "reason": "build-time packaging of the repository's own website sources (autoair.docs.build): Docusaurus/MDX syntax, the site layout (website/docs, site.config.ts, sync-reference.mjs) and the data-file format; nothing depends on the deployment (the site URL comes from website/site.config.ts or the DOCS_* variables)"
+    },
+    "autoair/docs/build.py::<module>::constant::_ADMONITION_END": {
+      "decision": "keep",
+      "reason": "build-time packaging of the repository's own website sources (autoair.docs.build): Docusaurus/MDX syntax, the site layout (website/docs, site.config.ts, sync-reference.mjs) and the data-file format; nothing depends on the deployment (the site URL comes from website/site.config.ts or the DOCS_* variables)"
+    },
+    "autoair/docs/build.py::<module>::constant::_BLANKS": {
+      "decision": "keep",
+      "reason": "build-time packaging of the repository's own website sources (autoair.docs.build): Docusaurus/MDX syntax, the site layout (website/docs, site.config.ts, sync-reference.mjs) and the data-file format; nothing depends on the deployment (the site URL comes from website/site.config.ts or the DOCS_* variables)"
+    },
+    "autoair/docs/build.py::<module>::constant::_COMPONENT": {
+      "decision": "keep",
+      "reason": "build-time packaging of the repository's own website sources (autoair.docs.build): Docusaurus/MDX syntax, the site layout (website/docs, site.config.ts, sync-reference.mjs) and the data-file format; nothing depends on the deployment (the site URL comes from website/site.config.ts or the DOCS_* variables)"
+    },
+    "autoair/docs/build.py::<module>::constant::_CONFIG_ROUTE": {
+      "decision": "keep",
+      "reason": "build-time packaging of the repository's own website sources (autoair.docs.build): Docusaurus/MDX syntax, the site layout (website/docs, site.config.ts, sync-reference.mjs) and the data-file format; nothing depends on the deployment (the site URL comes from website/site.config.ts or the DOCS_* variables)"
+    },
+    "autoair/docs/build.py::<module>::constant::_CONFIG_SOURCE": {
+      "decision": "keep",
+      "reason": "build-time packaging of the repository's own website sources (autoair.docs.build): Docusaurus/MDX syntax, the site layout (website/docs, site.config.ts, sync-reference.mjs) and the data-file format; nothing depends on the deployment (the site URL comes from website/site.config.ts or the DOCS_* variables)"
+    },
+    "autoair/docs/build.py::<module>::constant::_ESCAPE": {
+      "decision": "keep",
+      "reason": "build-time packaging of the repository's own website sources (autoair.docs.build): Docusaurus/MDX syntax, the site layout (website/docs, site.config.ts, sync-reference.mjs) and the data-file format; nothing depends on the deployment (the site URL comes from website/site.config.ts or the DOCS_* variables)"
+    },
+    "autoair/docs/build.py::<module>::constant::_FENCE": {
+      "decision": "keep",
+      "reason": "build-time packaging of the repository's own website sources (autoair.docs.build): Docusaurus/MDX syntax, the site layout (website/docs, site.config.ts, sync-reference.mjs) and the data-file format; nothing depends on the deployment (the site URL comes from website/site.config.ts or the DOCS_* variables)"
+    },
+    "autoair/docs/build.py::<module>::constant::_FENCE_TITLE": {
+      "decision": "keep",
+      "reason": "build-time packaging of the repository's own website sources (autoair.docs.build): Docusaurus/MDX syntax, the site layout (website/docs, site.config.ts, sync-reference.mjs) and the data-file format; nothing depends on the deployment (the site URL comes from website/site.config.ts or the DOCS_* variables)"
+    },
+    "autoair/docs/build.py::<module>::constant::_FRONT": {
+      "decision": "keep",
+      "reason": "build-time packaging of the repository's own website sources (autoair.docs.build): Docusaurus/MDX syntax, the site layout (website/docs, site.config.ts, sync-reference.mjs) and the data-file format; nothing depends on the deployment (the site URL comes from website/site.config.ts or the DOCS_* variables)"
+    },
+    "autoair/docs/build.py::<module>::constant::_GENERATED_PAGES": {
+      "decision": "keep",
+      "reason": "build-time packaging of the repository's own website sources (autoair.docs.build): Docusaurus/MDX syntax, the site layout (website/docs, site.config.ts, sync-reference.mjs) and the data-file format; nothing depends on the deployment (the site URL comes from website/site.config.ts or the DOCS_* variables)"
+    },
+    "autoair/docs/build.py::<module>::constant::_H1": {
+      "decision": "keep",
+      "reason": "build-time packaging of the repository's own website sources (autoair.docs.build): Docusaurus/MDX syntax, the site layout (website/docs, site.config.ts, sync-reference.mjs) and the data-file format; nothing depends on the deployment (the site URL comes from website/site.config.ts or the DOCS_* variables)"
+    },
+    "autoair/docs/build.py::<module>::constant::_HTML_COMMENT": {
+      "decision": "keep",
+      "reason": "build-time packaging of the repository's own website sources (autoair.docs.build): Docusaurus/MDX syntax, the site layout (website/docs, site.config.ts, sync-reference.mjs) and the data-file format; nothing depends on the deployment (the site URL comes from website/site.config.ts or the DOCS_* variables)"
+    },
+    "autoair/docs/build.py::<module>::constant::_IMPORT": {
+      "decision": "keep",
+      "reason": "build-time packaging of the repository's own website sources (autoair.docs.build): Docusaurus/MDX syntax, the site layout (website/docs, site.config.ts, sync-reference.mjs) and the data-file format; nothing depends on the deployment (the site URL comes from website/site.config.ts or the DOCS_* variables)"
+    },
+    "autoair/docs/build.py::<module>::constant::_JSX_COMMENT": {
+      "decision": "keep",
+      "reason": "build-time packaging of the repository's own website sources (autoair.docs.build): Docusaurus/MDX syntax, the site layout (website/docs, site.config.ts, sync-reference.mjs) and the data-file format; nothing depends on the deployment (the site URL comes from website/site.config.ts or the DOCS_* variables)"
+    },
+    "autoair/docs/build.py::<module>::constant::_LINK": {
+      "decision": "keep",
+      "reason": "build-time packaging of the repository's own website sources (autoair.docs.build): Docusaurus/MDX syntax, the site layout (website/docs, site.config.ts, sync-reference.mjs) and the data-file format; nothing depends on the deployment (the site URL comes from website/site.config.ts or the DOCS_* variables)"
+    },
+    "autoair/docs/build.py::_linker.link::path::4a67bd26": {
+      "decision": "keep",
+      "reason": "build-time packaging of the repository's own website sources (autoair.docs.build): Docusaurus/MDX syntax, the site layout (website/docs, site.config.ts, sync-reference.mjs) and the data-file format; nothing depends on the deployment (the site URL comes from website/site.config.ts or the DOCS_* variables)"
+    },
+    "autoair/docs/build.py::_linker.link::regex::re.search:b4d30f87": {
+      "decision": "keep",
+      "reason": "build-time packaging of the repository's own website sources (autoair.docs.build): Docusaurus/MDX syntax, the site layout (website/docs, site.config.ts, sync-reference.mjs) and the data-file format; nothing depends on the deployment (the site URL comes from website/site.config.ts or the DOCS_* variables)"
+    },
+    "autoair/docs/build.py::_route::regex::re.sub:b4d30f87": {
+      "decision": "keep",
+      "reason": "build-time packaging of the repository's own website sources (autoair.docs.build): Docusaurus/MDX syntax, the site layout (website/docs, site.config.ts, sync-reference.mjs) and the data-file format; nothing depends on the deployment (the site URL comes from website/site.config.ts or the DOCS_* variables)"
+    },
+    "autoair/docs/build.py::_sync_front_matter::regex::re.search:f3c4eb70": {
+      "decision": "keep",
+      "reason": "build-time packaging of the repository's own website sources (autoair.docs.build): Docusaurus/MDX syntax, the site layout (website/docs, site.config.ts, sync-reference.mjs) and the data-file format; nothing depends on the deployment (the site URL comes from website/site.config.ts or the DOCS_* variables)"
+    },
+    "autoair/docs/build.py::_sync_front_matter::regex::re.search:fbf96d98": {
+      "decision": "keep",
+      "reason": "build-time packaging of the repository's own website sources (autoair.docs.build): Docusaurus/MDX syntax, the site layout (website/docs, site.config.ts, sync-reference.mjs) and the data-file format; nothing depends on the deployment (the site URL comes from website/site.config.ts or the DOCS_* variables)"
+    },
+    "autoair/docs/build.py::_sync_links::regex::re.findall:36eb33a2": {
+      "decision": "keep",
+      "reason": "build-time packaging of the repository's own website sources (autoair.docs.build): Docusaurus/MDX syntax, the site layout (website/docs, site.config.ts, sync-reference.mjs) and the data-file format; nothing depends on the deployment (the site URL comes from website/site.config.ts or the DOCS_* variables)"
+    },
+    "autoair/docs/build.py::_sync_links::regex::re.search:38255fa5": {
+      "decision": "keep",
+      "reason": "build-time packaging of the repository's own website sources (autoair.docs.build): Docusaurus/MDX syntax, the site layout (website/docs, site.config.ts, sync-reference.mjs) and the data-file format; nothing depends on the deployment (the site URL comes from website/site.config.ts or the DOCS_* variables)"
+    },
+    "autoair/docs/build.py::build::path::4a67bd26": {
+      "decision": "keep",
+      "reason": "build-time packaging of the repository's own website sources (autoair.docs.build): Docusaurus/MDX syntax, the site layout (website/docs, site.config.ts, sync-reference.mjs) and the data-file format; nothing depends on the deployment (the site URL comes from website/site.config.ts or the DOCS_* variables)"
+    },
+    "autoair/docs/build.py::build::path::4a67bd26#1": {
+      "decision": "keep",
+      "reason": "build-time packaging of the repository's own website sources (autoair.docs.build): Docusaurus/MDX syntax, the site layout (website/docs, site.config.ts, sync-reference.mjs) and the data-file format; nothing depends on the deployment (the site URL comes from website/site.config.ts or the DOCS_* variables)"
+    },
+    "autoair/docs/build.py::build::path::4a67bd26#2": {
+      "decision": "keep",
+      "reason": "build-time packaging of the repository's own website sources (autoair.docs.build): Docusaurus/MDX syntax, the site layout (website/docs, site.config.ts, sync-reference.mjs) and the data-file format; nothing depends on the deployment (the site URL comes from website/site.config.ts or the DOCS_* variables)"
+    },
+    "autoair/docs/build.py::build::path::d9e39b2a": {
+      "decision": "keep",
+      "reason": "build-time packaging of the repository's own website sources (autoair.docs.build): Docusaurus/MDX syntax, the site layout (website/docs, site.config.ts, sync-reference.mjs) and the data-file format; nothing depends on the deployment (the site URL comes from website/site.config.ts or the DOCS_* variables)"
+    },
+    "autoair/docs/build.py::build::regex::re.search:a97fb3d8": {
+      "decision": "keep",
+      "reason": "build-time packaging of the repository's own website sources (autoair.docs.build): Docusaurus/MDX syntax, the site layout (website/docs, site.config.ts, sync-reference.mjs) and the data-file format; nothing depends on the deployment (the site URL comes from website/site.config.ts or the DOCS_* variables)"
+    },
+    "autoair/docs/build.py::site_urls::url::a9a13761": {
+      "decision": "keep",
+      "reason": "build-time packaging of the repository's own website sources (autoair.docs.build): Docusaurus/MDX syntax, the site layout (website/docs, site.config.ts, sync-reference.mjs) and the data-file format; nothing depends on the deployment (the site URL comes from website/site.config.ts or the DOCS_* variables)"
+    },
+    "autoair/docs/build.py::to_markdown::kwarg::sub(count=)": {
+      "decision": "keep",
+      "reason": "build-time packaging of the repository's own website sources (autoair.docs.build): Docusaurus/MDX syntax, the site layout (website/docs, site.config.ts, sync-reference.mjs) and the data-file format; nothing depends on the deployment (the site URL comes from website/site.config.ts or the DOCS_* variables)"
+    },
+    "autoair/docs/build.py::to_markdown::regex::re.search:4837bd61": {
+      "decision": "keep",
+      "reason": "build-time packaging of the repository's own website sources (autoair.docs.build): Docusaurus/MDX syntax, the site layout (website/docs, site.config.ts, sync-reference.mjs) and the data-file format; nothing depends on the deployment (the site URL comes from website/site.config.ts or the DOCS_* variables)"
+    },
+    "autoair/docs/build.py::to_markdown::regex::re.search:f00fa263": {
+      "decision": "keep",
+      "reason": "build-time packaging of the repository's own website sources (autoair.docs.build): Docusaurus/MDX syntax, the site layout (website/docs, site.config.ts, sync-reference.mjs) and the data-file format; nothing depends on the deployment (the site URL comes from website/site.config.ts or the DOCS_* variables)"
+    },
+    "autoair/docs/index.py::<module>::constant::DATA_PATH": {
+      "decision": "keep",
+      "reason": "location of the packaged documentation inside the installed package / the source checkout (package layout, not deployment-dependent)"
+    },
+    "autoair/docs/index.py::<module>::constant::DEFAULT_READ_CHARS": {
+      "decision": "keep",
+      "reason": "MCP result bound of the documentation tools (keeps results inside a model's context window; the tool schema exposes the range)"
+    },
+    "autoair/docs/index.py::<module>::constant::DEFAULT_SEARCH_RESULTS": {
+      "decision": "keep",
+      "reason": "MCP result bound of the documentation tools (keeps results inside a model's context window; the tool schema exposes the range)"
+    },
+    "autoair/docs/index.py::<module>::constant::HIT_TEXT_CHARS": {
+      "decision": "keep",
+      "reason": "MCP result bound of the documentation tools (keeps results inside a model's context window; the tool schema exposes the range)"
+    },
+    "autoair/docs/index.py::<module>::constant::MAX_QUERY_CHARS": {
+      "decision": "keep",
+      "reason": "MCP result bound of the documentation tools (keeps results inside a model's context window; the tool schema exposes the range)"
+    },
+    "autoair/docs/index.py::<module>::constant::MAX_READ_CHARS": {
+      "decision": "keep",
+      "reason": "MCP result bound of the documentation tools (keeps results inside a model's context window; the tool schema exposes the range)"
+    },
+    "autoair/docs/index.py::<module>::constant::MAX_REF_CHARS": {
+      "decision": "keep",
+      "reason": "MCP result bound of the documentation tools (keeps results inside a model's context window; the tool schema exposes the range)"
+    },
+    "autoair/docs/index.py::<module>::constant::MAX_SEARCH_RESULTS": {
+      "decision": "keep",
+      "reason": "MCP result bound of the documentation tools (keeps results inside a model's context window; the tool schema exposes the range)"
+    },
+    "autoair/docs/index.py::<module>::constant::MIN_READ_CHARS": {
+      "decision": "keep",
+      "reason": "MCP result bound of the documentation tools (keeps results inside a model's context window; the tool schema exposes the range)"
+    },
+    "autoair/docs/index.py::<module>::constant::SNIPPET_CHARS": {
+      "decision": "keep",
+      "reason": "MCP result bound of the documentation tools (keeps results inside a model's context window; the tool schema exposes the range)"
+    },
+    "autoair/docs/index.py::<module>::constant::_ATX": {
+      "decision": "keep",
+      "reason": "Markdown / Docusaurus heading, fence, link and slug syntax (format of the packaged pages)"
+    },
+    "autoair/docs/index.py::<module>::constant::_CHECKOUT": {
+      "decision": "keep",
+      "reason": "location of the packaged documentation inside the installed package / the source checkout (package layout, not deployment-dependent)"
+    },
+    "autoair/docs/index.py::<module>::constant::_CUSTOM_ID": {
+      "decision": "keep",
+      "reason": "Markdown / Docusaurus heading, fence, link and slug syntax (format of the packaged pages)"
+    },
+    "autoair/docs/index.py::<module>::constant::_FENCE": {
+      "decision": "keep",
+      "reason": "Markdown / Docusaurus heading, fence, link and slug syntax (format of the packaged pages)"
+    },
+    "autoair/docs/index.py::<module>::constant::_MAX_PER_PAGE": {
+      "decision": "keep",
+      "reason": "MCP result bound of the documentation tools (keeps results inside a model's context window; the tool schema exposes the range)"
+    },
+    "autoair/docs/index.py::<module>::constant::_MD_LINK": {
+      "decision": "keep",
+      "reason": "Markdown / Docusaurus heading, fence, link and slug syntax (format of the packaged pages)"
+    },
+    "autoair/docs/index.py::<module>::constant::_SLUG_DROP": {
+      "decision": "keep",
+      "reason": "Markdown / Docusaurus heading, fence, link and slug syntax (format of the packaged pages)"
+    },
+    "autoair/docs/index.py::DocsIndex.__init__::path::4a67bd26": {
+      "decision": "keep",
+      "reason": "route prefixes of the documentation site and file suffixes accepted in page references (site layout)"
+    },
+    "autoair/docs/index.py::DocsIndex.read::default::offset": {
+      "decision": "keep",
+      "reason": "start of a page read (protocol default: the beginning)"
+    },
+    "autoair/docs/index.py::DocsIndex.resolve::kwarg::get_close_matches(cutoff=)": {
+      "decision": "keep",
+      "reason": "number and similarity of 'did you mean' suggestions in an error message (presentation)"
+    },
+    "autoair/docs/index.py::DocsIndex.resolve::kwarg::get_close_matches(n=)": {
+      "decision": "keep",
+      "reason": "number and similarity of 'did you mean' suggestions in an error message (presentation)"
+    },
+    "autoair/docs/index.py::DocsIndex.resolve::path::4a67bd26": {
+      "decision": "keep",
+      "reason": "route prefixes of the documentation site and file suffixes accepted in page references (site layout)"
+    },
+    "autoair/docs/index.py::DocsIndex.resolve::path::8e47fde4": {
+      "decision": "keep",
+      "reason": "route prefixes of the documentation site and file suffixes accepted in page references (site layout)"
+    },
+    "autoair/docs/index.py::DocsIndex.resolve::regex::re.sub:6d43695a": {
+      "decision": "keep",
+      "reason": "Markdown / Docusaurus heading, fence, link and slug syntax (format of the packaged pages)"
+    },
+    "autoair/docs/mcp.py::<module>::constant::DEFAULT_PATH": {
+      "decision": "keep",
+      "reason": "CLI defaults of autoair docs-mcp, overridable with --port / --path"
+    },
+    "autoair/docs/mcp.py::<module>::constant::DEFAULT_PORT": {
+      "decision": "keep",
+      "reason": "CLI defaults of autoair docs-mcp, overridable with --port / --path"
+    },
+    "autoair/docs/mcp.py::<module>::constant::DOCS_TOOLS": {
+      "decision": "keep",
+      "reason": "MCP tool names, feature flag and server name (public interface, classified in autoair.mcp.iam)"
+    },
+    "autoair/docs/mcp.py::<module>::constant::FEATURE": {
+      "decision": "keep",
+      "reason": "MCP tool names, feature flag and server name (public interface, classified in autoair.mcp.iam)"
+    },
+    "autoair/docs/mcp.py::<module>::constant::INSTRUCTIONS": {
+      "decision": "keep",
+      "reason": "server instructions and --help text (documentation of the tools)"
+    },
+    "autoair/docs/mcp.py::<module>::constant::SERVER_NAME": {
+      "decision": "keep",
+      "reason": "MCP tool names, feature flag and server name (public interface, classified in autoair.mcp.iam)"
+    },
+    "autoair/docs/mcp.py::<module>::constant::SETUP_EPILOG": {
+      "decision": "keep",
+      "reason": "server instructions and --help text (documentation of the tools)"
+    },
+    "autoair/docs/mcp.py::create_docs_mcp_server::url::541ae33d": {
+      "decision": "keep",
+      "reason": "project homepage advertised to MCP clients (website_url, like the main MCP server)"
+    },
+    "autoair/docs/mcp.py::register_docs_tools.list_autoair_docs::kwarg::Field(max_length=)": {
+      "decision": "keep",
+      "reason": "MCP result bound of the documentation tools (keeps results inside a model's context window; the tool schema exposes the range)"
+    },
+    "autoair/docs/mcp.py::register_docs_tools.read_autoair_doc::default::offset": {
+      "decision": "keep",
+      "reason": "start of a page read (protocol default: the beginning)"
+    },
+    "autoair/docs/mcp.py::register_docs_tools.read_autoair_doc::kwarg::Field(ge=)": {
+      "decision": "keep",
+      "reason": "MCP result bound of the documentation tools (keeps results inside a model's context window; the tool schema exposes the range)"
+    },
+    "autoair/docs/mcp.py::register_docs_tools.read_autoair_doc::kwarg::Field(min_length=)": {
+      "decision": "keep",
+      "reason": "MCP result bound of the documentation tools (keeps results inside a model's context window; the tool schema exposes the range)"
+    },
+    "autoair/docs/mcp.py::register_docs_tools.search_autoair_docs::kwarg::Field(ge=)": {
+      "decision": "keep",
+      "reason": "MCP result bound of the documentation tools (keeps results inside a model's context window; the tool schema exposes the range)"
+    },
+    "autoair/docs/mcp.py::register_docs_tools.search_autoair_docs::kwarg::Field(max_length=)": {
+      "decision": "keep",
+      "reason": "MCP result bound of the documentation tools (keeps results inside a model's context window; the tool schema exposes the range)"
+    },
+    "autoair/docs/mcp.py::register_docs_tools.search_autoair_docs::kwarg::Field(min_length=)": {
+      "decision": "keep",
+      "reason": "MCP result bound of the documentation tools (keeps results inside a model's context window; the tool schema exposes the range)"
+    },
     "autoair/feature_overrides.py::<module>::constant::DOCUMENT_KEY": {
       "decision": "keep",
       "reason": "storage key of the runtime feature-override document (persistence layout)"
@@ -1316,6 +1718,10 @@
     "autoair/gateway/__init__.py::_seg::number::ab7f7b95": {
       "decision": "keep",
       "reason": "message truncation / HTTP status class boundary (presentation/protocol)"
+    },
+    "autoair/gateway/__init__.py::parse_version::regex::re.match:6de4011f": {
+      "decision": "keep",
+      "reason": "Airflow version string format (release segment of the version)"
     },
     "autoair/governance.py::<module>::constant::CONTEXT_HEADER": {
       "decision": "keep",
@@ -1429,6 +1835,18 @@
       "decision": "keep",
       "reason": "icon name normalisation (matching)"
     },
+    "autoair/importer/blueprints.py::<module>::constant::RENDERS": {
+      "decision": "keep",
+      "reason": "per-child-process recorder state of the Python importer (no configuration)"
+    },
+    "autoair/importer/blueprints.py::<module>::constant::_DAGBAG_PREFIX": {
+      "decision": "keep",
+      "reason": "module-name prefix Airflow's DagBag gives DAG files (Airflow internals, not configuration)"
+    },
+    "autoair/importer/blueprints.py::<module>::constant::_DEPTH": {
+      "decision": "keep",
+      "reason": "per-child-process recorder state of the Python importer (no configuration)"
+    },
     "autoair/importer/bulk.py::<module>::constant::_REF": {
       "decision": "keep",
       "reason": "git ref syntax guard (security: no option injection into git argv)"
@@ -1520,6 +1938,10 @@
     "autoair/importer/python_dag.py::import_python_source::default::timeout": {
       "decision": "config",
       "setting": "python_import_timeout"
+    },
+    "autoair/importer/python_dag.py::import_python_sources::default::timeout": {
+      "decision": "config",
+      "setting": "preserve.import_timeout (the source plans pass it)"
     },
     "autoair/kb/bundle.py::<module>::constant::FORMAT": {
       "decision": "keep",
@@ -2413,6 +2835,10 @@
       "decision": "keep",
       "reason": "wait after SIGKILL (internal)"
     },
+    "autoair/lsp/shell.py::<module>::constant::_BATCH": {
+      "decision": "keep",
+      "reason": "scripts per ShellCheck process: keeps one run well inside editor.shellcheck_timeout (the operator-facing knob); a failed run is retried, never cached"
+    },
     "autoair/lsp/shell.py::<module>::constant::_JINJA": {
       "decision": "keep",
       "reason": "Jinja delimiters (syntax)"
@@ -2765,13 +3191,105 @@
       "decision": "keep",
       "reason": "process state, not a value"
     },
-    "autoair/plugin.py::_react_apps::path::b403b69d": {
+    "autoair/plugin_ui.py::<module>::constant::DAG_TAG_PATH": {
+      "decision": "keep",
+      "reason": "Airflow applies_to field path into DAGResponse (Airflow plugin protocol); the tags themselves are plugin.dag_tab_tags"
+    },
+    "autoair/plugin_ui.py::react_apps::path::b403b69d": {
       "decision": "keep",
       "reason": "plugin bundle file name (build output)"
     },
-    "autoair/plugin.py::_react_apps::path::bae01aec": {
+    "autoair/plugin_ui.py::react_apps::path::bae01aec": {
       "decision": "keep",
       "reason": "plugin icon file name (build output)"
+    },
+    "autoair/preserve/config.py::<module>::constant::_ALL": {
+      "decision": "keep",
+      "reason": "the closed set of source policies (spec schema, SourceInfo.policy)"
+    },
+    "autoair/preserve/fingerprint.py::<module>::constant::FINGERPRINT_PREFIX": {
+      "decision": "keep",
+      "reason": "generator fingerprint format of deployed files (protocol between AutoAir versions)"
+    },
+    "autoair/preserve/fingerprint.py::<module>::constant::_LINE": {
+      "decision": "keep",
+      "reason": "parser of the generator fingerprint line (protocol between AutoAir versions)"
+    },
+    "autoair/preserve/mapper.py::<module>::constant::BUILTIN_NAMES": {
+      "decision": "keep",
+      "reason": "Python's builtins (language definition)"
+    },
+    "autoair/preserve/mapper.py::<module>::constant::CHAIN_NAMES": {
+      "decision": "keep",
+      "reason": "source-structure vocabulary of Airflow DAG files the LibCST mapper recognises (Airflow API names)"
+    },
+    "autoair/preserve/mapper.py::<module>::constant::DAG_CLASS_NAMES": {
+      "decision": "keep",
+      "reason": "source-structure vocabulary of Airflow DAG files the LibCST mapper recognises (Airflow API names)"
+    },
+    "autoair/preserve/mapper.py::<module>::constant::DAG_DECORATOR_NAMES": {
+      "decision": "keep",
+      "reason": "source-structure vocabulary of Airflow DAG files the LibCST mapper recognises (Airflow API names)"
+    },
+    "autoair/preserve/mapper.py::<module>::constant::GROUP_PREFIX": {
+      "decision": "keep",
+      "reason": "internal key prefix of task-group edge endpoints (never shown or stored)"
+    },
+    "autoair/preserve/mapper.py::<module>::constant::LABEL_NAMES": {
+      "decision": "keep",
+      "reason": "source-structure vocabulary of Airflow DAG files the LibCST mapper recognises (Airflow API names)"
+    },
+    "autoair/preserve/mapper.py::<module>::constant::TASK_DECORATOR_NAMES": {
+      "decision": "keep",
+      "reason": "source-structure vocabulary of Airflow DAG files the LibCST mapper recognises (Airflow API names)"
+    },
+    "autoair/preserve/mapper.py::<module>::constant::TASK_GROUP_CLASS_NAMES": {
+      "decision": "keep",
+      "reason": "source-structure vocabulary of Airflow DAG files the LibCST mapper recognises (Airflow API names)"
+    },
+    "autoair/preserve/mapper.py::<module>::constant::TASK_GROUP_DECORATOR_NAMES": {
+      "decision": "keep",
+      "reason": "source-structure vocabulary of Airflow DAG files the LibCST mapper recognises (Airflow API names)"
+    },
+    "autoair/preserve/mapper.py::_Mapper._binop::number::775bc5c3": {
+      "decision": "keep",
+      "reason": "length of a code excerpt in a warning message (display only)"
+    },
+    "autoair/preserve/patcher.py::_identifier::regex::re.sub:dd763376": {
+      "decision": "keep",
+      "reason": "Python identifier syntax (language definition)"
+    },
+    "autoair/preserve/service.py::<module>::constant::_AUTOAIR_FIELDS": {
+      "decision": "keep",
+      "reason": "AutoAir-only DAG fields of the spec schema (never in a DAG file)"
+    },
+    "autoair/preserve/service.py::<module>::constant::_CACHE": {
+      "decision": "keep",
+      "reason": "per-process cache of derived data with a TTL (preserve.cache_ttl); replicas never need to agree on it"
+    },
+    "autoair/preserve/service.py::<module>::constant::_CANVAS_FIELDS": {
+      "decision": "keep",
+      "reason": "canvas-only node fields of the spec schema (never in a DAG file)"
+    },
+    "autoair/preserve/service.py::<module>::constant::_MISSING": {
+      "decision": "keep",
+      "reason": "sentinel object (internal)"
+    },
+    "autoair/preserve/service.py::_ImportCache.__init__::default::size": {
+      "decision": "keep",
+      "reason": "entries of the per-process import cache (derived data; its lifetime is preserve.cache_ttl)"
+    },
+    "autoair/preserve/service.py::_pick::number::a4ac914c": {
+      "decision": "keep",
+      "reason": "length of an import error excerpt in a refusal message (display only)"
+    },
+    "autoair/preserve/service.py::<module>::constant::FORCE_OVERWRITE_OFF": {
+      "decision": "keep",
+      "reason": "user-facing refusal message naming the setting that gates it (preserve.allow_force_overwrite)"
+    },
+    "autoair/preserve/service.py::<module>::constant::_HIDDEN_DETAILS": {
+      "decision": "keep",
+      "reason": "user-facing messages that replace import/round-trip details of a hidden file (confidentiality of files the caller may not read)"
     },
     "autoair/registry/__init__.py::<module>::constant::ENTRY_POINT_GROUP": {
       "decision": "keep",
@@ -2929,6 +3447,14 @@
       "decision": "keep",
       "reason": "validation of ui.banner_color (CSS hex or palette name; no CSS injection)"
     },
+    "autoair/sections.py::ValidatorSettings._http_url::url::43a9519e": {
+      "decision": "keep",
+      "reason": "URL scheme check of validator.url (validation)"
+    },
+    "autoair/sections.py::ValidatorSettings._http_url::url::a9a13761": {
+      "decision": "keep",
+      "reason": "URL scheme check of validator.url (validation)"
+    },
     "autoair/sections.py::_default_rate_limits::number::cae91e45": {
       "decision": "config",
       "setting": "limits.rate_limits (default requests per window of the validate group)"
@@ -2984,6 +3510,10 @@
     "autoair/spec/migrations.py::<module>::constant::MIGRATIONS": {
       "decision": "keep",
       "reason": "spec version migrations (spec protocol)"
+    },
+    "autoair/spec/models.py::<module>::constant::BLUEPRINT_NAME_PATTERN": {
+      "decision": "keep",
+      "reason": "DAG spec schema: the blueprint project's snake_case name rule (protocol shared with the frontend)"
     },
     "autoair/spec/models.py::<module>::constant::RAW_CODE_MAX_CHARS": {
       "decision": "keep",
@@ -3561,6 +4091,10 @@
       "decision": "keep",
       "reason": "BaseOperator fields (Airflow API)"
     },
+    "autoair/validation/__init__.py::<module>::constant::_MAX_LISTED_GROUP_CYCLES": {
+      "decision": "keep",
+      "reason": "number of cycles named in one validation message (readability, like Airflow's own warning)"
+    },
     "autoair/validation/__init__.py::<module>::constant::_SECRET_ASSIGN": {
       "decision": "config",
       "setting": "policy.secret_assignment_pattern"
@@ -3580,6 +4114,10 @@
     "autoair/validation/__init__.py::validate_spec::default::import_timeout": {
       "decision": "config",
       "setting": "import_check_timeout"
+    },
+    "autoair/validation/blueprints.py::<module>::constant::RUNTIME_HINT": {
+      "decision": "keep",
+      "reason": "validation message text (translated in the UI by problemText)"
     },
     "autoair/validation/dagbag_check.py::check_file::default::timeout": {
       "decision": "config",
@@ -3649,6 +4187,14 @@
       "decision": "config",
       "setting": "dagbag_pool_start_timeout"
     },
+    "autoair/validation/pool.py::<module>::constant::MAX_REPLY_BYTES": {
+      "decision": "keep",
+      "reason": "security bound on a worker's reply read by the parent (DoS guard; far above any real DagBag summary)"
+    },
+    "autoair/validation/pool.py::_read_exact::number::f3490b46": {
+      "decision": "keep",
+      "reason": "read chunk size of the worker reply (1 MiB per os.read call; the total is bounded by MAX_REPLY_BYTES)"
+    },
     "autoair/validation/pool.py::DagBagPool.submit::default::timeout": {
       "decision": "config",
       "setting": "import_check_timeout"
@@ -3657,7 +4203,11 @@
       "decision": "config",
       "setting": "import_check_timeout"
     },
-    "autoair/validation/pylint.py::lint_python_task::url::a9a13761": {
+    "autoair/validation/pylint.py::<module>::constant::_CACHE_SIZE": {
+      "decision": "keep",
+      "reason": "bound of a per-process memo of a pure function (ruff results by task source and rule set); memory only, never stale, independent of the environment"
+    },
+    "autoair/validation/pylint.py::_issues::url::a9a13761": {
       "decision": "keep",
       "reason": "builds rule documentation links"
     },
@@ -3677,6 +4227,166 @@
       "decision": "config",
       "setting": "import_check_timeout (the API passes it; this default is the fallback for callers without settings)"
     },
+    "autoair/validation/remote.py::<module>::constant::CHECK_PATH": {
+      "decision": "keep",
+      "reason": "protocol between the main server and the validator service (both sides must agree)"
+    },
+    "autoair/validation/remote.py::<module>::constant::IDENTITY_HEADER": {
+      "decision": "keep",
+      "reason": "protocol between the main server and the validator service (both sides must agree)"
+    },
+    "autoair/validation/remote.py::<module>::constant::RESPONSE_SIGNATURE_HEADER": {
+      "decision": "keep",
+      "reason": "protocol between the main server and the validator service (both sides must agree)"
+    },
+    "autoair/validation/remote.py::<module>::constant::MAX_RESPONSE_BYTES": {
+      "decision": "keep",
+      "reason": "security bound on the validator answer read by the main server (DoS guard)"
+    },
+    "autoair/validation/remote.py::<module>::constant::MIN_KEY_BYTES": {
+      "decision": "keep",
+      "reason": "security floor: shortest HMAC key accepted (never configurable below)"
+    },
+    "autoair/validation/remote.py::<module>::constant::SIGNATURE_HEADER": {
+      "decision": "keep",
+      "reason": "protocol between the main server and the validator service (both sides must agree)"
+    },
+    "autoair/validation/remote.py::<module>::constant::SIGNED_ROLE": {
+      "decision": "keep",
+      "reason": "protocol between the main server and the validator service (both sides must agree)"
+    },
+    "autoair/validation/remote.py::<module>::constant::_HEALTH": {
+      "decision": "keep",
+      "reason": "per-process health state with a deadline (derived data, not a value)"
+    },
+    "autoair/validation/remote.py::<module>::constant::_HEALTH_LOCK": {
+      "decision": "keep",
+      "reason": "lock (internal)"
+    },
+    "autoair/validation/remote.py::<module>::constant::_KEYS": {
+      "decision": "keep",
+      "reason": "process cache of the HMAC key with a TTL (validator.key_cache_seconds), not a value"
+    },
+    "autoair/validation/remote.py::<module>::constant::_RETRY_STATUS": {
+      "decision": "keep",
+      "reason": "HTTP statuses that mean 'try again' (protocol)"
+    },
+    "autoair/validation/remote.py::_probe::path::8fe3897b": {
+      "decision": "keep",
+      "reason": "protocol between the main server and the validator service (both sides must agree)"
+    },
+    "autoair/validation/remote.py::check_remote::number::5715aa02": {
+      "decision": "keep",
+      "reason": "HTTP 413 status code (protocol)"
+    },
+    "autoair/validation/remote.py::check_remote::number::75988f5a": {
+      "decision": "keep",
+      "reason": "HTTP 429 status code (protocol)"
+    },
+    "autoair/validation/sandbox.py::<module>::constant::_CLONE_NEWNET": {
+      "decision": "keep",
+      "reason": "Linux kernel constant (linux/sched.h)"
+    },
+    "autoair/validation/sandbox.py::<module>::constant::_CLONE_NEWUSER": {
+      "decision": "keep",
+      "reason": "Linux kernel constant (linux/sched.h)"
+    },
+    "autoair/validation/sandbox.py::<module>::constant::_DENIED_EVENTS": {
+      "decision": "keep",
+      "reason": "security floor: Python audit events a validator worker may never raise (enabled by validator.audit_hook)"
+    },
+    "autoair/validation/sandbox.py::<module>::constant::_MIB": {
+      "decision": "keep",
+      "reason": "unit conversion (MiB)"
+    },
+    "autoair/validation/sandbox.py::<module>::constant::_PR_SET_DUMPABLE": {
+      "decision": "keep",
+      "reason": "Linux kernel constant (linux/prctl.h)"
+    },
+    "autoair/validation/sandbox.py::<module>::constant::_PR_SET_NO_NEW_PRIVS": {
+      "decision": "keep",
+      "reason": "Linux kernel constant (linux/prctl.h)"
+    },
+    "autoair/validation/sandbox.py::<module>::constant::_READ_EVENTS": {
+      "decision": "keep",
+      "reason": "security floor: Python audit events that read paths (enabled by validator.audit_hook)"
+    },
+    "autoair/validation/sandbox.py::<module>::constant::_WRITE_EVENTS": {
+      "decision": "keep",
+      "reason": "security floor: Python audit events that modify files (enabled by validator.audit_hook)"
+    },
+    "autoair/validation/sandbox.py::<module>::constant::_WRITE_FLAGS": {
+      "decision": "keep",
+      "reason": "os.open flags that mean writing (POSIX)"
+    },
+    "autoair/validation/sandbox.py::_Guard._readable::path::206e7b1d": {
+      "decision": "keep",
+      "reason": "procfs mount point (Linux)"
+    },
+    "autoair/validation/sandbox.py::_Guard._readable::path::206e7b1d#1": {
+      "decision": "keep",
+      "reason": "procfs mount point (Linux)"
+    },
+    "autoair/validation/sandbox.py::_Guard._writable::path::73866310": {
+      "decision": "keep",
+      "reason": "null device (POSIX)"
+    },
+    "autoair/validation/sandbox.py::isolate_network::path::912bd244": {
+      "decision": "keep",
+      "reason": "Linux user namespace interface (procfs)"
+    },
+    "autoair/validation/sandbox.py::isolate_network::path::95c985cc": {
+      "decision": "keep",
+      "reason": "Linux user namespace interface (procfs)"
+    },
+    "autoair/validation/sandbox.py::isolate_network::path::b9725925": {
+      "decision": "keep",
+      "reason": "Linux user namespace interface (procfs)"
+    },
+    "autoair/validation/service.py::<module>::constant::CHECK_BUCKETS": {
+      "decision": "keep",
+      "reason": "Prometheus histogram buckets (stable metric schema)"
+    },
+    "autoair/validation/service.py::<module>::constant::SELFTEST_DAG": {
+      "decision": "keep",
+      "reason": "self-test DAG of the validator's readiness probe (internal)"
+    },
+    "autoair/validation/service.py::<module>::constant::SELFTEST_RETRY_SECONDS": {
+      "decision": "keep",
+      "reason": "pause between self-test attempts while not ready (internal pacing; /ready is probed by the orchestrator)"
+    },
+    "autoair/validation/service.py::CheckRequest::kwarg::Field(default=)": {
+      "decision": "keep",
+      "reason": "request default of the protocol; the main server always sends import_check_timeout, capped by validator.max_check_seconds"
+    },
+    "autoair/validation/service.py::CheckRequest::regex::pattern:2c369134": {
+      "decision": "keep",
+      "reason": "security floor: the DAG file name is a bare *.py name with dag_id characters (no path separators)"
+    },
+    "autoair/validation/service.py::create_validator_app.check::number::5715aa02": {
+      "decision": "keep",
+      "reason": "HTTP 413 status code (protocol)"
+    },
+    "autoair/validation/service.py::create_validator_app.check::path::eaae7172": {
+      "decision": "keep",
+      "reason": "protocol between the main server and the validator service (both sides must agree)"
+    },
+    "autoair/validation/service.py::create_validator_app.health::path::0bb4da59": {
+      "decision": "keep",
+      "reason": "probe endpoint (protocol, Helm/Compose probes)"
+    },
+    "autoair/validation/service.py::create_validator_app.is_ready::path::8fe3897b": {
+      "decision": "keep",
+      "reason": "probe endpoint (protocol, Helm/Compose probes)"
+    },
+    "autoair/validation/service.py::create_validator_app.prometheus::path::7edfc244": {
+      "decision": "keep",
+      "reason": "Prometheus scrape endpoint (convention)"
+    },
+    "autoair/validation/shell.py::<module>::constant::_CACHE_SIZE": {
+      "decision": "keep",
+      "reason": "bound of a per-process memo of a pure function (ShellCheck results by script and exclude settings); memory only, never stale, independent of the environment"
+    },
     "autoair/validation/shell.py::<module>::constant::_SCRIPT_SUFFIXES": {
       "decision": "keep",
       "reason": "file suffixes of shell scripts"
@@ -3688,6 +4398,14 @@
     "autoair/validation/shell.py::_problems::url::88527164": {
       "decision": "keep",
       "reason": "ShellCheck wiki (documentation link per SC code)"
+    },
+    "autoair/validation/pool.py::<module>::constant::_WARM_DAG": {
+      "decision": "keep",
+      "reason": "fixed warm-up DAG source parsed before the sandbox guard is installed (internal mechanism, not configuration)"
+    },
+    "autoair/kb/scheduler.py::<module>::constant::_RUNNING": {
+      "decision": "keep",
+      "reason": "registry of running scheduler stop events (process-local bookkeeping, not configuration)"
     }
   }
 }

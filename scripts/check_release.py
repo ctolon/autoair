@@ -40,6 +40,7 @@ def main() -> None:
                 "autoair/static/standalone/index.html",
                 "autoair/static/plugin/THIRD_PARTY_LICENSES.md",
                 "autoair/static/standalone/THIRD_PARTY_LICENSES.md",
+                "autoair/docs/pages.json",  # AutoAir's own docs (hatch_build.py)
             ]:
                 assert name in names, f"missing wheel asset: {name}"
             assert any("/licenses/LICENSE" in name for name in names)

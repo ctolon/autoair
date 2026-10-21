@@ -45,6 +45,9 @@ def render_message(message: ChatMessage, limit: int = MAX_MESSAGE_CHARS) -> str:
             notes.append("tools used: " + ", ".join(sorted({t.name for t in message.tools})))
         for p in message.proposals:
             notes.append(f"proposal {p.id} ({p.kind}, {p.status}): {p.title}")
+        for a in message.approvals:
+            tools = ", ".join(sorted({c.tool for c in a.calls}))
+            notes.append(f"tool approval ({a.status}): {tools}")
         if message.error:
             notes.append(f"error: {message.error}")
     if notes:
@@ -89,7 +92,8 @@ def history_messages(thread: ChatThread, *, upto: int | None = None) -> list[Mod
         answer = msgs[i + 1] if i + 1 < len(msgs) else None
         stored = (
             stored_history(answer)
-            if m.role == "user" and expect == "user" and answer is not None
+            # A paused turn's messages end with unanswered tool calls: send it as text.
+            if m.role == "user" and expect == "user" and answer is not None and not answer.paused()
             else []
         )
         if stored:

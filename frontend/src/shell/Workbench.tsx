@@ -18,6 +18,7 @@ import {
 } from "react-icons/lu";
 
 import { getFlow } from "../canvas/flowInstance";
+import { AUTO_FIT_MIN_ZOOM } from "../canvas/largeGraph";
 import { useLifecycle } from "../lifecycle/store";
 import { useBuilder } from "../store/builder";
 import {
@@ -37,7 +38,10 @@ const STEP = 16;
 
 /** Refit the canvas after the space around it changed (panels shown, hidden or resized). */
 function refit() {
-  window.setTimeout(() => getFlow()?.fitView({ padding: 0.3, maxZoom: 1, duration: 200 }), 60);
+  window.setTimeout(
+    () => getFlow()?.fitView({ padding: 0.3, maxZoom: 1, minZoom: AUTO_FIT_MIN_ZOOM, duration: 200 }),
+    60,
+  );
 }
 
 /**

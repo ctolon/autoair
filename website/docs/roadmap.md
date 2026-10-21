@@ -75,27 +75,31 @@ AutoAir is a visual and code-based DAG builder for Apache Airflow 3. It aims to 
 - Container image, Helm values for the official Airflow chart, and a Docker Compose demo.
 - Supported versions: Apache Airflow 3.0 to 3.3 (3.4 pre-release tested), Python 3.10 to 3.14.
 
+## In development for 0.2.0
+
+These are implemented on the main branch and ship with the next release.
+
+- **Editing existing Python DAGs.** Source policies (`generate`, `preserve`, `strict-preserve`) patch a hand-written file with LibCST instead of regenerating it, and deploys detect files changed outside AutoAir. See [Editing existing Python DAGs](/docs/user-guide/editing-python-dags).
+- **Astronomer Blueprint steps.** See [Blueprint steps](/docs/user-guide/blueprints).
+- **Large graphs.** Faster validation and a low-detail overview for DAGs with 500 to 1,000 tasks. See [Large DAGs](/docs/user-guide/large-dags).
+- **Approving agent tool calls.** See [Tool approval](/docs/ai/tool-approval).
+- **Isolated import checks.** A separate validator service with no network access. See [Validator service](/docs/deployment/validator-service).
+- **Airflow 3.4.** DAG-page tab scoping, reparse and retry changes; tested against the 3.4 pre-release until 3.4.0 is final.
+- **Plugin-mode visual baselines.** Visual regression screenshots taken inside the Airflow UI.
+
 ## Planned or under consideration
 
 ### Builder and editor
 
-- **Large graphs.** Benchmarks with 500-node DAGs and rendering only the visible part of the canvas.
 - **Runtime frontend extensions.** Load custom node kinds into the UI at runtime instead of registering them at build time.
-- **Blueprint nodes.** Support for astronomer/blueprint building blocks as collapsible groups.
-
-### AI
-
-- **Approving agent tool calls.** Human-in-the-loop approval of individual tool calls (pydantic-ai deferred tools).
 
 ### Security and operations
 
-- **Isolated import checks.** Run the DagBag import check for untrusted DAG code in a dedicated Kubernetes Deployment or Job, with no network and resource limits.
 - **Managed Airflow guides.** Deployment guides for managed Airflow offerings.
 
 ### Testing
 
 - **PostgreSQL in the CI matrix.** Run the Python and Airflow version matrix against the PostgreSQL state store. One PostgreSQL job covers it today.
-- **Plugin-mode visual baselines.** The visual regression suite runs against the standalone build only; add screenshots taken inside the Airflow UI.
 - **Live provider checks.** GitHub, Bitbucket Cloud, Azure DevOps and Gitea are covered by contract tests against fake servers, and the AI features by a scripted model client. GitLab, FAB and Keycloak are already checked against real servers; add real GitHub, Bitbucket Cloud, Azure DevOps, Gitea and LLM provider runs.
 
 ## Proposing a feature

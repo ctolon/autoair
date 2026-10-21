@@ -38,6 +38,7 @@ import {
   TextField,
   focusField,
 } from "../widgets/fields";
+import { SourcePolicyField } from "../widgets/SourcePolicyField";
 import { VersionBadge } from "../widgets/VersionBadge";
 import { DeadlinesEditor } from "./dag/DeadlinesEditor";
 import { EnvironmentSelector, EnvironmentsEditor } from "./dag/EnvironmentsEditor";
@@ -164,6 +165,7 @@ function GeneralTab() {
           </Hint>
         ) : null}
       </Stack>
+      <SourcePolicyField />
       {/* Two columns when there is room; stacked in a narrow inspector (long labels wrap). */}
       <HStack align="start" wrap="wrap" css={{ "& > *": { flex: "1 1 210px", minWidth: 0 } }}>
         <TextField

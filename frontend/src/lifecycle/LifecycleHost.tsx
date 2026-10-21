@@ -51,11 +51,13 @@ import { aiUsable, getAiStatus } from "./lib/ai";
 import { getMeta, runtime } from "./runtime";
 import { type LifecycleDialog, useLifecycle } from "./store";
 import { useRunOverlaySync } from "./useRunOverlaySync";
+import { AUTO_FIT_MIN_ZOOM } from "../canvas/largeGraph";
 import { ErrorBoundary } from "../ui/ErrorBoundary";
 
 const OpenDialog = lazy(() => import("./dialogs/OpenDialog"));
 const DeployDialog = lazy(() => import("./dialogs/DeployDialog"));
 const ConflictDialog = lazy(() => import("./dialogs/ConflictDialog"));
+const SourcePlanDialog = lazy(() => import("./dialogs/SourcePlanDialog"));
 const TriggerDialog = lazy(() => import("./dialogs/TriggerDialog"));
 const BackfillDialog = lazy(() => import("./dialogs/BackfillDialog"));
 const ClearRunDialog = lazy(() => import("./dialogs/ClearRunDialog"));
@@ -98,6 +100,8 @@ function renderDialog(d: LifecycleDialog) {
       return <DeployDialog focus={d.focus} />;
     case "conflict":
       return <ConflictDialog conflict={d.conflict} request={d.request} spec={d.spec} />;
+    case "source":
+      return <SourcePlanDialog plan={d.plan} request={d.request} spec={d.spec} />;
     case "trigger":
       return <TriggerDialog />;
     case "backfill":
@@ -528,7 +532,7 @@ export function LifecycleHost() {
   const { fitView } = useReactFlow();
   useEffect(() => {
     runtime.queryClient = queryClient;
-    runtime.fitView = () => void fitView({ padding: 0.2, duration: 200 });
+    runtime.fitView = () => void fitView({ padding: 0.2, duration: 200, minZoom: AUTO_FIT_MIN_ZOOM });
   }, [queryClient, fitView]);
   useLifecycleCommands();
   useDeepLink();

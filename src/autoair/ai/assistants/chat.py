@@ -5,6 +5,12 @@ it got long, build the assistant's tool set (allow-listed), run the bounded tool
 with the thread history, then store the answer with its tool calls, numbered citations,
 suggested follow-ups, proposals (reviewable diffs / config snippets), usage and guardrail
 notes. Streaming and auditing are the router's job (``/api/ai/assistant/chat/stream``).
+
+When the agent calls a tool that needs approval (``ai.approvals``), the turn pauses: the
+answer so far is stored with a pending :class:`~autoair.ai.approvals.ToolApprovalView` and
+the run in an approval document. :func:`resume_turn` continues it with the user's decisions
+and completes the same message. A new message or a regenerate in the thread cancels a
+pending approval.
 """
 
 from __future__ import annotations
@@ -17,11 +23,20 @@ from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 from pydantic_ai.capabilities import ProcessHistory
+from pydantic_ai.messages import ModelMessagesTypeAdapter
 
 from autoair.ai import prompts
-from autoair.ai.agent import AgentResult, AgentTask, arun_agent
+from autoair.ai.agent import AgentResult, AgentTask, ResumeState, arun_agent
+from autoair.ai.approvals import (
+    ApprovalBusy,
+    ToolApproval,
+    ToolDecision,
+    approval_store_for,
+    gated_tools,
+    new_approval,
+)
 from autoair.ai.assistants.compaction import (
     compact,
     dump_history,
@@ -41,6 +56,7 @@ from autoair.ai.assistants.mcp_client import (
 from autoair.ai.assistants.threads import (
     ChatMessage,
     ChatThread,
+    Citation,
     Mode,
     ThreadNotFound,
     ThreadSummary,
@@ -277,9 +293,104 @@ def _assistant_message(
         follow_ups=follow_ups[:max_follow_ups],
         proposals=list(state.proposals),
         guardrails=list(result.guardrails),
-        stopped=None if result.stopped == "answer" else result.stopped,
+        # a pause for approval is shown by its card, not as a stop
+        stopped=None if result.stopped in ("answer", "approval") else result.stopped,
         history=dump_history(result.messages) or None,
     )
+
+
+def _cancel_open_approvals(ctx: ChatContext, thread: ChatThread) -> None:
+    """The conversation moves on: pending tool approvals of the thread are cancelled.
+    Raises :class:`ApprovalBusy` while one of them is being resumed."""
+    store = approval_store_for(ctx.services)
+    for message in thread.messages:
+        for view in message.approvals:
+            if view.status not in ("pending", "resuming"):
+                continue
+            stored = store.cancel(ctx.user, view.id)
+            view.status = stored.status if stored is not None else "cancelled"
+
+
+def _agent_task(
+    ctx: ChatContext,
+    body: ChatTurnRequest,
+    tools: list[AgentTool],
+    emit: Emit,
+    *,
+    prompt: str,
+    history: list[Any],
+    max_steps: int,
+) -> AgentTask:
+    services = ctx.services
+    ai = ai_settings_of(services.settings)
+    tools, gated, notes = gated_tools(tools, ai.approvals, body.mode)
+    for note in notes:
+        emit(StatusEvent(stage="approval", message=note))
+    with prompts.prompt_context(user=ctx.user, team=ctx.team, assistant=body.mode):
+        system = prompts.get(PROMPTS[body.mode])
+    return AgentTask(
+        llm=ctx.llm,
+        task=prompt,
+        tools=tools,
+        context=_context(ctx, body.mode, body.spec) if prompt else "",
+        system=system,
+        budget=Budget(
+            max_steps=max_steps,
+            max_tokens=ai.agent.token_budget,
+            max_cost_usd=ai.agent.cost_budget_usd,
+            timeout_seconds=ai.agent.timeout_seconds,
+        ),
+        max_tokens=ai.agent.max_tokens_per_call,
+        tool_timeout=ai.agent.tool_timeout_seconds,
+        max_tool_chars=ai.agent.max_tool_output_chars,
+        catalog=services.catalog,
+        registry=services.registry,
+        policy=policy_from_settings(services.settings),
+        node_ids={n.id for n in body.spec.nodes} if body.spec else set(),
+        guardrails=pipeline_for(services),
+        emit=emit,
+        history=history,
+        capabilities=[ProcessHistory(trim_history)],
+        final_model=ChatFinal,
+        final_turn_grace_seconds=ai.agent.final_turn_grace_seconds,
+        approval_required=gated,
+        approval_argument_chars=ai.approvals.max_argument_chars,
+    )
+
+
+def _pause(
+    ctx: ChatContext,
+    body: ChatTurnRequest,
+    thread: ChatThread,
+    message: ChatMessage,
+    result: AgentResult,
+    state: TurnState,
+    *,
+    history: list[dict[str, Any]],
+    requests: int,
+    steps: int,
+) -> ToolApproval:
+    """Store the paused run of ``message`` as a pending approval (and show it on it)."""
+    ai = ai_settings_of(ctx.services.settings)
+    approval = new_approval(
+        user=ctx.user,
+        agent=body.mode,
+        calls=result.pending,
+        settings=ai.approvals,
+        ref={"thread_id": thread.id, "message_id": message.id},
+        context={
+            "request": body.model_dump(mode="json", exclude={"message", "regenerate"}),
+            "citations": [c.model_dump(mode="json") for c in state.sources.citations],
+            "used_tools": list(state.sources.used_tools),
+        },
+        messages=history,
+        requests=requests,
+        steps=steps,
+        model=result.model,
+    )
+    approval_store_for(ctx.services).create(approval)
+    message.approvals.append(approval.view())
+    return approval
 
 
 async def run_turn(
@@ -291,10 +402,13 @@ async def run_turn(
     profile = getattr(cfg, body.mode)
     store = thread_store_for(services)
     thread = await asyncio.to_thread(_load_thread, ctx, body)
+    await asyncio.to_thread(_cancel_open_approvals, ctx, thread)
     user_message, index = _user_message(thread, body)
     await asyncio.to_thread(store.save, thread)
     emit(StatusEvent(stage="thread", message=thread.id))
     state = state or TurnState()
+    # The servers this turn attaches; a resumed run attaches the same ones.
+    body = body.model_copy(update={"mcp": mcp_selections(services, body)})
     with track_usage() as meter:
         try:
             if await compact(
@@ -310,33 +424,14 @@ async def run_turn(
             # External MCP connections live for the turn (closed after the answer).
             async with mcp_tools(ctx, body, emit) as external:
                 tools = assistant_tools(ctx, body.mode, state, body.spec, body.research, external)
-                with prompts.prompt_context(user=ctx.user, team=ctx.team, assistant=body.mode):
-                    system = prompts.get(PROMPTS[body.mode])
-                task = AgentTask(
-                    llm=ctx.llm,
-                    task=user_message.content,
-                    tools=tools,
-                    context=_context(ctx, body.mode, body.spec),
-                    system=system,
-                    budget=Budget(
-                        max_steps=profile.max_steps,
-                        max_tokens=ai.agent.token_budget,
-                        max_cost_usd=ai.agent.cost_budget_usd,
-                        timeout_seconds=ai.agent.timeout_seconds,
-                    ),
-                    max_tokens=ai.agent.max_tokens_per_call,
-                    tool_timeout=ai.agent.tool_timeout_seconds,
-                    max_tool_chars=ai.agent.max_tool_output_chars,
-                    catalog=services.catalog,
-                    registry=services.registry,
-                    policy=policy_from_settings(services.settings),
-                    node_ids={n.id for n in body.spec.nodes} if body.spec else set(),
-                    guardrails=pipeline_for(services),
-                    emit=emit,
+                task = _agent_task(
+                    ctx,
+                    body,
+                    tools,
+                    emit,
+                    prompt=user_message.content,
                     history=history_messages(thread, upto=index),
-                    capabilities=[ProcessHistory(trim_history)],
-                    final_model=ChatFinal,
-                    final_turn_grace_seconds=ai.agent.final_turn_grace_seconds,
+                    max_steps=profile.max_steps,
                 )
                 result = await arun_agent(task)
         except BaseException as exc:
@@ -354,19 +449,152 @@ async def run_turn(
             raise
         usage = meter.total
     message = _assistant_message(result, state, usage, cfg.max_follow_ups)
+    if result.stopped == "approval":
+        await asyncio.to_thread(
+            _pause,
+            ctx,
+            body,
+            thread,
+            message,
+            result,
+            state,
+            history=message.history or [],
+            requests=result.requests,
+            steps=len(result.steps),
+        )
     thread.messages.append(message)
     thread.usage = thread.usage + usage
     await asyncio.to_thread(store.save, thread)
     return ChatTurnResult(thread=thread.as_summary(), user_message=user_message, message=message)
 
 
+def _find(thread: ChatThread, message_id: str) -> tuple[int, ChatMessage]:
+    for i, message in enumerate(thread.messages):
+        if message.id == message_id:
+            return i, message
+    raise ThreadNotFound(message_id)
+
+
+def _set_view(message: ChatMessage, approval: ToolApproval) -> None:
+    view = approval.view()
+    for i, existing in enumerate(message.approvals):
+        if existing.id == view.id:
+            message.approvals[i] = view
+            return
+    message.approvals.append(view)
+
+
+def mark_approval(ctx: ChatContext, approval: ToolApproval) -> None:
+    """Show ``approval``'s current state on its chat message (best effort: the thread may
+    be gone)."""
+    store = thread_store_for(ctx.services)
+    try:
+        thread = store.get(ctx.user, approval.ref.get("thread_id", ""))
+        _, message = _find(thread, approval.ref.get("message_id", ""))
+    except ThreadNotFound:
+        return
+    _set_view(message, approval)
+    store.save(thread)
+
+
+async def resume_turn(
+    ctx: ChatContext,
+    approval: ToolApproval,
+    emit: Emit,
+    *,
+    state: TurnState | None = None,
+) -> ChatTurnResult:
+    """Continue the paused turn of a claimed ``approval`` with its decisions and complete
+    its chat message (which may pause again for further calls)."""
+    services = ctx.services
+    ai = ai_settings_of(services.settings)
+    cfg = ai.assistants
+    store = thread_store_for(services)
+    try:
+        body = ChatTurnRequest.model_validate(approval.context.get("request") or {})
+        stored = list(ModelMessagesTypeAdapter.validate_python(approval.messages))
+        citations = [Citation.model_validate(c) for c in approval.context.get("citations", [])]
+    except ValidationError as exc:
+        raise ValueError("the paused run cannot be restored") from exc
+    if body.mode != approval.agent:
+        raise ValueError("the paused run belongs to another assistant")
+    profile = getattr(cfg, body.mode)
+    thread = await asyncio.to_thread(store.get, ctx.user, approval.ref.get("thread_id", ""))
+    index, message = _find(thread, approval.ref.get("message_id", ""))
+    if index == 0 or thread.messages[index - 1].role != "user":
+        raise ValueError("the paused turn has no user message")
+    user_message = thread.messages[index - 1]
+    # Saved with the completed answer; a failed resume is marked by the caller instead.
+    _set_view(message, approval.model_copy(update={"status": "resolved"}))
+    emit(StatusEvent(stage="thread", message=thread.id))
+    state = state or TurnState()
+    state.sources.restore(citations, approval.context.get("used_tools", []))
+    with track_usage() as meter:
+        async with mcp_tools(ctx, body, emit) as external:
+            tools = assistant_tools(ctx, body.mode, state, body.spec, body.research, external)
+            task = _agent_task(
+                ctx,
+                body,
+                tools,
+                emit,
+                prompt="",
+                history=[*history_messages(thread, upto=index - 1), *stored],
+                max_steps=max(1, profile.max_steps - approval.requests),
+            )
+            task.resume = ResumeState(
+                calls=list(approval.calls),
+                decisions=list(approval.decisions),
+                decided_by=approval.decided_by or ctx.user,
+            )
+            task.step_offset = approval.steps
+            result = await arun_agent(task)
+        usage = meter.total
+    part = _assistant_message(result, state, usage, cfg.max_follow_ups)
+    history = [*approval.messages, *(part.history or [])]
+    message.content = "\n\n".join(t for t in (message.content, part.content) if t).strip()
+    message.model = part.model or message.model
+    message.usage = (message.usage + usage) if message.usage is not None else usage
+    message.tools = [*message.tools, *part.tools]
+    message.citations = state.sources.cited(message.content)
+    message.follow_ups = part.follow_ups
+    message.proposals = [*message.proposals, *part.proposals]
+    message.guardrails = sorted({*message.guardrails, *part.guardrails})
+    message.stopped = part.stopped
+    message.history = history or None
+    if result.stopped == "approval":
+        await asyncio.to_thread(
+            _pause,
+            ctx,
+            body,
+            thread,
+            message,
+            result,
+            state,
+            history=history,
+            requests=approval.requests + result.requests,
+            steps=approval.steps + len(result.steps),
+        )
+    thread.usage = thread.usage + usage
+    await asyncio.to_thread(store.save, thread)
+    return ChatTurnResult(thread=thread.as_summary(), user_message=user_message, message=message)
+
+
+def decisions_text(decisions: list[ToolDecision]) -> list[str]:
+    """The user-written parts of decisions (they reach the model with a denial)."""
+    return [d.reason for d in decisions if d.reason]
+
+
 __all__ = [
+    "ApprovalBusy",
     "ChatContext",
     "ChatFinal",
     "ChatTurnRequest",
     "ChatTurnResult",
     "assistant_tools",
+    "decisions_text",
+    "mark_approval",
     "mcp_selections",
+    "resume_turn",
     "run_turn",
     "split_follow_ups",
 ]

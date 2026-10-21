@@ -193,7 +193,8 @@
       "llm_branch": "LLM chooses the branch (common.ai)",
       "llm_sql": "LLM writes SQL (common.ai)"
     },
-    "operatorTemplateHint": "Reusable configured task"
+    "operatorTemplateHint": "Reusable configured task",
+    "blueprintHint": "Astronomer Blueprint template"
   },
   "insertPopover": {
     "label": "Insert node",
@@ -238,7 +239,8 @@
     "callableWithAlternative": "Takes {{params}} as a Python reference (import path) — or use a {{decorator}} node to write the function here.",
     "needsPythonCode": "Needs Python code permission on the server (allow_python_code) for {{params}}",
     "operatorTemplates": "Operator templates",
-    "newOperatorTemplate": "New operator template"
+    "newOperatorTemplate": "New operator template",
+    "blueprints": "Blueprints (Astronomer)"
   },
   "shortcuts": {
     "title": "Keyboard shortcuts",
@@ -302,7 +304,8 @@
     "custom": "{{name}}, {{handler}}",
     "group": "{{name}}, task group",
     "groupCollapsed": "{{name}}, collapsed task group",
-    "note": "Note: {{text}}"
+    "note": "Note: {{text}}",
+    "blueprint": "{{name}}, blueprint {{blueprint}}"
   },
   "a11y": {
     "nodeDefault": "Press Enter or Space to select a node. Arrow keys move it, Delete removes it, Escape cancels.",
@@ -325,5 +328,18 @@
     "ai": "Generate with AI…",
     "code": "Write it as code",
     "raw": "Write a raw code DAG"
+  },
+  "blueprint": {
+    "expand": "Show the tasks of {{name}}",
+    "collapse": "Hide the tasks of {{name}}",
+    "subtitle": "{{name}} v{{version}}",
+    "badge": "Blueprint",
+    "tasks_one": "{{count}} task",
+    "tasks_other": "{{count}} tasks",
+    "previewError": "Preview failed: {{error}}",
+    "previewLabel": "Rendered tasks",
+    "more_one": "+{{count}} more task",
+    "more_other": "+{{count}} more tasks",
+    "noPreview": "Select the step to preview its tasks."
   }
 }

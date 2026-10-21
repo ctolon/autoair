@@ -1,0 +1,24 @@
+# Lets Prometheus (namespace "monitoring"; change the selector to yours) reach the metrics
+# ports. NetworkPolicies add up: this opens nothing else, and without other policies on
+# these pods it restricts nothing.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: autoair-metrics
+spec:
+  podSelector:
+    matchExpressions:
+      - key: app.kubernetes.io/name
+        operator: In
+        values: [autoair, autoair-validator]
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+      ports:
+        - port: 8765
+          protocol: TCP
+        - port: 8791
+          protocol: TCP

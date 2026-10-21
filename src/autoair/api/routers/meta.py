@@ -136,6 +136,12 @@ class MetaInfo(BaseModel):
         description="Airflow as browsers and API clients reach it (sso.airflow_public_url, "
         "else airflow_url): base of the trigger-endpoint snippets.",
     )
+    allow_force_overwrite: bool = Field(
+        default=False,
+        description="preserve.allow_force_overwrite: the overwrite (force) choice for a DAG "
+        "file changed outside AutoAir or the hand-written file AutoAir keeps is offered "
+        "(still with 'deploy:overwrite_ejected'). false: hide it.",
+    )
     secrets_backend: bool = Field(
         default=False,
         description="airflow_secrets_backend: connections/variables may come from a secrets "
@@ -192,6 +198,7 @@ async def get_meta(services: ServicesDep, principal: PrincipalDep) -> MetaInfo:
         public_url=s.server.public_url,
         airflow_public_url=str(s.sso.airflow_public_url or s.airflow_url).rstrip("/") or None,
         secrets_backend=s.airflow_secrets_backend,
+        allow_force_overwrite=s.preserve.allow_force_overwrite,
         policy=PolicyInfo(
             allow_python_code=policy.allow_python_code,
             allow_privileged_operators=s.allow_privileged_operators,

@@ -193,7 +193,8 @@
       "llm_branch": "Dalı LLM seçer (common.ai)",
       "llm_sql": "SQL'i LLM yazar (common.ai)"
     },
-    "operatorTemplateHint": "Yeniden kullanılabilir yapılandırılmış görev"
+    "operatorTemplateHint": "Yeniden kullanılabilir yapılandırılmış görev",
+    "blueprintHint": "Astronomer Blueprint şablonu"
   },
   "insertPopover": {
     "label": "Düğüm ekle",
@@ -238,7 +239,8 @@
     "callableWithAlternative": "{{params}} parametresini Python referansı (import yolu) olarak alır — ya da fonksiyonu burada yazmak için {{decorator}} düğümünü kullanın.",
     "needsPythonCode": "{{params}} için sunucuda Python kodu izni gerekiyor (allow_python_code)",
     "operatorTemplates": "Operatör şablonları",
-    "newOperatorTemplate": "Yeni operatör şablonu"
+    "newOperatorTemplate": "Yeni operatör şablonu",
+    "blueprints": "Blueprint'ler (Astronomer)"
   },
   "shortcuts": {
     "title": "Klavye kısayolları",
@@ -302,7 +304,8 @@
     "custom": "{{name}}, {{handler}}",
     "group": "{{name}}, görev grubu",
     "groupCollapsed": "{{name}}, daraltılmış görev grubu",
-    "note": "Not: {{text}}"
+    "note": "Not: {{text}}",
+    "blueprint": "{{name}}, blueprint {{blueprint}}"
   },
   "a11y": {
     "nodeDefault": "Düğüm seçmek için Enter veya Boşluk'a basın. Ok tuşları taşır, Delete siler, Escape iptal eder.",
@@ -325,5 +328,18 @@
     "ai": "Yapay zekâ ile oluştur…",
     "code": "Kod olarak yaz",
     "raw": "Ham kod DAG'ı yaz"
+  },
+  "blueprint": {
+    "expand": "{{name}} görevlerini göster",
+    "collapse": "{{name}} görevlerini gizle",
+    "subtitle": "{{name}} v{{version}}",
+    "badge": "Blueprint",
+    "tasks_one": "{{count}} görev",
+    "tasks_other": "{{count}} görev",
+    "previewError": "Önizleme başarısız: {{error}}",
+    "previewLabel": "Oluşturulan görevler",
+    "more_one": "+{{count}} görev daha",
+    "more_other": "+{{count}} görev daha",
+    "noPreview": "Görevlerini önizlemek için adımı seçin."
   }
 }

@@ -18,11 +18,13 @@ from autoair.spec import (
     AssetExpr,
     AssetLeaf,
     AssetRef,
+    BlueprintNode,
     CallbackRef,
     Callbacks,
     DagSpec,
     FileAsset,
     InlineFunction,
+    Node,
     NoteNode,
     OutputModel,
     PythonRef,
@@ -123,6 +125,14 @@ class CodegenContext:
     _output_models: dict[str, str] = field(default_factory=dict)  # model json -> class name
     _module_imports: set[str] = field(default_factory=set)
     _materialize: str | None = None
+    # spec.node_map() once per render: looking nodes up per reference was O(n^2) on large DAGs.
+    _node_map: dict[str, Node] | None = None
+
+    @property
+    def nodes(self) -> dict[str, Node]:
+        if self._node_map is None:
+            self._node_map = self.spec.node_map()
+        return self._node_map
 
     # ----------------------------------------------------------------- names
     def _reserve(self, base: str) -> str:
@@ -150,10 +160,12 @@ class CodegenContext:
 
     def node_var(self, node_id: str) -> str:
         if node_id not in self._node_vars:
-            node = self.spec.node_map()[node_id]
-            prefix = "g" if isinstance(node, TaskGroupNode) else "t"
+            node = self.nodes[node_id]
+            prefix = "g" if isinstance(node, (TaskGroupNode, BlueprintNode)) else "t"
             if isinstance(node, TaskGroupNode):
                 key = node.group_id
+            elif isinstance(node, BlueprintNode):
+                key = node.step_id
             elif isinstance(node, NoteNode):
                 raise CodegenError("notes are not part of the generated DAG", node_id)
             else:
@@ -184,8 +196,8 @@ class CodegenContext:
 
     # ----------------------------------------------------------------- values
     def xcom_expr(self, node_id: str, key: str | None) -> ast.expr:
-        node = self.spec.node_map().get(node_id)
-        if node is None or isinstance(node, TaskGroupNode):
+        node = self.nodes.get(node_id)
+        if node is None or isinstance(node, (TaskGroupNode, BlueprintNode)):
             raise CodegenError(f"XCom reference to unknown task node {node_id!r}")
         base: ast.expr = ast.Name(id=self.node_var(node_id), ctx=ast.Load())
         if not isinstance(node, PythonTaskNode):

@@ -78,6 +78,7 @@ The full Kubernetes version, with replica counts and probes, is on [Kubernetes r
 | Page | Covers |
 |---|---|
 | [Kubernetes reference architecture](/docs/deployment/kubernetes) | Components, replicas, probes, sticky sessions, network flows |
+| [Kubernetes with Kustomize](/docs/deployment/kustomize) | `deploy/kustomize`: base, components (PostgreSQL, git, validator, AI service, Ingress, HPA, NetworkPolicies) and overlays for `autoair serve` |
 | [Plugin with the Airflow Helm chart](/docs/deployment/helm-plugin) | Building the image from `deploy/docker/Dockerfile`, `deploy/helm/values-autoair.yaml` |
 | [Git bundles and git-sync](/docs/deployment/git-bundles) | The `storage.git` settings, providers, PR vs push, `bundle_version` |
 | [Object storage](/docs/deployment/object-storage) | S3/GCS bundles and the `object` target |

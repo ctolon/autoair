@@ -67,7 +67,7 @@ AutoAir ships one frontend that runs in two hosts. The builder itself (canvas, i
 | Aspect | Airflow plugin | Standalone (`autoair serve`) and local mode (`autoair local`) |
 |---|---|---|
 | Where it opens | Airflow 3.1 and later: a navigation entry named **DAG Builder** (`plugin.nav_name`, in the menu set by `plugin.nav_category`, default `browse`) rendered inside Airflow's own UI. Airflow 3.0: a full page at `/autoair/ui/`. | Its own page at `/ui/` on the AutoAir server (the root URL redirects there). |
-| DAG tab | An **AutoAir** tab on every DAG page (`plugin.dag_tab`, `plugin.dag_tab_name`). It opens that DAG in the builder; for a DAG that exists only as Python in Airflow it offers to import it. | Not applicable. |
+| DAG tab | An **AutoAir** tab on every DAG page (`plugin.dag_tab`, `plugin.dag_tab_name`; on Airflow 3.4 and newer `plugin.dag_tab_tags` limits it to tagged DAGs). It opens that DAG in the builder; for a DAG that exists only as Python in Airflow it offers to import it. | Not applicable. |
 | Light and dark mode | Follows the Airflow UI theme. There is no light/dark toggle in the builder and the **Toggle light / dark mode** command is not offered. | The user chooses light or dark from the **More** (`⋯`) menu or the command palette; the choice is stored in the browser. The initial mode follows the operating system preference. |
 | Page title | Airflow's. | `ui.title` (default `AutoAir`). |
 | Sign-in | The Airflow UI session. AutoAir watches the session, warns before it expires and shows **Sign in to Airflow** when it ends. | A sign-in screen: Airflow username and password, an Airflow access token, or **Sign in with Airflow** when available. `autoair local` can require a token (`autoair local --token`). |

@@ -354,6 +354,26 @@ Then open **Admin -> Knowledge base** on a replica. Variables: `DEMO_KB_STORE`,
 `DEMO_KB_ONLINE`, `DEMO_KB_PGVECTOR_CONN_ID`, `DEMO_KB_PG_PASSWORD` (`kb-demo-only`),
 `DEMO_KB_ELASTICSEARCH_URL`, `DEMO_KB_ES_PORT` (9200). Elasticsearch needs about 1 GiB of memory.
 
+### 9. Isolated import checks (validator service)
+
+`docker-compose.validator.yml` adds `autoair-validator` (`autoair validator-serve`) and points
+the plugin and both replicas at it, so the DagBag import check no longer executes DAG code
+inside the Airflow api-server or the replicas (Python DAG import and test runs still do):
+
+```bash
+docker compose -f docker-compose.demo.yml -f docker-compose.validator.yml up -d --wait
+docker compose -f docker-compose.demo.yml -f docker-compose.validator.yml \
+  exec autoair-a python -c "import urllib.request; print(urllib.request.urlopen('http://autoair-validator:8791/ready').read().decode())"
+```
+
+The validator runs read-only, without capabilities, as uid 50000, with memory, CPU and process
+limits, on an internal network without a route to the internet (it can still reach the
+plugin and the replicas on that network; the Helm chart's NetworkPolicy denies all egress). Stop it
+(`docker compose ... stop autoair-validator`) and a deploy goes ahead with the warning "the import
+check service is unavailable ... the DAG was not imported (fail open)";
+`DEMO_VALIDATOR_FAIL_MODE=closed` blocks deploys instead, `local` checks in the main server. Variables: `DEMO_VALIDATOR_KEY` (the shared HMAC key, public default),
+`DEMO_VALIDATOR_FAIL_MODE` (`open`), `DEMO_VALIDATOR_POOL_SIZE` (2).
+
 ## Troubleshooting
 
 | Symptom | Cause and fix |

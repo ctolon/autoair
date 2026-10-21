@@ -31,6 +31,16 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
             item.add_marker(skip)
 
 
+@pytest.fixture(autouse=True)
+def _stop_kb_schedulers():
+    """End the knowledge-base schedulers a test's apps started, so none keeps running (and
+    logging into captured CLI output) during later tests."""
+    yield
+    from autoair.kb.scheduler import stop_all
+
+    stop_all()
+
+
 @pytest.fixture
 def golden_spec_data() -> dict[str, object]:
     return json.loads((ROOT / "golden" / "specs" / "etl_full.autoair.json").read_text())

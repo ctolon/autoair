@@ -16,6 +16,7 @@ import { toaster } from "../ui/toaster";
 import { CodeEditor } from "../widgets/code";
 import { PreviewBadge, PreviewEnvSelect, PreviewHint, useEnvPreviewCode, usePreviewEnv } from "./EnvPreview";
 import { EjectDialog } from "./RawCodeView";
+import { usePreservedFile } from "./preserved";
 import { editorAvailability, isStale, useCodeMode } from "./store";
 import { applyDraft, checkDraft, diffCounts, toDiagnostics } from "./sync";
 
@@ -44,7 +45,16 @@ function ProblemList({ problems }: { problems: CodeProblem[] }) {
 }
 
 /** Status + actions of a code draft (shared by the code mode and the inline Code tab). */
-export function DraftActions({ generated, compact = false }: { generated: string | null; compact?: boolean }) {
+export function DraftActions({
+  generated,
+  compact = false,
+  handWritten = false,
+}: {
+  generated: string | null;
+  compact?: boolean;
+  /** The code shown is the DAG's hand-written file (source policy preserve). */
+  handWritten?: boolean;
+}) {
   const { t } = useTranslation("lifecycle");
   const draft = useCodeMode((s) => s.draft);
   const base = useCodeMode((s) => s.base);
@@ -56,7 +66,7 @@ export function DraftActions({ generated, compact = false }: { generated: string
   return (
     <HStack gap={2} wrap="wrap" justify="flex-end">
       {draft === null ? (
-        <Badge variant="outline">{t("codeMode.generated")}</Badge>
+        <Badge variant="outline">{handWritten ? t("codeMode.handWritten") : t("codeMode.generated")}</Badge>
       ) : check.status === "checking" ? (
         <Badge variant="subtle">
           <Spinner size="xs" /> {t("codeMode.checking")}
@@ -126,7 +136,7 @@ export function CodeModeView({ live }: { live: LiveState }) {
   const { t } = useTranslation("lifecycle");
   const access = useAccess();
   const availability = editorAvailability(access);
-  const { canEditCode } = availability;
+  const { canEditCode: canEdit } = availability;
   const dagId = useBuilder((s) => s.dag.dag_id);
   const draft = useCodeMode((s) => s.draft);
   const base = useCodeMode((s) => s.base);
@@ -136,7 +146,10 @@ export function CodeModeView({ live }: { live: LiveState }) {
   // The last generated code: the editor never goes blank while the DAG is momentarily invalid.
   const [lastGenerated, setLastGenerated] = useState(live.code);
   if (live.code && live.code !== lastGenerated) setLastGenerated(live.code);
-  const generated = live.code ?? lastGenerated;
+  // A DAG that keeps its hand-written file shows that file (with the canvas changes
+  // patched in), never generated code: applying edited generated code would replace it.
+  const preserved = usePreservedFile();
+  const generated = preserved.active ? preserved.code : (live.code ?? lastGenerated);
   // Read-only preview of an environment's code; editing always happens on the base.
   const previewEnv = usePreviewEnv();
   const preview = useEnvPreviewCode(previewEnv);
@@ -144,6 +157,8 @@ export function CodeModeView({ live }: { live: LiveState }) {
   const text = previewing ? (preview.code ?? "") : (draft ?? generated ?? "");
   const fresh = check.source === draft;
   const problems = fresh && !previewing ? (check.result?.problems ?? []) : [];
+  // No editing on top of a file that is not there yet (loading, or a refused patch).
+  const canEditCode = canEdit && !(preserved.active && preserved.code === null && draft === null);
   useApplyShortcut();
 
   // Unapplied code is lost on reload: ask first.
@@ -194,7 +209,7 @@ export function CodeModeView({ live }: { live: LiveState }) {
             <LuFileCode /> {t("raw.eject")}
           </Button>
         ) : null}
-        {canEditCode && !previewing ? <DraftActions generated={generated} /> : null}
+        {canEditCode && !previewing ? <DraftActions generated={generated} handWritten={preserved.active} /> : null}
       </HStack>
       {previewing ? (
         <Alert.Root status="info" size="sm" borderRadius={0} flexShrink={0}>
@@ -210,6 +225,26 @@ export function CodeModeView({ live }: { live: LiveState }) {
           <Button size="2xs" variant="outline" onClick={() => useCodeMode.getState().setPreviewEnv(null)}>
             {t("codeMode.previewBack")}
           </Button>
+        </Alert.Root>
+      ) : null}
+      {!previewing && preserved.active ? (
+        <Alert.Root
+          status={preserved.error ? "warning" : "info"}
+          size="sm"
+          borderRadius={0}
+          flexShrink={0}
+          data-testid="code-preserved"
+        >
+          <Alert.Indicator />
+          <Alert.Content>
+            <Alert.Description fontSize="xs">
+              {preserved.error
+                ? t("codeMode.preservedError", { error: preserved.error })
+                : preserved.loading
+                  ? t("codeMode.preservedLoading")
+                  : t("codeMode.preservedHelp")}
+            </Alert.Description>
+          </Alert.Content>
         </Alert.Root>
       ) : null}
       {!previewing && isStale(draft, base, generated) ? (
@@ -249,7 +284,7 @@ export function CodeModeView({ live }: { live: LiveState }) {
           </HStack>
         </Alert.Root>
       ) : null}
-      {!previewing && !generated && !draft ? (
+      {!previewing && !generated && !draft && !preserved.active ? (
         <Text fontSize="sm" color="fg.muted" px={3} py={2}>
           {live.checking ? t("codeMode.generating") : (live.error ?? t("code.fixProblems"))}
         </Text>

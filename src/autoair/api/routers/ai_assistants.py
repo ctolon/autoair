@@ -9,6 +9,11 @@
   report that it was applied (deployed through the normal deploy pipeline); execute or
   reject a proposed Airflow action (``run:manage`` + ``features.runs``, per
   ``ai.troubleshoot.airflow_actions``).
+* Tool approvals (``ai.approvals``): a run that stopped because the agent called a tool
+  needing approval is listed under ``/api/ai/approvals``; ``POST
+  /api/ai/approvals/{id}/stream`` decides its calls and resumes the run as a stream that
+  ends like the original one (``assistant_turn`` or ``troubleshoot``). Only the user who
+  started the run can see or decide it.
 * Upgrade assistant, commit/PR message generation, project rules and the external MCP
   servers users may attach.
 
@@ -26,7 +31,21 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from autoair.ai.access import has_permission, request_role, request_user
-from autoair.ai.agent import AgentTask, arun_agent
+from autoair.ai.agent import AgentTask, ResumeState, arun_agent
+from autoair.ai.approvals import (
+    ApprovalBusy,
+    ApprovalExpired,
+    ApprovalNotFound,
+    ToolApproval,
+    ToolApprovalView,
+    ToolDecision,
+    approval_store_for,
+    gated_tools,
+    new_approval,
+    refresh_views,
+    replica_id,
+)
+from autoair.ai.approvals import new_id as new_claim_id
 from autoair.ai.assistants.airflow_actions import (
     ACTION_FEATURE,
     ACTION_PERMISSION,
@@ -42,7 +61,16 @@ from autoair.ai.assistants.airflow_actions import (
     execute_action,
     record_result,
 )
-from autoair.ai.assistants.chat import ChatContext, ChatTurnRequest, ChatTurnResult, run_turn
+from autoair.ai.assistants.chat import (
+    ChatContext,
+    ChatTurnRequest,
+    ChatTurnResult,
+    decisions_text,
+    mark_approval,
+    resume_turn,
+    run_turn,
+)
+from autoair.ai.assistants.compaction import dump_history
 from autoair.ai.assistants.deploy_message import (
     DeployMessage,
     DeployMessageRequest,
@@ -61,6 +89,7 @@ from autoair.ai.assistants.project_rules import ProjectRules, RulesUpdate, rules
 from autoair.ai.assistants.sources import SourceCollector
 from autoair.ai.assistants.threads import (
     ChatThread,
+    Citation,
     Proposal,
     ProposalStatus,
     ThreadNotFound,
@@ -72,6 +101,7 @@ from autoair.ai.assistants.troubleshoot import (
     AnalysisStore,
     AnalysisSummary,
     Decision,
+    EvidencePack,
     TroubleshootAnalysis,
     TroubleshootFinal,
     TroubleshootRequest,
@@ -88,6 +118,7 @@ from autoair.ai.audit_log import now_iso as audit_now
 from autoair.ai.events import Emit, StatusEvent
 from autoair.ai.findings import AppliedPatches, apply_findings
 from autoair.ai.guardrails import Budget, filter_tools
+from autoair.ai.rules import scrub_secrets
 from autoair.ai.toolbox import gateway_factory_for
 from autoair.api.deps import ServicesDep, policy_of
 from autoair.api.features import ensure_feature, feature_enabled
@@ -104,6 +135,8 @@ from autoair.auth import forwarded_credentials
 from autoair.gateway import AirflowError
 from autoair.iam import model as P
 from autoair.persistence.documents import DocumentConflict
+from autoair.secret_mask import mask
+from autoair.spec import DagSpec
 
 log = logging.getLogger(__name__)
 router = APIRouter(prefix="/ai", tags=["ai"])
@@ -207,6 +240,15 @@ class DecisionResult(BaseModel):
     analysis: TroubleshootAnalysis
     applied: AppliedPatches | None = None
     code_after: str | None = None
+
+
+class ToolApprovalDecision(BaseModel):
+    decisions: list[ToolDecision] = Field(
+        min_length=1,
+        max_length=50,
+        description="One decision per pending tool call (approve, or deny with an optional "
+        "reason that is sent to the model).",
+    )
 
 
 class EffectiveRules(BaseModel):
@@ -328,6 +370,8 @@ def _thread_or_404(services: Any, user: str, thread_id: str) -> ChatThread:
 async def get_thread(thread_id: str, request: Request, services: ServicesDep) -> ChatThread:
     user = _user(request, services)
     thread: ChatThread = await asyncio.to_thread(_thread_or_404, services, user, thread_id)
+    views = [a for m in thread.messages for a in m.approvals]
+    await asyncio.to_thread(refresh_views, approval_store_for(services), user, views)
     return thread
 
 
@@ -370,6 +414,10 @@ async def assistant_chat_stream(
             raise HTTPException(status_code=409, detail="the thread belongs to another assistant")
         if body.regenerate and not any(m.role == "user" for m in thread.messages):
             raise HTTPException(status_code=422, detail="nothing to regenerate")
+        if any(a.status == "resuming" for m in thread.messages for a in m.approvals):
+            raise HTTPException(
+                status_code=409, detail="a tool approval of this conversation is being resumed"
+            )
     elif body.regenerate:
         raise HTTPException(status_code=422, detail="regenerate needs a thread_id")
     if not body.regenerate and not body.message.strip():
@@ -404,6 +452,7 @@ async def assistant_chat_stream(
             thread_id=result.thread.id,
             regenerate=body.regenerate,
             proposals=[p.id for p in result.message.proposals],
+            **_pending_detail(result.message.approvals),
         )
         return result
 
@@ -476,6 +525,263 @@ async def decide_proposal(
         },
     )
     return proposal
+
+
+# --------------------------------------------------------------------------- tool approvals
+
+
+def _pending_detail(approvals: list[ToolApprovalView]) -> dict[str, Any]:
+    """Audit fields of a run that stopped for approval."""
+    current = approvals[-1] if approvals else None
+    if current is None or current.status != "pending":
+        return {}
+    return {"approval_pending": current.id, "approval_tools": [c.tool for c in current.calls]}
+
+
+def _approval_or_404(services: Any, user: str, approval_id: str) -> ToolApproval:
+    try:
+        return approval_store_for(services).get(user, approval_id)
+    except ApprovalNotFound as exc:
+        raise HTTPException(status_code=404, detail="no such tool approval") from exc
+
+
+@router.get("/approvals", operation_id="listToolApprovals")
+async def list_tool_approvals(request: Request, services: ServicesDep) -> list[ToolApprovalView]:
+    """The caller's tool approvals waiting for a decision (or being resumed)."""
+    user = _user(request, services)
+    items: list[ToolApprovalView] = await asyncio.to_thread(
+        approval_store_for(services).pending, user
+    )
+    return items
+
+
+@router.get("/approvals/{approval_id}", operation_id="getToolApproval")
+async def get_tool_approval(
+    approval_id: str, request: Request, services: ServicesDep
+) -> ToolApprovalView:
+    user = _user(request, services)
+    approval = await asyncio.to_thread(_approval_or_404, services, user, approval_id)
+    return approval.view()
+
+
+def _ensure_agent(request: Request, services: Any, approval: ToolApproval) -> None:
+    """The caller may still use the agent of ``approval`` (checked again on resume)."""
+    ai = _ai(services)
+    if approval.agent == "troubleshoot":
+        _require_troubleshoot(request, services)
+        return
+    if not getattr(ai.assistants, approval.agent).enabled:
+        raise HTTPException(status_code=404, detail=f"the {approval.agent} assistant is disabled")
+    if approval.agent == "admin" and not _can_admin(request):
+        raise HTTPException(
+            status_code=403, detail="the admin assistant needs ai:admin or admin:panel"
+        )
+
+
+def _audit_tool_decisions(
+    request: Request, services: Any, approval: ToolApproval, feature: str
+) -> None:
+    calls = {c.id: c for c in approval.calls}
+    for d in approval.decisions:
+        call = calls.get(d.id)
+        _audit_decision(
+            request,
+            services,
+            f"{feature}:tool_{'approved' if d.approved else 'denied'}",
+            model=approval.model,
+            tools=[call.tool] if call else [],
+            detail={
+                "dag_id": (approval.context.get("request") or {}).get("dag_id"),
+                "approval_id": approval.id,
+                "agent": approval.agent,
+                "tool": call.tool if call else None,
+                "tool_call_id": d.id,
+                # free text typed by the user: never a registered secret in the audit trail
+                "reason": mask(scrub_secrets(d.reason)) if d.reason else d.reason,
+                **approval.ref,
+            },
+        )
+
+
+def _mark_failed(
+    services: Any, ctx: ChatContext | None, user: str, approval_id: str, error: str
+) -> None:
+    """Record that a resumed run failed (on the approval and on its message / analysis)."""
+    store = approval_store_for(services)
+    try:
+        approval = store.finish(user, approval_id, "failed", error=error)
+    except (ApprovalNotFound, DocumentConflict):
+        log.warning("recording the failed tool approval %s failed", approval_id, exc_info=True)
+        return
+    if ctx is not None:
+        mark_approval(ctx, approval)
+        return
+    analysis_id = approval.ref.get("analysis_id")
+    if not analysis_id:
+        return
+
+    def record(analysis: TroubleshootAnalysis) -> None:
+        for i, view in enumerate(analysis.approvals):
+            if view.id == approval.id:
+                analysis.approvals[i] = approval.view()
+
+    try:
+        analysis_store_for(services).mutate(user, analysis_id, record)
+    except (LookupError, DocumentConflict):
+        log.warning("marking analysis %s failed", analysis_id, exc_info=True)
+
+
+@router.post("/approvals/{approval_id}/stream", operation_id="resumeToolApprovalStream")
+async def resume_tool_approval(
+    approval_id: str, body: ToolApprovalDecision, request: Request, services: ServicesDep
+) -> StreamingResponse:
+    """Approve or deny each pending tool call of a paused run and resume it as a stream.
+
+    The approval is claimed first (compare-and-set): a second decision - also on another
+    replica - gets 409, an expired approval 410. The stream ends with the result of the
+    paused run's kind: ``assistant_turn`` (the completed chat message) or ``troubleshoot``
+    (the analysis). Every decision is written to the AI audit log."""
+    user = _user(request, services)
+    ai = _ai(services)
+    store = approval_store_for(services)
+    approval = await asyncio.to_thread(_approval_or_404, services, user, approval_id)
+    _ensure_agent(request, services, approval)
+    limit = ai.approvals.max_reason_chars
+    if any(d.reason and len(d.reason) > limit for d in body.decisions):
+        raise HTTPException(status_code=422, detail=f"a reason may have at most {limit} characters")
+    claimer = f"{replica_id()}:{new_claim_id()}"
+    feature = "troubleshoot" if approval.agent == "troubleshoot" else "assistant"
+    ctx_box: dict[str, ChatContext] = {}
+    try:
+        approval = await asyncio.to_thread(
+            store.claim, user, approval_id, list(body.decisions), by=claimer
+        )
+    except ApprovalExpired as exc:
+        expired = await asyncio.to_thread(_approval_or_404, services, user, approval_id)
+        await asyncio.to_thread(
+            _audit_decision,
+            request,
+            services,
+            f"{feature}:tool_approval_expired",
+            model=expired.model,
+            detail={"approval_id": approval_id, "agent": expired.agent, **expired.ref},
+        )
+        raise HTTPException(status_code=410, detail=str(exc)) from exc
+    except ApprovalBusy as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    await asyncio.to_thread(_audit_tool_decisions, request, services, approval, feature)
+
+    async def resume_job(call: AiCall, emit: Emit) -> Any:
+        call.detail = {"approval_id": approval.id, **approval.ref}
+        try:
+            if approval.agent == "troubleshoot":
+                result: Any = await _resume_troubleshoot(
+                    request, services, call, emit, approval, user
+                )
+            else:
+                result = await _resume_chat(request, services, call, emit, approval, user, ctx_box)
+        except BaseException as exc:
+            error = "cancelled" if isinstance(exc, asyncio.CancelledError) else str(exc)[:500]
+            # sync: a cancelled task cannot await any more
+            _mark_failed(services, ctx_box.get("ctx"), user, approval.id, error)
+            raise
+        await asyncio.to_thread(store.finish, user, approval.id, "resolved")
+        return result
+
+    kind = "troubleshoot" if approval.agent == "troubleshoot" else "assistant_turn"
+    model = (approval.context.get("request") or {}).get("model")
+    try:
+        response: StreamingResponse = await _streamed(
+            request,
+            services,
+            f"{feature}:{approval.agent}" if feature == "assistant" else feature,
+            model,
+            resume_job,
+            kind,
+            inputs=decisions_text(list(body.decisions)),
+        )
+    except BaseException:
+        # Refused before the stream started (no model, guardrail): nothing ran, so the
+        # approval can be decided again.
+        await asyncio.to_thread(store.release, user, approval.id, claimer)
+        raise
+    return response
+
+
+async def _resume_chat(
+    request: Request,
+    services: Any,
+    call: AiCall,
+    emit: Emit,
+    approval: ToolApproval,
+    user: str,
+    ctx_box: dict[str, ChatContext],
+) -> ChatTurnResult:
+    mode = approval.agent
+    airflow_on = bool(services.settings.feature("airflow"))
+    state = TurnState()
+    ctx = ChatContext(
+        services=services,
+        user=user,
+        role=request_role(request),
+        can=lambda p: has_permission(request, p),
+        llm=call.llm,
+        gateway_factory=(
+            _gateway_factory(request, services) if mode == "developer" and airflow_on else None
+        ),
+        team=getattr(services.settings, "team", None),
+    )
+    ctx_box["ctx"] = ctx
+    try:
+        result = await resume_turn(ctx, approval, emit, state=state)
+    except ThreadNotFound as exc:
+        raise HTTPException(status_code=404, detail="the conversation no longer exists") from exc
+    finally:
+        call.used_tools = list(state.sources.used_tools)
+        call.sources = state.sources.refs()
+    call.detail.update(
+        assistant=mode,
+        thread_id=result.thread.id,
+        resumed=True,
+        **_pending_detail(result.message.approvals),
+    )
+    return result
+
+
+async def _resume_troubleshoot(
+    request: Request,
+    services: Any,
+    call: AiCall,
+    emit: Emit,
+    approval: ToolApproval,
+    user: str,
+) -> TroubleshootAnalysis:
+    ts = _ai(services).troubleshoot
+    try:
+        body = TroubleshootRequest.model_validate(approval.context.get("request") or {})
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=422, detail="the paused analysis cannot be restored"
+        ) from exc
+    # Never more permissive than when the analysis started, nor than the caller may now.
+    stored = approval.context.get("actions_mode")
+    stored_mode: ActionsMode = stored if stored in ("read_only", "hitl", "apply") else "read_only"
+    actions_mode = effective_mode(
+        ts.airflow_actions, stored_mode, allowed=_may_run_actions(request)
+    )
+    return await _troubleshoot_run(
+        request,
+        services,
+        call,
+        emit,
+        body=body,
+        user=user,
+        actions_mode=actions_mode,
+        factory=_gateway_factory(request, services),
+        resume=approval,
+    )
 
 
 # --------------------------------------------------------------------------- troubleshoot
@@ -584,47 +890,67 @@ def _saved_spec(services: Any, dag_id: str) -> Any:
         return None
 
 
-@router.post("/troubleshoot/stream", operation_id="troubleshootStream")
-async def troubleshoot_stream(
-    body: TroubleshootRequest, request: Request, services: ServicesDep
-) -> StreamingResponse:
-    """Analyse a DAG run as a stream (evidence collection, tool calls, tokens), ending with
-    the stored ``troubleshoot`` analysis. Read-only: proposals need an explicit decision."""
+def _troubleshoot_scrub(services: Any) -> Any:
+    from autoair.ai.rules import scrub_secrets
+
+    pipeline = guardrails_for(services)
+
+    def scrub(text: str) -> str:
+        return pipeline.sanitize(scrub_secrets(text))
+
+    return scrub
+
+
+async def _troubleshoot_run(
+    request: Request,
+    services: Any,
+    call: AiCall,
+    emit: Emit,
+    *,
+    body: TroubleshootRequest,
+    user: str,
+    actions_mode: ActionsMode,
+    factory: Any,
+    resume: ToolApproval | None = None,
+) -> TroubleshootAnalysis:
+    """One analysis run: collect the evidence (or restore it from a paused run), run the
+    agent and build, store and audit the analysis. A run that stops for tool approval is
+    stored as an ``awaiting_approval`` analysis with its pending approval."""
     from autoair.ai import prompts
     from autoair.ai.assistants.fs_sandbox import sandbox_for
 
-    _require_troubleshoot(request, services)
-    user = _user(request, services)
     ai = _ai(services)
     ts = ai.troubleshoot
-    factory = _gateway_factory(request, services)
-    if body.mcp and not ts.allow_external_mcp:
-        raise HTTPException(status_code=403, detail="external MCP servers are not allowed")
-    actions_mode = effective_mode(
-        ts.airflow_actions, body.airflow_actions, allowed=_may_run_actions(request)
-    )
-
-    async def job(call: AiCall, emit: Emit) -> TroubleshootAnalysis:
-        sources = SourceCollector()
-        pipeline = guardrails_for(services)
-
-        def scrub(text: str) -> str:
-            from autoair.ai.rules import scrub_secrets
-
-            return pipeline.sanitize(scrub_secrets(text))
-
+    sources = SourceCollector()
+    pipeline = guardrails_for(services)
+    scrub = _troubleshoot_scrub(services)
+    previous: TroubleshootAnalysis | None = None
+    if resume is None:
         sandbox = sandbox_for(services, ts.filesystem)
         scope = effective_scope(body.scope, ts, online=ai.research.online, fs=sandbox.enabled)
         spec = body.spec or await asyncio.to_thread(_saved_spec, services, body.dag_id)
-        call.detail = {
-            "dag_id": body.dag_id,
-            "run_id": body.run_id,
-            "task_id": body.task_id,
-            "scope": scope.model_dump(),
-            "mcp": [m.server for m in body.mcp],
-            "rerun_of": body.rerun_of,
-            "actions_mode": actions_mode,
-        }
+    else:
+        ctx = resume.context
+        scope = TroubleshootScope.model_validate(ctx.get("scope") or {})
+        spec = DagSpec.model_validate(ctx["spec"]) if ctx.get("spec") else None
+        sources.restore(
+            [Citation.model_validate(c) for c in ctx.get("citations", [])],
+            ctx.get("used_tools", []),
+        )
+        previous = await asyncio.to_thread(
+            _paused_analysis, services, user, resume.ref.get("analysis_id", "")
+        )
+    call.detail = {
+        "dag_id": body.dag_id,
+        "run_id": body.run_id,
+        "task_id": body.task_id,
+        "scope": scope.model_dump(),
+        "mcp": [m.server for m in body.mcp],
+        "rerun_of": body.rerun_of,
+        "actions_mode": actions_mode,
+        **({"approval_id": resume.id} if resume is not None else {}),
+    }
+    if resume is None:
         emit(StatusEvent(stage="collect", message="reading the run, task instances and logs"))
         try:
             async with factory() as gw:
@@ -644,104 +970,205 @@ async def troubleshoot_stream(
             raise HTTPException(
                 status_code=502, detail=f"cannot read the run from Airflow: {exc.detail}"
             ) from exc
-        tools = troubleshoot_tools(
-            services,
-            body,
-            scope=scope,
-            gateway_factory=factory,
-            sources=sources,
-            scrub=scrub,
-            spec=spec,
-            code=pack.code,
+    else:
+        pack = EvidencePack.model_validate(resume.context.get("pack") or {"text": ""})
+    tools = troubleshoot_tools(
+        services,
+        body,
+        scope=scope,
+        gateway_factory=factory,
+        sources=sources,
+        scrub=scrub,
+        spec=spec,
+        code=pack.code,
+    )
+    allow = ai.guardrails.tool_allowlist
+    role = request_role(request)
+    shared = filter_tools([t for t in tools if t.name in _SHARED], role, allow)
+    tools = [*(t for t in tools if t.name not in _SHARED), *shared]
+    selections = list(body.mcp) if ts.allow_external_mcp else []
+    async with attach_mcp_tools(services, selections, "troubleshoot") as (mcp, notes):
+        notes = list(notes)
+        # hitl: the user approves each Airflow action, so each write tool call too.
+        offered, gated, approval_notes = gated_tools(
+            [*tools, *mcp], ai.approvals, "troubleshoot", force_writes=actions_mode == "hitl"
         )
-        allow = ai.guardrails.tool_allowlist
-        role = request_role(request)
-        shared = filter_tools([t for t in tools if t.name in _SHARED], role, allow)
-        tools = [*(t for t in tools if t.name not in _SHARED), *shared]
-        selections = list(body.mcp) if ts.allow_external_mcp else []
-        async with attach_mcp_tools(services, selections, "troubleshoot") as (mcp, notes):
-            wrapped = sources.wrap_all([*tools, *mcp])
-            call.tools = [t.name for t in wrapped]
-            for note in notes:
-                emit(StatusEvent(stage="mcp", message=note))
-            with prompts.prompt_context(
-                user=user, team=getattr(services.settings, "team", None), assistant="troubleshoot"
-            ):
-                system = prompts.get("TROUBLESHOOT_SYSTEM")
-            question = body.question or (
-                "Find the root cause of this run's failure"
-                + (f" in task {body.task_id}" if body.task_id else "")
-                + " and propose the smallest safe fix."
+        notes += approval_notes
+        wrapped = sources.wrap_all(offered)
+        call.tools = [t.name for t in wrapped]
+        for note in notes:
+            emit(StatusEvent(stage="mcp", message=note))
+        with prompts.prompt_context(
+            user=user, team=getattr(services.settings, "team", None), assistant="troubleshoot"
+        ):
+            system = prompts.get("TROUBLESHOOT_SYSTEM")
+        question = body.question or (
+            "Find the root cause of this run's failure"
+            + (f" in task {body.task_id}" if body.task_id else "")
+            + " and propose the smallest safe fix."
+        )
+        emit(StatusEvent(stage="analyze", message="analysing"))
+        history: list[Any] = []
+        if resume is not None:
+            from pydantic_ai.messages import ModelMessagesTypeAdapter
+
+            history = list(ModelMessagesTypeAdapter.validate_python(resume.messages))
+        task = AgentTask(
+            llm=call.llm,
+            task=question if resume is None else "",
+            tools=wrapped,
+            context=pipeline.untrusted(pack.text, "evidence pack") if resume is None else "",
+            system=system,
+            budget=Budget(
+                max_steps=max(1, ts.max_steps - (resume.requests if resume else 0)),
+                max_tokens=ai.agent.token_budget,
+                max_cost_usd=ai.agent.cost_budget_usd,
+                timeout_seconds=ts.timeout_seconds,
+            ),
+            max_tokens=ai.agent.max_tokens_per_call,
+            tool_timeout=ai.agent.tool_timeout_seconds,
+            max_tool_chars=ai.agent.max_tool_output_chars,
+            catalog=services.catalog,
+            registry=services.registry,
+            policy=policy_of(services),
+            node_ids={n.id for n in spec.nodes} if spec else set(),
+            guardrails=pipeline,
+            emit=emit,
+            history=history,
+            final_model=TroubleshootFinal,
+            final_turn_grace_seconds=ai.agent.final_turn_grace_seconds,
+            approval_required=gated,
+            approval_argument_chars=ai.approvals.max_argument_chars,
+        )
+        if resume is not None:
+            task.resume = ResumeState(
+                calls=list(resume.calls),
+                decisions=list(resume.decisions),
+                decided_by=resume.decided_by or user,
             )
-            emit(StatusEvent(stage="analyze", message="analysing"))
-            task = AgentTask(
-                llm=call.llm,
-                task=question,
-                tools=wrapped,
-                context=pipeline.untrusted(pack.text, "evidence pack"),
-                system=system,
-                budget=Budget(
-                    max_steps=ts.max_steps,
-                    max_tokens=ai.agent.token_budget,
-                    max_cost_usd=ai.agent.cost_budget_usd,
-                    timeout_seconds=ts.timeout_seconds,
-                ),
-                max_tokens=ai.agent.max_tokens_per_call,
-                tool_timeout=ai.agent.tool_timeout_seconds,
-                max_tool_chars=ai.agent.max_tool_output_chars,
-                catalog=services.catalog,
-                registry=services.registry,
-                policy=policy_of(services),
-                node_ids={n.id for n in spec.nodes} if spec else set(),
-                guardrails=pipeline,
-                emit=emit,
-                final_model=TroubleshootFinal,
-                final_turn_grace_seconds=ai.agent.final_turn_grace_seconds,
-            )
-            try:
-                result = await arun_agent(task)
-            finally:
-                call.used_tools = list(sources.used_tools)
-                call.sources = sources.refs()
-        analysis = await asyncio.to_thread(
-            build_analysis,
-            services,
-            body,
+            task.step_offset = resume.steps
+        try:
+            result = await arun_agent(task)
+        finally:
+            call.used_tools = list(sources.used_tools)
+            call.sources = sources.refs()
+    if previous is not None:
+        result.steps = [*previous.steps, *result.steps]
+        result.usage = previous.usage + result.usage
+    analysis = await asyncio.to_thread(
+        build_analysis,
+        services,
+        body,
+        user=user,
+        scope=scope,
+        pack=pack,
+        spec=spec,
+        result=result,
+        sources=sources,
+        notes=notes,
+        actions_mode=actions_mode,
+        can=_action_permission(request),
+        feature=_action_feature(request),
+    )
+    if previous is not None:
+        analysis.id = previous.id
+        analysis.created_at = previous.created_at
+        done = [resume.view().model_copy(update={"status": "resolved"})] if resume else []
+        analysis.approvals = [a for a in previous.approvals if resume and a.id != resume.id]
+        analysis.approvals += done
+    if result.stopped == "approval":
+        history_out = [*(resume.messages if resume else []), *dump_history(result.messages)]
+        approval = new_approval(
             user=user,
-            scope=scope,
-            pack=pack,
-            spec=spec,
-            result=result,
-            sources=sources,
-            notes=notes,
-            actions_mode=actions_mode,
-            can=_action_permission(request),
-            feature=_action_feature(request),
+            agent="troubleshoot",
+            calls=result.pending,
+            settings=ai.approvals,
+            ref={"analysis_id": analysis.id},
+            context={
+                "request": body.model_dump(mode="json"),
+                "actions_mode": actions_mode,
+                "scope": scope.model_dump(mode="json"),
+                "spec": spec.model_dump(mode="json", by_alias=True) if spec else None,
+                "pack": pack.model_dump(mode="json"),
+                "citations": [c.model_dump(mode="json") for c in sources.citations],
+                "used_tools": list(sources.used_tools),
+            },
+            messages=history_out,
+            requests=(resume.requests if resume else 0) + result.requests,
+            steps=len(result.steps),
+            model=result.model,
         )
-        if analysis.airflow_actions:
-            await asyncio.to_thread(
-                _audit_decision,
-                request,
-                services,
-                "troubleshoot:actions_proposed",
-                model=analysis.model,
-                detail=_decision_detail(
-                    analysis,
-                    mode=actions_mode,
-                    actions=[audit_view(a) for a in analysis.airflow_actions],
-                ),
-            )
-        if actions_mode == "apply":
-            await _apply_actions(request, services, analysis, factory, user, emit)
-        await asyncio.to_thread(analysis_store_for(services).save, analysis)
+        await asyncio.to_thread(approval_store_for(services).create, approval)
+        analysis.approvals.append(approval.view())
+        analysis.status = "awaiting_approval"
+        analysis.airflow_actions = []
         call.detail.update(
-            analysis_id=analysis.id,
-            status=analysis.status,
-            hypotheses=len(analysis.hypotheses),
-            findings=[f.id for f in analysis.findings],
-            actions={a.id: a.status for a in analysis.airflow_actions},
+            approval_pending=approval.id, approval_tools=[c.tool for c in approval.calls]
         )
+        await asyncio.to_thread(analysis_store_for(services).save, analysis)
+        call.detail.update(analysis_id=analysis.id, status=analysis.status)
         return analysis
+    if analysis.airflow_actions:
+        await asyncio.to_thread(
+            _audit_decision,
+            request,
+            services,
+            "troubleshoot:actions_proposed",
+            model=analysis.model,
+            detail=_decision_detail(
+                analysis,
+                mode=actions_mode,
+                actions=[audit_view(a) for a in analysis.airflow_actions],
+            ),
+        )
+    if actions_mode == "apply":
+        await _apply_actions(request, services, analysis, factory, user, emit)
+    await asyncio.to_thread(analysis_store_for(services).save, analysis)
+    call.detail.update(
+        analysis_id=analysis.id,
+        status=analysis.status,
+        hypotheses=len(analysis.hypotheses),
+        findings=[f.id for f in analysis.findings],
+        actions={a.id: a.status for a in analysis.airflow_actions},
+    )
+    return analysis
+
+
+def _paused_analysis(services: Any, user: str, analysis_id: str) -> TroubleshootAnalysis:
+    try:
+        return analysis_store_for(services).get(user, analysis_id)
+    except LookupError as exc:
+        raise ValueError("the paused analysis no longer exists") from exc
+
+
+@router.post("/troubleshoot/stream", operation_id="troubleshootStream")
+async def troubleshoot_stream(
+    body: TroubleshootRequest, request: Request, services: ServicesDep
+) -> StreamingResponse:
+    """Analyse a DAG run as a stream (evidence collection, tool calls, tokens), ending with
+    the stored ``troubleshoot`` analysis. Read-only: proposals need an explicit decision;
+    tool calls that need approval (``ai.approvals``) pause it (``awaiting_approval``)."""
+    _require_troubleshoot(request, services)
+    user = _user(request, services)
+    ts = _ai(services).troubleshoot
+    factory = _gateway_factory(request, services)
+    if body.mcp and not ts.allow_external_mcp:
+        raise HTTPException(status_code=403, detail="external MCP servers are not allowed")
+    actions_mode = effective_mode(
+        ts.airflow_actions, body.airflow_actions, allowed=_may_run_actions(request)
+    )
+
+    async def job(call: AiCall, emit: Emit) -> TroubleshootAnalysis:
+        return await _troubleshoot_run(
+            request,
+            services,
+            call,
+            emit,
+            body=body,
+            user=user,
+            actions_mode=actions_mode,
+            factory=factory,
+        )
 
     response: StreamingResponse = await _streamed(
         request, services, "troubleshoot", body.model, job, "troubleshoot", inputs=[body.question]
@@ -780,6 +1207,7 @@ async def get_analysis(
     analysis: TroubleshootAnalysis = await asyncio.to_thread(
         _analysis_or_404, services, user, analysis_id
     )
+    await asyncio.to_thread(refresh_views, approval_store_for(services), user, analysis.approvals)
     return analysis
 
 

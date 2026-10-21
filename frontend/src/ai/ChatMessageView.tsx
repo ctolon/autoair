@@ -18,13 +18,14 @@ import {
   LuWrench,
 } from "react-icons/lu";
 
-import type { ChatMessage, Citation, Proposal, ToolCallRecord } from "../api/gen/types.gen";
+import type { ChatMessage, Citation, Proposal, ToolCallRecord, ToolDecision } from "../api/gen/types.gen";
 import type { ToolRun } from "../lifecycle/components/AiStream";
 import { UsageLine } from "../lifecycle/components/AiFindings";
 import { toaster } from "../ui/toaster";
 import { ChatMarkdown, copyText } from "./ChatMarkdown";
 import { argsLabel, citationHref, citedSources } from "./chatText";
 import { ProposalCard } from "./ProposalCard";
+import { ToolApprovalCard, isOpen } from "./ToolApprovalCard";
 
 const KIND_ICON: Record<Citation["kind"], typeof LuBookOpen> = {
   doc: LuBookOpen,
@@ -180,6 +181,7 @@ export function AssistantMessage({
   onFollowUp,
   onRegenerate,
   onProposal,
+  onApproval,
 }: {
   message: ChatMessage;
   threadId: string | null;
@@ -188,10 +190,12 @@ export function AssistantMessage({
   onFollowUp: (q: string) => void;
   onRegenerate: () => void;
   onProposal: (p: Proposal) => void;
+  onApproval?: (approvalId: string, decisions: ToolDecision[]) => void;
 }) {
   const { t } = useTranslation("ai");
   const [copied, setCopied] = useState(false);
   const failed = !!message.error && !message.content;
+  const approvals = Array.isArray(message.approvals) ? message.approvals : [];
   return (
     <Stack gap={2} data-testid="chat-assistant-message" align="stretch">
       {message.tools?.length ? <ToolChips tools={message.tools} /> : null}
@@ -209,6 +213,15 @@ export function AssistantMessage({
           {t("chat.stopped", { reason: message.stopped })}
         </Text>
       ) : null}
+      {approvals.map((a, i) => (
+        <ToolApprovalCard
+          key={a.id ?? i}
+          approval={a}
+          busy={busy}
+          // Only the current approval can be decided; earlier ones show their outcome.
+          onSubmit={onApproval && i === approvals.length - 1 && isOpen(a) ? (d) => onApproval(a.id, d) : undefined}
+        />
+      ))}
       {message.proposals?.map((p) => (
         <ProposalCard key={p.id} proposal={p} threadId={threadId} onChange={onProposal} />
       ))}

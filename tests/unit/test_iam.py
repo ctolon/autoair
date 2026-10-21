@@ -63,7 +63,10 @@ def test_builtin_roles_are_consistent():
 def test_expand_wildcards_and_custom_roles():
     assert P.expand(["spec:*"]) == {P.SPEC_READ, P.SPEC_WRITE, P.SPEC_DELETE}
     # deploy:direct_push never comes from a wildcard
-    assert P.expand(["*"]) == P.ALL_PERMISSIONS - {P.DEPLOY_DIRECT_PUSH}
+    assert P.expand(["*"]) == P.ALL_PERMISSIONS - {
+        P.DEPLOY_DIRECT_PUSH,
+        P.DEPLOY_OVERWRITE_EJECTED,
+    }
     assert P.expand(["deploy*"]) == {P.DEPLOY}
     table = P.role_table({"Auditor": ["spec:read", "audit:*"], "Viewer": ["builder:use"]})
     assert table["Auditor"] == {P.SPEC_READ, P.AUDIT_READ}

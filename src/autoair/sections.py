@@ -528,6 +528,161 @@ class RunnerSettings(_Section):
     )
 
 
+# --------------------------------------------------------------------------- validator service
+
+ValidatorFailMode = Literal["closed", "open", "local"]
+NetworkIsolation = Literal["auto", "required", "off"]
+
+
+class ValidatorSettings(_Section):
+    """DagBag import checks in a separate validator service (``autoair validator-serve``):
+    how the main server reaches it (``url``, key, retries, fail mode) and the limits the
+    service applies to the worker processes that import user code."""
+
+    url: str = Field(
+        default="",
+        description="Base URL of the validator service, e.g. http://autoair-validator:8791. "
+        "Empty: import checks run in this process's own warm DagBag pool (dagbag_pool*).",
+    )
+    secret_conn_id: str = Field(
+        default="autoair_validator",
+        description="Airflow connection whose password (at least 16 bytes) is the HMAC key "
+        "shared by the main server and the validator; it is removed from the environment of "
+        "processes running DAG code on both sides. The main server reads it like any Airflow "
+        "connection; the "
+        "validator reads only the environment variable AIRFLOW_CONN_<CONN_ID> (JSON or URI "
+        "form) and never passes it to its workers.",
+    )
+    key_cache_seconds: float = Field(
+        default=60,
+        ge=0,
+        description="Seconds the HMAC key read from the connection is reused before it is "
+        "read again (rotation delay); 0 reads it for every check.",
+    )
+    request_overhead_seconds: float = Field(
+        default=30,
+        gt=0,
+        description="Seconds added to the import check timeout for the HTTP request to the "
+        "validator (queueing, worker start-up, transfer).",
+    )
+    retries: int = Field(
+        default=2,
+        ge=0,
+        le=10,
+        description="Extra attempts after a connection error or HTTP 429/502/503/504 from the "
+        "validator. A request that timed out is not retried.",
+    )
+    retry_backoff_seconds: float = Field(
+        default=0.5,
+        ge=0,
+        description="Wait before the first retry (s); doubled for every further retry.",
+    )
+    health_check_interval_seconds: float = Field(
+        default=10,
+        gt=0,
+        description="After an outage (connection error, HTTP 401/403/502/504, invalid answer) "
+        "the validator counts as down: checks fail at once and /ready is probed at most this "
+        "often (s) until it answers again. A busy validator (429/503) or a timed-out check "
+        "fails only that check.",
+    )
+    health_timeout_seconds: float = Field(
+        default=3, gt=0, description="Timeout (s) of a /ready probe of the validator."
+    )
+    fail_mode: ValidatorFailMode = Field(
+        default="open",
+        description="When the validator cannot be asked: open (default) reports a warning and "
+        "skips the import check, so deploys go ahead without it; closed reports an error "
+        "(deploys are blocked until the validator answers); local runs the check in this "
+        "process's warm DagBag pool instead (user code then runs here again).",
+    )
+    # --- the service side (autoair validator-serve)
+    pool_size: int = Field(
+        default=2, ge=1, le=64, description="Validator: warm DagBag worker processes."
+    )
+    max_tasks_per_child: int = Field(
+        default=1,
+        ge=1,
+        description="Validator: checks per worker before it is replaced. 1 (default) gives "
+        "every check a fresh interpreter, so code of one check cannot observe or alter the "
+        "next one; a spare worker is started in advance.",
+    )
+    start_timeout_seconds: float = Field(
+        default=120,
+        gt=0,
+        description="Validator: seconds a worker may take to start (import Airflow).",
+    )
+    max_check_seconds: float = Field(
+        default=120,
+        gt=0,
+        description="Validator: largest import check timeout (s) a request may ask for.",
+    )
+    max_request_bytes: int = Field(
+        default=4 * 1024 * 1024,
+        ge=1024,
+        description="Validator: largest request body (bytes, the JSON-encoded DAG source); "
+        "larger requests get HTTP 413.",
+    )
+    max_queue: int = Field(
+        default=8,
+        ge=0,
+        description="Validator: checks that may wait for a worker on top of pool_size; more "
+        "concurrent requests get HTTP 503 (the main server retries).",
+    )
+    memory_limit_mb: int = Field(
+        default=1024,
+        ge=0,
+        description="Validator: address-space limit of a worker process (MiB, RLIMIT_AS); "
+        "an import that allocates more fails with MemoryError. 0: no limit.",
+    )
+    cpu_limit_seconds: int = Field(
+        default=120,
+        ge=0,
+        description="Validator: CPU seconds a worker process may use over its lifetime "
+        "(RLIMIT_CPU, includes about 2 s for importing Airflow); the worker is then killed. "
+        "0: no limit.",
+    )
+    file_size_limit_mb: int = Field(
+        default=16,
+        ge=0,
+        description="Validator: largest file a worker may write (MiB, RLIMIT_FSIZE). 0: no limit.",
+    )
+    open_files_limit: int = Field(
+        default=1024,
+        ge=0,
+        description="Validator: open file descriptors per worker (RLIMIT_NOFILE). 0: inherited.",
+    )
+    process_limit: int = Field(
+        default=0,
+        ge=0,
+        description="Validator: RLIMIT_NPROC of a worker. It counts every process of the "
+        "user, so set it only when the validator runs as its own user. 0: inherited.",
+    )
+    audit_hook: bool = Field(
+        default=True,
+        description="Validator: a Python audit hook in each worker denies subprocesses, "
+        "fork/exec, signals, ctypes, network connections and DNS, writes outside the "
+        "worker's scratch folder, and reads of other processes' /proc entries. Defence in "
+        "depth: the container (no egress, read-only root, non-root) is the boundary.",
+    )
+    network_isolation: NetworkIsolation = Field(
+        default="auto",
+        description="Validator: move each worker into its own empty network namespace "
+        "(Linux unprivileged user namespaces). auto: when the kernel allows it, required: "
+        "workers fail to start otherwise, off: never.",
+    )
+    metrics_enabled: bool = Field(
+        default=True, description="Validator: serve Prometheus metrics at /metrics."
+    )
+
+    @field_validator("url")
+    @classmethod
+    def _http_url(cls, value: str) -> str:
+        value = value.strip().rstrip("/")
+        if value and not value.startswith(("http://", "https://")):
+            raise ValueError("validator.url must be an http(s) URL")
+        return value
+
+
 # --------------------------------------------------------------------------- editor services
 
 DEFAULT_SHELLCHECK_EXCLUDE = ["SC1091", "SC2034", "SC2154"]
@@ -547,7 +702,12 @@ class EditorSettings(_Section):
     max_doc_chars: int = Field(
         default=4_000, ge=100, description="Characters of a docstring shown in hover/completion."
     )
-    shellcheck_timeout: float = Field(default=5, gt=0, description="Seconds per ShellCheck run.")
+    shellcheck_timeout: float = Field(
+        default=5,
+        gt=0,
+        description="Seconds per ShellCheck run (DAG validation checks the scripts that "
+        "changed since the last validation in runs of up to 50 scripts).",
+    )
     shellcheck_exclude: list[str] = Field(
         default_factory=lambda: list(DEFAULT_SHELLCHECK_EXCLUDE),
         description="ShellCheck codes never reported (noise for Airflow commands: masked "
@@ -576,7 +736,10 @@ class EditorSettings(_Section):
         default_factory=list, description="More ruff rules never reported."
     )
     python_lint_timeout: float = Field(
-        default=15, gt=0, description="Seconds per ruff lint of task code."
+        default=15,
+        gt=0,
+        description="Seconds per ruff lint run of task code (DAG validation lints all "
+        "Python tasks that changed since the last validation in one run).",
     )
     validate_timeout: float = Field(
         default=15,
@@ -760,6 +923,15 @@ class ServerSettings(_Section):
         description="`autoair serve`: most concurrent connections before answering 503.",
     )
     access_log: bool = Field(default=True, description="`autoair serve`: log every request.")
+    harden_process: bool = Field(
+        default=True,
+        description="Make AutoAir's own server processes (`autoair serve`, `autoair local`, "
+        "their uvicorn workers, `mcp-serve --http`, `ai-serve`) non-dumpable at start-up "
+        "(Linux prctl PR_SET_DUMPABLE=0), so child processes running user DAG code as the "
+        "same user cannot read the server's environment or memory through /proc. Turn it "
+        "off only for debugging with py-spy, gdb or core dumps. Never applied inside the "
+        "Airflow plugin.",
+    )
 
     # --- TLS (`autoair serve`; inside Airflow the api-server terminates TLS)
     ssl_certfile: Path | None = Field(
@@ -885,12 +1057,20 @@ class PluginSettings(_Section):
         default="AutoAir", min_length=1, description="Name of the tab on every DAG page."
     )
     dag_tab: bool = Field(default=True, description="Show the tab on DAG pages.")
+    dag_tab_tags: list[str] = Field(
+        default_factory=list,
+        description="Airflow >= 3.4: show the DAG tab only on DAGs carrying at least one of "
+        "these tags (the plugin's applies_to scoping, evaluated by Airflow's UI). Empty: the "
+        "tab is on every DAG page, so a hand-written DAG can be imported from it. Ignored "
+        "before Airflow 3.4, which cannot scope plugin tabs. JSON list in environment "
+        "variables, e.g. '[\"autoair\"]'.",
+    )
 
 
 # --------------------------------------------------------------------------- outbound HTTP/TLS
 
 OutboundClient = Literal[
-    "airflow", "git", "marketplace", "ai", "research", "login", "mcp", "opa", "kb"
+    "airflow", "git", "marketplace", "ai", "research", "login", "mcp", "opa", "kb", "validator"
 ]
 
 
@@ -950,7 +1130,8 @@ class OutboundSettings(_Section):
         description="Per-client overrides, e.g. `{'git': {'ca_bundle': '/etc/ssl/gitlab.pem'}, "
         "'ai': {'proxy': 'http://egress:3128'}}`. Clients: airflow, git, marketplace, ai, "
         "research, login, mcp (external MCP servers of the agents), opa (policy.opa_url), kb "
-        "(documentation fetches and the Elasticsearch store of the knowledge base).",
+        "(documentation fetches and the Elasticsearch store of the knowledge base), validator "
+        "(validator.url).",
     )
 
 
@@ -1232,6 +1413,7 @@ SECTION_TYPES: tuple[type[BaseModel], ...] = (
     SsoSettings,
     LocalModeSettings,
     AdminSettings,
+    ValidatorSettings,
 )
 _ACTIVE: dict[type[BaseModel], BaseModel] = {}
 
@@ -1305,6 +1487,7 @@ __all__ = [
     "ServerSettings",
     "SsoSettings",
     "UiSettings",
+    "ValidatorSettings",
     "activate",
     "active",
     "any_search",

@@ -3,8 +3,8 @@
 import { type DefaultError, type InfiniteData, infiniteQueryOptions, queryOptions, type UseMutationOptions } from '@tanstack/react-query';
 
 import { client } from '../client.gen';
-import { adminAiUsage, adminAudit, adminAuditCsv, adminCaches, adminClearCache, adminDatabase, adminDatabaseUpgrade, adminDeleteMcpServer, adminDeleteTemplate, adminFeatures, adminMcpServers, adminOverview, adminProposals, adminPutMcpServer, adminSetFeature, adminTemplates, adminTestMcpServer, adminUsers, aiAuditLog, aiDeployMessage, aiMcpServerTools, aiPrompts, aiResearchSearch, aiSearch, aiStatus, aiUpgradeDags, aiWrite, aiWriters, aiWriteStream, applyFindings, askAssistant, askAssistantStream, assignIcon, assistantChatStream, assistantInfo, bulkImportDags, checkEnvironmentMapping, clearDagRun, collabTicket, createAssetEvent, createBackfill, createConnection, decideAssistantProposal, decideTroubleshootAction, decideTroubleshootAnalysis, deleteAiRules, deleteAssistantThread, deleteIcon, deleteMyAiModel, deleteSpec, deleteTemplate, deployProposal, deploySpec, describeDag, diffVersions, diffWithVersion, effectiveAiRules, explainCode, explainCodeStream, explainDag, explainProblems, exportDagFactory, exportYamlDag, fixDag, generateCode, generateDag, getAiKnowledge, getAirflowCapabilities, getAssistantThread, getAuthConfig, getAuthSession, getCatalogDiagnostics, getCatalogStats, getConfig, getDagStatus, getDeployTarget, getGitCredentials, getIcon, getIconAssignments, getMe, getMeta, getMyAiModel, getNotifier, getOperator, getProposal, getRunOverlay, getSpec, getSpecAudit, getSpecSchema, getStorageStatus, getTaskLog, getTaskXcom, getTemplate, getTemplateVersion, getTroubleshootAnalysis, getVersion, health, importAirflowDag, importPythonDag, importSpecJson, importYamlDag, installMarketplaceEntry, kbCancel, kbExport, kbImport, kbPutSource, kbRefresh, kbResetSource, kbSearch, kbSources, kbStatus, listAiKnowledge, listAiRules, listAssets, listAssistantThreads, listConnectionHookMeta, listConnections, listConnectionTypes, listDagBundles, listDagRuns, listDagVersions, listDecorators, listIcons, listImportErrors, listMarketplace, listNodeKinds, listNotifiers, listOperators, listPools, listProposals, listQueueSchemes, listSpecReviews, listSpecs, listTemplates, listTemplateVersions, listTroubleshootAnalyses, listVariables, listVersions, lspServers, lspSession, materializeAsset, mergeSpecs, metrics, optimizeDag, type Options, previewDeploy, previewNextRuns, promoteEnvironment, putAiKnowledge, putAiRules, pythonComplete, pythonHover, pythonSignatures, ready, refreshAuthSession, refreshCatalog, renameAssistantThread, resetAiKnowledge, resetDeployTarget, reviewDag, reviewDagRules, reviewSpec, saveTemplate, scanDagSecrets, scanLeaks, setDagPaused, setDagSchedulingState, setDeployTarget, setMyAiModel, shellLint, syncPythonCode, testConnection, testDag, testDeployTarget, testMyAiModel, testTask, toggleAiKnowledge, triggerDag, troubleshootAnalysisApplied, troubleshootOptions, troubleshootStream, uploadIcon, validateCode, validateSpec, writeTaskCode } from '../sdk.gen';
-import type { AdminAiUsageData, AdminAiUsageError, AdminAiUsageResponse, AdminAuditCsvData, AdminAuditCsvError, AdminAuditData, AdminAuditError, AdminAuditResponse, AdminCachesData, AdminCachesResponse, AdminClearCacheData, AdminClearCacheError, AdminClearCacheResponse, AdminDatabaseData, AdminDatabaseResponse, AdminDatabaseUpgradeData, AdminDatabaseUpgradeResponse, AdminDeleteMcpServerData, AdminDeleteMcpServerError, AdminDeleteMcpServerResponse, AdminDeleteTemplateData, AdminDeleteTemplateError, AdminDeleteTemplateResponse, AdminFeaturesData, AdminFeaturesResponse, AdminMcpServersData, AdminMcpServersResponse, AdminOverviewData, AdminOverviewResponse, AdminProposalsData, AdminProposalsResponse, AdminPutMcpServerData, AdminPutMcpServerError, AdminPutMcpServerResponse, AdminSetFeatureData, AdminSetFeatureError, AdminSetFeatureResponse, AdminTemplatesData, AdminTemplatesResponse, AdminTestMcpServerData, AdminTestMcpServerError, AdminTestMcpServerResponse, AdminUsersData, AdminUsersResponse, AiAuditLogData, AiAuditLogError, AiAuditLogResponse, AiDeployMessageData, AiDeployMessageError, AiDeployMessageResponse, AiMcpServerToolsData, AiMcpServerToolsError, AiMcpServerToolsResponse, AiPromptsData, AiPromptsResponse, AiResearchSearchData, AiResearchSearchError, AiResearchSearchResponse, AiSearchData, AiSearchError, AiSearchResponse, AiStatusData, AiStatusResponse, AiUpgradeDagsData, AiUpgradeDagsError, AiUpgradeDagsResponse, AiWriteData, AiWriteError, AiWriteResponse, AiWritersData, AiWritersResponse, AiWriteStreamData, AiWriteStreamError, ApplyFindingsData, ApplyFindingsError, ApplyFindingsResponse, AskAssistantData, AskAssistantError, AskAssistantResponse, AskAssistantStreamData, AskAssistantStreamError, AssignIconData, AssignIconError, AssignIconResponse, AssistantChatStreamData, AssistantChatStreamError, AssistantInfoData, AssistantInfoResponse, BulkImportDagsData, BulkImportDagsError, BulkImportDagsResponse, CheckEnvironmentMappingData, CheckEnvironmentMappingError, CheckEnvironmentMappingResponse, ClearDagRunData, ClearDagRunError, ClearDagRunResponse, CollabTicketData, CollabTicketError, CollabTicketResponse, CreateAssetEventData, CreateAssetEventError, CreateAssetEventResponse, CreateBackfillData, CreateBackfillError, CreateBackfillResponse, CreateConnectionData, CreateConnectionError, CreateConnectionResponse, DecideAssistantProposalData, DecideAssistantProposalError, DecideAssistantProposalResponse, DecideTroubleshootActionData, DecideTroubleshootActionError, DecideTroubleshootActionResponse, DecideTroubleshootAnalysisData, DecideTroubleshootAnalysisError, DecideTroubleshootAnalysisResponse, DeleteAiRulesData, DeleteAiRulesError, DeleteAiRulesResponse, DeleteAssistantThreadData, DeleteAssistantThreadError, DeleteAssistantThreadResponse, DeleteIconData, DeleteIconError, DeleteIconResponse, DeleteMyAiModelData, DeleteMyAiModelResponse, DeleteSpecData, DeleteSpecError, DeleteSpecResponse, DeleteTemplateData, DeleteTemplateError, DeleteTemplateResponse, DeployProposalData, DeployProposalError, DeployProposalResponse, DeploySpecData, DeploySpecError, DeploySpecResponse, DescribeDagData, DescribeDagError, DescribeDagResponse, DiffVersionsData, DiffVersionsError, DiffVersionsResponse, DiffWithVersionData, DiffWithVersionError, DiffWithVersionResponse, EffectiveAiRulesData, EffectiveAiRulesResponse, ExplainCodeData, ExplainCodeError, ExplainCodeResponse, ExplainCodeStreamData, ExplainCodeStreamError, ExplainDagData, ExplainDagError, ExplainDagResponse, ExplainProblemsData, ExplainProblemsError, ExplainProblemsResponse, ExportDagFactoryData, ExportDagFactoryError, ExportDagFactoryResponse, ExportYamlDagData, ExportYamlDagError, ExportYamlDagResponse, FixDagData, FixDagError, FixDagResponse, GenerateCodeData, GenerateCodeError, GenerateCodeResponse, GenerateDagData, GenerateDagError, GenerateDagResponse, GetAiKnowledgeData, GetAiKnowledgeError, GetAiKnowledgeResponse, GetAirflowCapabilitiesData, GetAirflowCapabilitiesResponse, GetAssistantThreadData, GetAssistantThreadError, GetAssistantThreadResponse, GetAuthConfigData, GetAuthConfigResponse, GetAuthSessionData, GetAuthSessionResponse, GetCatalogDiagnosticsData, GetCatalogDiagnosticsResponse, GetCatalogStatsData, GetCatalogStatsResponse, GetConfigData, GetConfigResponse, GetDagStatusData, GetDagStatusError, GetDagStatusResponse, GetDeployTargetData, GetDeployTargetResponse, GetGitCredentialsData, GetGitCredentialsError, GetGitCredentialsResponse, GetIconAssignmentsData, GetIconAssignmentsResponse, GetIconData, GetIconError, GetMeData, GetMeError, GetMeResponse, GetMetaData, GetMetaResponse, GetMyAiModelData, GetMyAiModelResponse, GetNotifierData, GetNotifierError, GetNotifierResponse, GetOperatorData, GetOperatorError, GetOperatorResponse, GetProposalData, GetProposalError, GetProposalResponse, GetRunOverlayData, GetRunOverlayError, GetRunOverlayResponse, GetSpecAuditData, GetSpecAuditError, GetSpecAuditResponse, GetSpecData, GetSpecError, GetSpecResponse, GetSpecSchemaData, GetSpecSchemaResponse, GetStorageStatusData, GetStorageStatusResponse, GetTaskLogData, GetTaskLogError, GetTaskLogResponse, GetTaskXcomData, GetTaskXcomError, GetTaskXcomResponse, GetTemplateData, GetTemplateError, GetTemplateResponse, GetTemplateVersionData, GetTemplateVersionError, GetTemplateVersionResponse, GetTroubleshootAnalysisData, GetTroubleshootAnalysisError, GetTroubleshootAnalysisResponse, GetVersionData, GetVersionError, GetVersionResponse, HealthData, HealthResponse, ImportAirflowDagData, ImportAirflowDagError, ImportAirflowDagResponse, ImportPythonDagData, ImportPythonDagError, ImportPythonDagResponse, ImportSpecJsonData, ImportSpecJsonError, ImportSpecJsonResponse, ImportYamlDagData, ImportYamlDagError, ImportYamlDagResponse, InstallMarketplaceEntryData, InstallMarketplaceEntryError, InstallMarketplaceEntryResponse, KbCancelData, KbCancelResponse, KbExportData, KbExportError, KbExportResponse, KbImportData, KbImportError, KbImportResponse, KbPutSourceData, KbPutSourceError, KbPutSourceResponse, KbRefreshData, KbRefreshError, KbRefreshResponse, KbResetSourceData, KbResetSourceError, KbResetSourceResponse, KbSearchData, KbSearchError, KbSearchResponse, KbSourcesData, KbSourcesResponse, KbStatusData, KbStatusResponse, ListAiKnowledgeData, ListAiKnowledgeResponse, ListAiRulesData, ListAiRulesResponse, ListAssetsData, ListAssetsError, ListAssetsResponse, ListAssistantThreadsData, ListAssistantThreadsError, ListAssistantThreadsResponse, ListConnectionHookMetaData, ListConnectionHookMetaResponse, ListConnectionsData, ListConnectionsError, ListConnectionsResponse, ListConnectionTypesData, ListConnectionTypesResponse, ListDagBundlesData, ListDagBundlesResponse, ListDagRunsData, ListDagRunsError, ListDagRunsResponse, ListDagVersionsData, ListDagVersionsError, ListDagVersionsResponse, ListDecoratorsData, ListDecoratorsResponse, ListIconsData, ListIconsResponse, ListImportErrorsData, ListImportErrorsError, ListImportErrorsResponse, ListMarketplaceData, ListMarketplaceError, ListMarketplaceResponse, ListNodeKindsData, ListNodeKindsResponse, ListNotifiersData, ListNotifiersResponse, ListOperatorsData, ListOperatorsResponse, ListPoolsData, ListPoolsError, ListPoolsResponse, ListProposalsData, ListProposalsError, ListProposalsResponse, ListQueueSchemesData, ListQueueSchemesResponse, ListSpecReviewsData, ListSpecReviewsError, ListSpecReviewsResponse, ListSpecsData, ListSpecsResponse, ListTemplatesData, ListTemplatesResponse, ListTemplateVersionsData, ListTemplateVersionsError, ListTemplateVersionsResponse, ListTroubleshootAnalysesData, ListTroubleshootAnalysesError, ListTroubleshootAnalysesResponse, ListVariablesData, ListVariablesError, ListVariablesResponse, ListVersionsData, ListVersionsError, ListVersionsResponse, LspServersData, LspServersResponse, LspSessionData, LspSessionError, LspSessionResponse, MaterializeAssetData, MaterializeAssetError, MaterializeAssetResponse, MergeSpecsData, MergeSpecsError, MergeSpecsResponse, MetricsData, OptimizeDagData, OptimizeDagError, OptimizeDagResponse, PreviewDeployData, PreviewDeployError, PreviewDeployResponse, PreviewNextRunsData, PreviewNextRunsError, PreviewNextRunsResponse, PromoteEnvironmentData, PromoteEnvironmentError, PromoteEnvironmentResponse, PutAiKnowledgeData, PutAiKnowledgeError, PutAiKnowledgeResponse, PutAiRulesData, PutAiRulesError, PutAiRulesResponse, PythonCompleteData, PythonCompleteError, PythonCompleteResponse, PythonHoverData, PythonHoverError, PythonHoverResponse, PythonSignaturesData, PythonSignaturesError, PythonSignaturesResponse, ReadyData, ReadyResponse, RefreshAuthSessionData, RefreshAuthSessionResponse, RefreshCatalogData, RefreshCatalogResponse, RenameAssistantThreadData, RenameAssistantThreadError, RenameAssistantThreadResponse, ResetAiKnowledgeData, ResetAiKnowledgeError, ResetAiKnowledgeResponse, ResetDeployTargetData, ResetDeployTargetResponse, ReviewDagData, ReviewDagError, ReviewDagResponse, ReviewDagRulesData, ReviewDagRulesError, ReviewDagRulesResponse, ReviewSpecData, ReviewSpecError, ReviewSpecResponse, SaveTemplateData, SaveTemplateError, SaveTemplateResponse, ScanDagSecretsData, ScanDagSecretsError, ScanDagSecretsResponse, ScanLeaksData, ScanLeaksError, ScanLeaksResponse, SetDagPausedData, SetDagPausedError, SetDagPausedResponse, SetDagSchedulingStateData, SetDagSchedulingStateError, SetDagSchedulingStateResponse, SetDeployTargetData, SetDeployTargetError, SetDeployTargetResponse, SetMyAiModelData, SetMyAiModelError, SetMyAiModelResponse, ShellLintData, ShellLintError, ShellLintResponse, SyncPythonCodeData, SyncPythonCodeError, SyncPythonCodeResponse, TestConnectionData, TestConnectionError, TestConnectionResponse, TestDagData, TestDagError, TestDagResponse, TestDeployTargetData, TestDeployTargetError, TestDeployTargetResponse, TestMyAiModelData, TestMyAiModelError, TestMyAiModelResponse, TestTaskData, TestTaskError, TestTaskResponse, ToggleAiKnowledgeData, ToggleAiKnowledgeError, ToggleAiKnowledgeResponse, TriggerDagData, TriggerDagError, TriggerDagResponse, TroubleshootAnalysisAppliedData, TroubleshootAnalysisAppliedError, TroubleshootAnalysisAppliedResponse, TroubleshootOptionsData, TroubleshootOptionsResponse, TroubleshootStreamData, TroubleshootStreamError, UploadIconData, UploadIconError, UploadIconResponse, ValidateCodeData, ValidateCodeError, ValidateCodeResponse, ValidateSpecData, ValidateSpecError, ValidateSpecResponse, WriteTaskCodeData, WriteTaskCodeError, WriteTaskCodeResponse } from '../types.gen';
+import { adminAiUsage, adminAudit, adminAuditCsv, adminCaches, adminClearCache, adminDatabase, adminDatabaseUpgrade, adminDeleteMcpServer, adminDeleteTemplate, adminFeatures, adminMcpServers, adminOverview, adminProposals, adminPutMcpServer, adminSetFeature, adminTemplates, adminTestMcpServer, adminUsers, aiAuditLog, aiDeployMessage, aiMcpServerTools, aiPrompts, aiResearchSearch, aiSearch, aiStatus, aiUpgradeDags, aiWrite, aiWriters, aiWriteStream, applyFindings, askAssistant, askAssistantStream, assignIcon, assistantChatStream, assistantInfo, bulkImportDags, checkEnvironmentMapping, clearDagRun, collabTicket, createAssetEvent, createBackfill, createConnection, decideAssistantProposal, decideTroubleshootAction, decideTroubleshootAnalysis, deleteAiRules, deleteAssistantThread, deleteIcon, deleteMyAiModel, deleteSpec, deleteTemplate, deployProposal, deploySpec, describeDag, diffVersions, diffWithVersion, effectiveAiRules, explainCode, explainCodeStream, explainDag, explainProblems, exportDagFactory, exportYamlDag, fixDag, generateCode, generateDag, getAiKnowledge, getAirflowCapabilities, getAssistantThread, getAuthConfig, getAuthSession, getBlueprint, getBlueprintStatus, getCatalogDiagnostics, getCatalogStats, getConfig, getDagStatus, getDeployTarget, getGitCredentials, getIcon, getIconAssignments, getMe, getMeta, getMyAiModel, getNotifier, getOperator, getProposal, getRunOverlay, getSpec, getSpecAudit, getSpecSchema, getStorageStatus, getTaskLog, getTaskXcom, getTemplate, getTemplateVersion, getToolApproval, getTroubleshootAnalysis, getVersion, health, importAirflowDag, importPythonDag, importSpecJson, importYamlDag, installMarketplaceEntry, kbCancel, kbExport, kbImport, kbPutSource, kbRefresh, kbResetSource, kbSearch, kbSources, kbStatus, listAiKnowledge, listAiRules, listAssets, listAssistantThreads, listBlueprints, listConnectionHookMeta, listConnections, listConnectionTypes, listDagBundles, listDagRuns, listDagVersions, listDecorators, listIcons, listImportErrors, listMarketplace, listNodeKinds, listNotifiers, listOperators, listPools, listProposals, listQueueSchemes, listSpecReviews, listSpecs, listTemplates, listTemplateVersions, listToolApprovals, listTroubleshootAnalyses, listVariables, listVersions, lspServers, lspSession, materializeAsset, mergeSpecs, metrics, optimizeDag, type Options, previewBlueprint, previewDeploy, previewNextRuns, previewSource, promoteEnvironment, putAiKnowledge, putAiRules, pythonComplete, pythonHover, pythonSignatures, ready, refreshAuthSession, refreshBlueprints, refreshCatalog, renameAssistantThread, resetAiKnowledge, resetDeployTarget, resumeToolApprovalStream, reviewDag, reviewDagRules, reviewSpec, saveTemplate, scanDagSecrets, scanLeaks, setDagPaused, setDagSchedulingState, setDeployTarget, setMyAiModel, shellLint, syncPythonCode, testConnection, testDag, testDeployTarget, testMyAiModel, testTask, toggleAiKnowledge, triggerDag, troubleshootAnalysisApplied, troubleshootOptions, troubleshootStream, uploadIcon, validateCode, validateSpec, writeTaskCode } from '../sdk.gen';
+import type { AdminAiUsageData, AdminAiUsageError, AdminAiUsageResponse, AdminAuditCsvData, AdminAuditCsvError, AdminAuditData, AdminAuditError, AdminAuditResponse, AdminCachesData, AdminCachesResponse, AdminClearCacheData, AdminClearCacheError, AdminClearCacheResponse, AdminDatabaseData, AdminDatabaseResponse, AdminDatabaseUpgradeData, AdminDatabaseUpgradeResponse, AdminDeleteMcpServerData, AdminDeleteMcpServerError, AdminDeleteMcpServerResponse, AdminDeleteTemplateData, AdminDeleteTemplateError, AdminDeleteTemplateResponse, AdminFeaturesData, AdminFeaturesResponse, AdminMcpServersData, AdminMcpServersResponse, AdminOverviewData, AdminOverviewResponse, AdminProposalsData, AdminProposalsResponse, AdminPutMcpServerData, AdminPutMcpServerError, AdminPutMcpServerResponse, AdminSetFeatureData, AdminSetFeatureError, AdminSetFeatureResponse, AdminTemplatesData, AdminTemplatesResponse, AdminTestMcpServerData, AdminTestMcpServerError, AdminTestMcpServerResponse, AdminUsersData, AdminUsersResponse, AiAuditLogData, AiAuditLogError, AiAuditLogResponse, AiDeployMessageData, AiDeployMessageError, AiDeployMessageResponse, AiMcpServerToolsData, AiMcpServerToolsError, AiMcpServerToolsResponse, AiPromptsData, AiPromptsResponse, AiResearchSearchData, AiResearchSearchError, AiResearchSearchResponse, AiSearchData, AiSearchError, AiSearchResponse, AiStatusData, AiStatusResponse, AiUpgradeDagsData, AiUpgradeDagsError, AiUpgradeDagsResponse, AiWriteData, AiWriteError, AiWriteResponse, AiWritersData, AiWritersResponse, AiWriteStreamData, AiWriteStreamError, ApplyFindingsData, ApplyFindingsError, ApplyFindingsResponse, AskAssistantData, AskAssistantError, AskAssistantResponse, AskAssistantStreamData, AskAssistantStreamError, AssignIconData, AssignIconError, AssignIconResponse, AssistantChatStreamData, AssistantChatStreamError, AssistantInfoData, AssistantInfoResponse, BulkImportDagsData, BulkImportDagsError, BulkImportDagsResponse, CheckEnvironmentMappingData, CheckEnvironmentMappingError, CheckEnvironmentMappingResponse, ClearDagRunData, ClearDagRunError, ClearDagRunResponse, CollabTicketData, CollabTicketError, CollabTicketResponse, CreateAssetEventData, CreateAssetEventError, CreateAssetEventResponse, CreateBackfillData, CreateBackfillError, CreateBackfillResponse, CreateConnectionData, CreateConnectionError, CreateConnectionResponse, DecideAssistantProposalData, DecideAssistantProposalError, DecideAssistantProposalResponse, DecideTroubleshootActionData, DecideTroubleshootActionError, DecideTroubleshootActionResponse, DecideTroubleshootAnalysisData, DecideTroubleshootAnalysisError, DecideTroubleshootAnalysisResponse, DeleteAiRulesData, DeleteAiRulesError, DeleteAiRulesResponse, DeleteAssistantThreadData, DeleteAssistantThreadError, DeleteAssistantThreadResponse, DeleteIconData, DeleteIconError, DeleteIconResponse, DeleteMyAiModelData, DeleteMyAiModelResponse, DeleteSpecData, DeleteSpecError, DeleteSpecResponse, DeleteTemplateData, DeleteTemplateError, DeleteTemplateResponse, DeployProposalData, DeployProposalError, DeployProposalResponse, DeploySpecData, DeploySpecError, DeploySpecResponse, DescribeDagData, DescribeDagError, DescribeDagResponse, DiffVersionsData, DiffVersionsError, DiffVersionsResponse, DiffWithVersionData, DiffWithVersionError, DiffWithVersionResponse, EffectiveAiRulesData, EffectiveAiRulesResponse, ExplainCodeData, ExplainCodeError, ExplainCodeResponse, ExplainCodeStreamData, ExplainCodeStreamError, ExplainDagData, ExplainDagError, ExplainDagResponse, ExplainProblemsData, ExplainProblemsError, ExplainProblemsResponse, ExportDagFactoryData, ExportDagFactoryError, ExportDagFactoryResponse, ExportYamlDagData, ExportYamlDagError, ExportYamlDagResponse, FixDagData, FixDagError, FixDagResponse, GenerateCodeData, GenerateCodeError, GenerateCodeResponse, GenerateDagData, GenerateDagError, GenerateDagResponse, GetAiKnowledgeData, GetAiKnowledgeError, GetAiKnowledgeResponse, GetAirflowCapabilitiesData, GetAirflowCapabilitiesResponse, GetAssistantThreadData, GetAssistantThreadError, GetAssistantThreadResponse, GetAuthConfigData, GetAuthConfigResponse, GetAuthSessionData, GetAuthSessionResponse, GetBlueprintData, GetBlueprintError, GetBlueprintResponse, GetBlueprintStatusData, GetBlueprintStatusResponse, GetCatalogDiagnosticsData, GetCatalogDiagnosticsResponse, GetCatalogStatsData, GetCatalogStatsResponse, GetConfigData, GetConfigResponse, GetDagStatusData, GetDagStatusError, GetDagStatusResponse, GetDeployTargetData, GetDeployTargetResponse, GetGitCredentialsData, GetGitCredentialsError, GetGitCredentialsResponse, GetIconAssignmentsData, GetIconAssignmentsResponse, GetIconData, GetIconError, GetMeData, GetMeError, GetMeResponse, GetMetaData, GetMetaResponse, GetMyAiModelData, GetMyAiModelResponse, GetNotifierData, GetNotifierError, GetNotifierResponse, GetOperatorData, GetOperatorError, GetOperatorResponse, GetProposalData, GetProposalError, GetProposalResponse, GetRunOverlayData, GetRunOverlayError, GetRunOverlayResponse, GetSpecAuditData, GetSpecAuditError, GetSpecAuditResponse, GetSpecData, GetSpecError, GetSpecResponse, GetSpecSchemaData, GetSpecSchemaResponse, GetStorageStatusData, GetStorageStatusResponse, GetTaskLogData, GetTaskLogError, GetTaskLogResponse, GetTaskXcomData, GetTaskXcomError, GetTaskXcomResponse, GetTemplateData, GetTemplateError, GetTemplateResponse, GetTemplateVersionData, GetTemplateVersionError, GetTemplateVersionResponse, GetToolApprovalData, GetToolApprovalError, GetToolApprovalResponse, GetTroubleshootAnalysisData, GetTroubleshootAnalysisError, GetTroubleshootAnalysisResponse, GetVersionData, GetVersionError, GetVersionResponse, HealthData, HealthResponse, ImportAirflowDagData, ImportAirflowDagError, ImportAirflowDagResponse, ImportPythonDagData, ImportPythonDagError, ImportPythonDagResponse, ImportSpecJsonData, ImportSpecJsonError, ImportSpecJsonResponse, ImportYamlDagData, ImportYamlDagError, ImportYamlDagResponse, InstallMarketplaceEntryData, InstallMarketplaceEntryError, InstallMarketplaceEntryResponse, KbCancelData, KbCancelResponse, KbExportData, KbExportError, KbExportResponse, KbImportData, KbImportError, KbImportResponse, KbPutSourceData, KbPutSourceError, KbPutSourceResponse, KbRefreshData, KbRefreshError, KbRefreshResponse, KbResetSourceData, KbResetSourceError, KbResetSourceResponse, KbSearchData, KbSearchError, KbSearchResponse, KbSourcesData, KbSourcesResponse, KbStatusData, KbStatusResponse, ListAiKnowledgeData, ListAiKnowledgeResponse, ListAiRulesData, ListAiRulesResponse, ListAssetsData, ListAssetsError, ListAssetsResponse, ListAssistantThreadsData, ListAssistantThreadsError, ListAssistantThreadsResponse, ListBlueprintsData, ListBlueprintsResponse, ListConnectionHookMetaData, ListConnectionHookMetaResponse, ListConnectionsData, ListConnectionsError, ListConnectionsResponse, ListConnectionTypesData, ListConnectionTypesResponse, ListDagBundlesData, ListDagBundlesResponse, ListDagRunsData, ListDagRunsError, ListDagRunsResponse, ListDagVersionsData, ListDagVersionsError, ListDagVersionsResponse, ListDecoratorsData, ListDecoratorsResponse, ListIconsData, ListIconsResponse, ListImportErrorsData, ListImportErrorsError, ListImportErrorsResponse, ListMarketplaceData, ListMarketplaceError, ListMarketplaceResponse, ListNodeKindsData, ListNodeKindsResponse, ListNotifiersData, ListNotifiersResponse, ListOperatorsData, ListOperatorsResponse, ListPoolsData, ListPoolsError, ListPoolsResponse, ListProposalsData, ListProposalsError, ListProposalsResponse, ListQueueSchemesData, ListQueueSchemesResponse, ListSpecReviewsData, ListSpecReviewsError, ListSpecReviewsResponse, ListSpecsData, ListSpecsResponse, ListTemplatesData, ListTemplatesResponse, ListTemplateVersionsData, ListTemplateVersionsError, ListTemplateVersionsResponse, ListToolApprovalsData, ListToolApprovalsResponse, ListTroubleshootAnalysesData, ListTroubleshootAnalysesError, ListTroubleshootAnalysesResponse, ListVariablesData, ListVariablesError, ListVariablesResponse, ListVersionsData, ListVersionsError, ListVersionsResponse, LspServersData, LspServersResponse, LspSessionData, LspSessionError, LspSessionResponse, MaterializeAssetData, MaterializeAssetError, MaterializeAssetResponse, MergeSpecsData, MergeSpecsError, MergeSpecsResponse, MetricsData, OptimizeDagData, OptimizeDagError, OptimizeDagResponse, PreviewBlueprintData, PreviewBlueprintError, PreviewBlueprintResponse, PreviewDeployData, PreviewDeployError, PreviewDeployResponse, PreviewNextRunsData, PreviewNextRunsError, PreviewNextRunsResponse, PreviewSourceData, PreviewSourceError, PreviewSourceResponse, PromoteEnvironmentData, PromoteEnvironmentError, PromoteEnvironmentResponse, PutAiKnowledgeData, PutAiKnowledgeError, PutAiKnowledgeResponse, PutAiRulesData, PutAiRulesError, PutAiRulesResponse, PythonCompleteData, PythonCompleteError, PythonCompleteResponse, PythonHoverData, PythonHoverError, PythonHoverResponse, PythonSignaturesData, PythonSignaturesError, PythonSignaturesResponse, ReadyData, ReadyResponse, RefreshAuthSessionData, RefreshAuthSessionResponse, RefreshBlueprintsData, RefreshBlueprintsResponse, RefreshCatalogData, RefreshCatalogResponse, RenameAssistantThreadData, RenameAssistantThreadError, RenameAssistantThreadResponse, ResetAiKnowledgeData, ResetAiKnowledgeError, ResetAiKnowledgeResponse, ResetDeployTargetData, ResetDeployTargetResponse, ResumeToolApprovalStreamData, ResumeToolApprovalStreamError, ReviewDagData, ReviewDagError, ReviewDagResponse, ReviewDagRulesData, ReviewDagRulesError, ReviewDagRulesResponse, ReviewSpecData, ReviewSpecError, ReviewSpecResponse, SaveTemplateData, SaveTemplateError, SaveTemplateResponse, ScanDagSecretsData, ScanDagSecretsError, ScanDagSecretsResponse, ScanLeaksData, ScanLeaksError, ScanLeaksResponse, SetDagPausedData, SetDagPausedError, SetDagPausedResponse, SetDagSchedulingStateData, SetDagSchedulingStateError, SetDagSchedulingStateResponse, SetDeployTargetData, SetDeployTargetError, SetDeployTargetResponse, SetMyAiModelData, SetMyAiModelError, SetMyAiModelResponse, ShellLintData, ShellLintError, ShellLintResponse, SyncPythonCodeData, SyncPythonCodeError, SyncPythonCodeResponse, TestConnectionData, TestConnectionError, TestConnectionResponse, TestDagData, TestDagError, TestDagResponse, TestDeployTargetData, TestDeployTargetError, TestDeployTargetResponse, TestMyAiModelData, TestMyAiModelError, TestMyAiModelResponse, TestTaskData, TestTaskError, TestTaskResponse, ToggleAiKnowledgeData, ToggleAiKnowledgeError, ToggleAiKnowledgeResponse, TriggerDagData, TriggerDagError, TriggerDagResponse, TroubleshootAnalysisAppliedData, TroubleshootAnalysisAppliedError, TroubleshootAnalysisAppliedResponse, TroubleshootOptionsData, TroubleshootOptionsResponse, TroubleshootStreamData, TroubleshootStreamError, UploadIconData, UploadIconError, UploadIconResponse, ValidateCodeData, ValidateCodeError, ValidateCodeResponse, ValidateSpecData, ValidateSpecError, ValidateSpecResponse, WriteTaskCodeData, WriteTaskCodeError, WriteTaskCodeResponse } from '../types.gen';
 
 export type QueryKey<TOptions extends Options> = [
     Pick<TOptions, 'baseUrl' | 'body' | 'headers' | 'path' | 'query'> & {
@@ -396,6 +396,101 @@ export const getCatalogDiagnosticsOptions = (options?: Options<GetCatalogDiagnos
     },
     queryKey: getCatalogDiagnosticsQueryKey(options)
 });
+
+export const listBlueprintsQueryKey = (options?: Options<ListBlueprintsData>) => createQueryKey('listBlueprints', options);
+
+/**
+ * List Blueprints
+ *
+ * Every blueprint version found (entry points, template folders, configured modules).
+ */
+export const listBlueprintsOptions = (options?: Options<ListBlueprintsData>) => queryOptions<ListBlueprintsResponse, DefaultError, ListBlueprintsResponse, ReturnType<typeof listBlueprintsQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await listBlueprints({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: listBlueprintsQueryKey(options)
+});
+
+export const getBlueprintStatusQueryKey = (options?: Options<GetBlueprintStatusData>) => createQueryKey('getBlueprintStatus', options);
+
+/**
+ * Blueprint Status
+ */
+export const getBlueprintStatusOptions = (options?: Options<GetBlueprintStatusData>) => queryOptions<GetBlueprintStatusResponse, DefaultError, GetBlueprintStatusResponse, ReturnType<typeof getBlueprintStatusQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await getBlueprintStatus({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: getBlueprintStatusQueryKey(options)
+});
+
+export const getBlueprintQueryKey = (options: Options<GetBlueprintData>) => createQueryKey('getBlueprint', options);
+
+/**
+ * Get Blueprint
+ *
+ * One blueprint version with its config schema and default task preview.
+ */
+export const getBlueprintOptions = (options: Options<GetBlueprintData>) => queryOptions<GetBlueprintResponse, GetBlueprintError, GetBlueprintResponse, ReturnType<typeof getBlueprintQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await getBlueprint({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: getBlueprintQueryKey(options)
+});
+
+/**
+ * Preview Blueprint
+ *
+ * The task ids the step renders with ``config``: the step is generated as in a deployed
+ * DAG and imported by the DagBag worker pool (rate limit group ``validate``).
+ */
+export const previewBlueprintMutation = (options?: Partial<Options<PreviewBlueprintData>>): UseMutationOptions<PreviewBlueprintResponse, PreviewBlueprintError, Options<PreviewBlueprintData>> => {
+    const mutationOptions: UseMutationOptions<PreviewBlueprintResponse, PreviewBlueprintError, Options<PreviewBlueprintData>> = {
+        mutationFn: async (fnOptions) => {
+            const { data } = await previewBlueprint({
+                ...options,
+                ...fnOptions,
+                throwOnError: true
+            });
+            return data;
+        }
+    };
+    return mutationOptions;
+};
+
+/**
+ * Refresh Blueprints
+ */
+export const refreshBlueprintsMutation = (options?: Partial<Options<RefreshBlueprintsData>>): UseMutationOptions<RefreshBlueprintsResponse, DefaultError, Options<RefreshBlueprintsData>> => {
+    const mutationOptions: UseMutationOptions<RefreshBlueprintsResponse, DefaultError, Options<RefreshBlueprintsData>> = {
+        mutationFn: async (fnOptions) => {
+            const { data } = await refreshBlueprints({
+                ...options,
+                ...fnOptions,
+                throwOnError: true
+            });
+            return data;
+        }
+    };
+    return mutationOptions;
+};
 
 export const listConnectionsQueryKey = (options?: Options<ListConnectionsData>) => createQueryKey('listConnections', options);
 
@@ -1545,6 +1640,68 @@ export const decideAssistantProposalMutation = (options?: Partial<Options<Decide
     return mutationOptions;
 };
 
+export const listToolApprovalsQueryKey = (options?: Options<ListToolApprovalsData>) => createQueryKey('listToolApprovals', options);
+
+/**
+ * List Tool Approvals
+ *
+ * The caller's tool approvals waiting for a decision (or being resumed).
+ */
+export const listToolApprovalsOptions = (options?: Options<ListToolApprovalsData>) => queryOptions<ListToolApprovalsResponse, DefaultError, ListToolApprovalsResponse, ReturnType<typeof listToolApprovalsQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await listToolApprovals({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: listToolApprovalsQueryKey(options)
+});
+
+export const getToolApprovalQueryKey = (options: Options<GetToolApprovalData>) => createQueryKey('getToolApproval', options);
+
+/**
+ * Get Tool Approval
+ */
+export const getToolApprovalOptions = (options: Options<GetToolApprovalData>) => queryOptions<GetToolApprovalResponse, GetToolApprovalError, GetToolApprovalResponse, ReturnType<typeof getToolApprovalQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await getToolApproval({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: getToolApprovalQueryKey(options)
+});
+
+/**
+ * Resume Tool Approval
+ *
+ * Approve or deny each pending tool call of a paused run and resume it as a stream.
+ *
+ * The approval is claimed first (compare-and-set): a second decision - also on another
+ * replica - gets 409, an expired approval 410. The stream ends with the result of the
+ * paused run's kind: ``assistant_turn`` (the completed chat message) or ``troubleshoot``
+ * (the analysis). Every decision is written to the AI audit log.
+ */
+export const resumeToolApprovalStreamMutation = (options?: Partial<Options<ResumeToolApprovalStreamData>>): UseMutationOptions<unknown, ResumeToolApprovalStreamError, Options<ResumeToolApprovalStreamData>> => {
+    const mutationOptions: UseMutationOptions<unknown, ResumeToolApprovalStreamError, Options<ResumeToolApprovalStreamData>> = {
+        mutationFn: async (fnOptions) => {
+            const { data } = await resumeToolApprovalStream({
+                ...options,
+                ...fnOptions,
+                throwOnError: true
+            });
+            return data;
+        }
+    };
+    return mutationOptions;
+};
+
 export const troubleshootOptionsQueryKey = (options?: Options<TroubleshootOptionsData>) => createQueryKey('troubleshootOptions', options);
 
 /**
@@ -1589,7 +1746,8 @@ export const aiMcpServerToolsOptions = (options: Options<AiMcpServerToolsData>) 
  * Troubleshoot Stream
  *
  * Analyse a DAG run as a stream (evidence collection, tool calls, tokens), ending with
- * the stored ``troubleshoot`` analysis. Read-only: proposals need an explicit decision.
+ * the stored ``troubleshoot`` analysis. Read-only: proposals need an explicit decision;
+ * tool calls that need approval (``ai.approvals``) pause it (``awaiting_approval``).
  */
 export const troubleshootStreamMutation = (options?: Partial<Options<TroubleshootStreamData>>): UseMutationOptions<unknown, TroubleshootStreamError, Options<TroubleshootStreamData>> => {
     const mutationOptions: UseMutationOptions<unknown, TroubleshootStreamError, Options<TroubleshootStreamData>> = {
@@ -2586,6 +2744,29 @@ export const previewDeployMutation = (options?: Partial<Options<PreviewDeployDat
     const mutationOptions: UseMutationOptions<PreviewDeployResponse, PreviewDeployError, Options<PreviewDeployData>> = {
         mutationFn: async (fnOptions) => {
             const { data } = await previewDeploy({
+                ...options,
+                ...fnOptions,
+                throwOnError: true
+            });
+            return data;
+        }
+    };
+    return mutationOptions;
+};
+
+/**
+ * Preview Source
+ *
+ * What a deploy of ``body.spec`` would write as the DAG file, without writing: the
+ * source policy in force, whether the file in the target was changed outside AutoAir, and
+ * the unified diff of the generated or patched file. Preserve plans import the existing
+ * and the patched file in a sandboxed subprocess (round-trip check), so this can take a
+ * few seconds.
+ */
+export const previewSourceMutation = (options?: Partial<Options<PreviewSourceData>>): UseMutationOptions<PreviewSourceResponse, PreviewSourceError, Options<PreviewSourceData>> => {
+    const mutationOptions: UseMutationOptions<PreviewSourceResponse, PreviewSourceError, Options<PreviewSourceData>> = {
+        mutationFn: async (fnOptions) => {
+            const { data } = await previewSource({
                 ...options,
                 ...fnOptions,
                 throwOnError: true

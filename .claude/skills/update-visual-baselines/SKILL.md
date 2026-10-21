@@ -13,6 +13,13 @@ the standalone UI into `<run>/dist`, starts `autoair serve --no-auth` with state
 and `dark` projects with `e2e/visual/__screenshots__/screens.spec.ts/<screen>-<project>.png`
 (`maxDiffPixelRatio: 0.01`).
 
+The plugin-mode suite (`npm run test:visual:plugin`, `playwright.visual-plugin.config.ts`,
+`e2e/visual/plugin.spec.ts`) takes the same screens plus the connection form, clear, backfill
+and asset-action dialogs inside a private Airflow with the plugin; its browser runs in the
+Playwright Docker image, so its baselines (`__screenshots__/plugin.spec.ts/`) are the same on
+every Linux machine with Docker and in CI. The steps below apply to both suites: use
+`test:visual:plugin` for the plugin screens.
+
 ## Steps
 
 1. Run it first and read the diff images:
@@ -39,6 +46,9 @@ and `dark` projects with `e2e/visual/__screenshots__/screens.spec.ts/<screen>-<p
 
 - Baselines are rendered on Linux with the installed Google Chrome; fonts and Chrome versions
   shift pixels. Regenerate on Linux, never on macOS/Windows.
+- Plugin baselines need Docker (the browser is in `mcr.microsoft.com/playwright:v<version>-noble`);
+  `AUTOAIR_VISUAL_BROWSER=local` is for iterating only, never for updating baselines. A
+  `@playwright/test` or Airflow upgrade (`uv.lock`) regenerates them in the same change.
 - The CI `visual` job is non-blocking (`continue-on-error`) until baselines prove stable on
   hosted runners; a red visual job still needs an explanation in the PR.
 - Never update all baselines to make a failure go away. Never raise `maxDiffPixelRatio`.

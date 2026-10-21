@@ -1,0 +1,76 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: autoair
+  labels:
+    app.kubernetes.io/name: autoair
+    app.kubernetes.io/component: server
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: autoair
+      app.kubernetes.io/component: server
+  policyTypes: [Ingress, Egress]
+  ingress:
+    # The Gateway's data plane only (gateway-system, as in components/gateway-api). Change the
+    # namespace to yours, e.g. your ingress controller's when you use components/ingress.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: gateway-system
+      ports:
+        - port: 8765
+          protocol: TCP
+  egress:
+    # Cluster DNS.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+    # Airflow's api-server (token checks, pickers, runs, logs): labels of the official chart.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: airflow
+          podSelector:
+            matchLabels:
+              component: api-server
+      ports:
+        - port: 8080
+          protocol: TCP
+    # The validator and the AI service in this namespace.
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: autoair-validator
+      ports:
+        - port: 8791
+          protocol: TCP
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: autoair-ai
+      ports:
+        - port: 8790
+          protocol: TCP
+    # PostgreSQL and HTTPS (git host API, object storage, OIDC). Narrow the blocks to the
+    # addresses of your database and hosts where you can; the cloud metadata endpoint is
+    # excluded either way. Whether an ipBlock matches in-cluster pod addresses depends on
+    # the network plugin: for a PostgreSQL inside the cluster add a podSelector rule.
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except: [169.254.169.254/32]
+      ports:
+        - port: 5432
+          protocol: TCP
+        - port: 443
+          protocol: TCP

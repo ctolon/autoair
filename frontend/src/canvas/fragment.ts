@@ -13,7 +13,7 @@ import { nodeKey } from "../lib/types";
 import { edgeId, graphFromSpec, specEdgesOf, specNodesOf } from "../store/convert";
 import { absPos, descendantsOf, sortParentsFirst } from "./geometry";
 
-const KINDS: ReadonlySet<NodeKind> = new Set(["operator", "python_task", "task_group", "custom", "note"]);
+const KINDS: ReadonlySet<NodeKind> = new Set(["operator", "python_task", "task_group", "custom", "blueprint", "note"]);
 
 /** Default offset of a paste/duplicate when no target position is given. */
 const PASTE_OFFSET = { x: 40, y: 40 } as const;
@@ -172,6 +172,11 @@ export function prepareFragment(
       case "custom": {
         out.task_id = freshKey(usedKeys, out.task_id);
         usedKeys.add(out.task_id);
+        break;
+      }
+      case "blueprint": {
+        out.step_id = freshKey(usedKeys, out.step_id);
+        usedKeys.add(out.step_id);
         break;
       }
       case "python_task": {

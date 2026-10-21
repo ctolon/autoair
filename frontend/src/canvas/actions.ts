@@ -5,7 +5,7 @@ import type { Template } from "../api/gen/types.gen";
 import { errorMessage } from "../api/setup";
 import { collabActive, collabRedo, collabUndo } from "../collab/session";
 import { i18n } from "../i18n";
-import type { ClipboardFragment, FragmentInput, NodeSpec } from "../lib/types";
+import type { BuilderNode, ClipboardFragment, FragmentInput, NodeSpec } from "../lib/types";
 import { flushHistory, selectedEdgeIds, selectedNodeIds, useBuilder } from "../store/builder";
 import { useLifecycle } from "../lifecycle/store";
 import { toaster } from "../ui/toaster";
@@ -16,6 +16,7 @@ import { parseFragment } from "./fragment";
 import { GROUP_SIZE, NOTE_SIZE, TASK_SIZE, descendantsOf, freeSpot, groupAt } from "./geometry";
 import type { InsertItem, InsertPayload } from "./insertables";
 import { instantiateBlueprint, requiredPaths } from "./operatorTemplates";
+import { AUTO_FIT_MIN_ZOOM } from "./largeGraph";
 import { autoLayout } from "./layout";
 
 /**
@@ -157,19 +158,28 @@ export function nudgeSelection(dx: number, dy: number): void {
   builder().moveNodes(selection(), dx, dy);
 }
 
-export function fitView(): void {
-  void getFlow()?.fitView({ padding: 0.2, duration: 300, maxZoom: 1 });
+/** "Fit view": the whole graph. `auto` (after a layout): not below `AUTO_FIT_MIN_ZOOM`. */
+export function fitView(auto = false): void {
+  void getFlow()?.fitView({ padding: 0.2, duration: 300, maxZoom: 1, ...(auto ? { minZoom: AUTO_FIT_MIN_ZOOM } : {}) });
 }
 
 let layoutRunning = false;
+
+/** What a layout result is valid for: the node ids, their parents and collapsed groups. */
+const layoutShape = (nodes: readonly BuilderNode[]) =>
+  nodes.map((n) => `${n.id}:${n.parentId ?? ""}:${n.type === "task_group" && n.data.collapsed ? 1 : 0}`).join();
 
 export async function runAutoLayout(): Promise<void> {
   if (layoutRunning) return;
   layoutRunning = true;
   try {
-    const { nodes, edges, applyLayout } = builder();
-    applyLayout(await autoLayout(nodes, edges));
-    requestAnimationFrame(() => fitView());
+    const { nodes, edges } = builder();
+    const layout = await autoLayout(nodes, edges);
+    // ELK takes a while on large graphs: a result for a document that gained, lost or
+    // re-parented nodes meanwhile (an edit, a collaborator, another DAG opened) is stale.
+    if (layoutShape(builder().nodes) !== layoutShape(nodes)) return;
+    builder().applyLayout(layout);
+    requestAnimationFrame(() => fitView(true));
   } catch (e) {
     toaster.create({ type: "error", title: t("toast.layoutFailed"), description: errorMessage(e) });
   } finally {

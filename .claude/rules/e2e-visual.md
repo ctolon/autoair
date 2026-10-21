@@ -21,5 +21,9 @@ Running them: skill `run-e2e`; baselines: skill `update-visual-baselines`.
   with Google Chrome; update only screens whose change is intended, review every PNG in both
   themes, never raise the threshold. A new screen uses deterministic data from `fixtures.ts`
   and gets a row in `e2e/visual/README.md`. The CI `visual` job is non-blocking (`continue-on-error`).
+- Plugin-mode visual suite (`npm run test:visual:plugin`): a private Airflow per run and the
+  browser in the Playwright Docker image (portable baselines in
+  `__screenshots__/plugin.spec.ts/`); its plugin bundle is routed from the run folder, never
+  built into `src/autoair/static`.
 - Validate with explicit specs and the crawler, not with fuzzing. Read the trace in
   `frontend/e2e/.results/` before retrying a failing spec.

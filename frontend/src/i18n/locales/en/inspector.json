@@ -73,7 +73,21 @@
       "maxActiveTasksHelp": "Maximum number of task instances of this DAG running at once, across all runs.",
       "runTimeoutHelp": "A run still going after this many seconds is marked failed (dagrun_timeout).",
       "maxConsecutiveFailedHelp": "Pause the DAG automatically after this many failed runs in a row (0 = never).",
-      "pausedUponCreationHelp": "New DAGs start paused: nothing runs until someone unpauses it in Airflow."
+      "pausedUponCreationHelp": "New DAGs start paused: nothing runs until someone unpauses it in Airflow.",
+      "sourcePolicy": "Source policy",
+      "sourcePolicyHelp": "How the Python DAG file is written on deploy: generated from the spec, or the existing hand-written file patched with each change (comments, formatting and ordering kept).",
+      "sourcePolicyAuto": "Auto ({{policy}})",
+      "sourcePolicyName": {
+        "generate": "Generate",
+        "preserve": "Preserve",
+        "strict-preserve": "Strict preserve"
+      },
+      "sourcePolicyNote": {
+        "generate": "Each deploy writes the file AutoAir generates. A file changed outside AutoAir is never overwritten silently.",
+        "preserve": "Each deploy patches only what changed into the existing file; a change it cannot apply stops the deploy with an explanation.",
+        "strict-preserve": "Like preserve, but also refuses changes that would replace values written as variables, change an operator class or move a task between groups."
+      },
+      "sourcePolicyNotApplicable": "Applies to Python output only: loader and YAML files are always generated."
     },
     "schedule": {
       "startDate": "Start date",
@@ -607,7 +621,8 @@
     "python_task": "Python task",
     "task_group": "Task group",
     "custom": "Extension",
-    "note": "Note"
+    "note": "Note",
+    "blueprint": "Blueprint"
   },
   "node": {
     "taskId": "Task id",
@@ -1170,5 +1185,22 @@
     "llmConnectionHelp": "Connection of the model provider (pydantic-ai: OpenAI, Anthropic, Bedrock…).",
     "modelId": "Model",
     "modelIdHelp": "provider:model, e.g. openai:gpt-5 or anthropic:claude-sonnet-4-5 (empty: the connection's default)."
+  },
+  "blueprint": {
+    "stepId": "Step id",
+    "stepIdHelp": "Task or group id the blueprint renders under (its step_id).",
+    "version": "Version",
+    "versionHelp": "Each version is its own template with its own config; switching keeps the values, check them against the new form.",
+    "disabled": "Disabled",
+    "disabledHelp": "Leave the step out of the generated DAG (kept on the canvas).",
+    "runtime": "The Airflow environment needs airflow-blueprint and the module {{module}} (the blueprint templates) to parse this DAG.",
+    "config": "Configuration",
+    "missing": "Blueprint {{name}} v{{version}} is not in the catalog: {{error}}",
+    "noSchema": "The config schema could not be read ({{error}}); the config is not checked.",
+    "unknownReason": "unknown reason",
+    "preview": "Task preview",
+    "refresh": "Refresh",
+    "previewFailed": "The preview could not be rendered: {{error}}",
+    "previewHelp": "The tasks this step renders with the current config appear here."
   }
 }

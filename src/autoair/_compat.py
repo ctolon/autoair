@@ -40,6 +40,21 @@ def supports_react_apps() -> bool:
     return v is not None and v >= (3, 1, 0)
 
 
+def supports_plugin_applies_to() -> bool:
+    """Airflow 3.4 added ``applies_to`` (UI-side scoping) to ``react_apps`` / ``external_views``.
+
+    Detected on the plugin dict type rather than the version, so a backport is picked up too.
+    """
+    try:
+        from airflow.plugins_manager import ReactAppDict
+    except ImportError:
+        return False
+    keys = getattr(ReactAppDict, "__required_keys__", frozenset()) | getattr(
+        ReactAppDict, "__optional_keys__", frozenset()
+    )
+    return "applies_to" in keys
+
+
 def dagbag_class() -> Any:
     """``DagBag`` moved to ``airflow.dag_processing.dagbag`` in Airflow 3.2."""
     try:

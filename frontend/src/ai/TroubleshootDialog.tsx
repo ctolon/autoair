@@ -28,6 +28,7 @@ import {
 import type {
   McpServerOption,
   McpToolInfo,
+  ToolDecision,
   TroubleshootAnalysis,
   TroubleshootOptions,
   TroubleshootScope,
@@ -48,6 +49,7 @@ import { Citations, ToolChips } from "./ChatMessageView";
 import { watchNextDeploy } from "./deployWatch";
 import { SpecDiffReview } from "./SpecDiffReview";
 import { type TroubleshootTarget, useAiChat } from "./store";
+import { ToolApprovalCard, isOpen } from "./ToolApprovalCard";
 
 export const SCOPE_KEYS = [
   "connections",
@@ -249,14 +251,18 @@ export function AnalysisReport({
   selected,
   onSelected,
   onUpdate,
+  onApproval,
 }: {
   analysis: TroubleshootAnalysis;
   selected: string[];
   onSelected: (ids: string[]) => void;
   onUpdate: (a: TroubleshootAnalysis) => void;
+  /** Decide the pending tool calls of a paused analysis (resumes it). */
+  onApproval?: (approvalId: string, decisions: ToolDecision[]) => void;
 }) {
   const { t } = useTranslation("ai");
   const patches = (analysis.findings ?? []).filter((f) => (f.patch ?? []).length > 0);
+  const approvals = Array.isArray(analysis.approvals) ? analysis.approvals : [];
   return (
     <Stack gap={4} data-testid="troubleshoot-report">
       <Box borderWidth="1px" rounded="md" p={3} bg="bg.subtle">
@@ -273,6 +279,13 @@ export function AnalysisReport({
           {analysis.summary || t("troubleshoot.noSummary")}
         </Text>
       </Box>
+      {approvals.map((a, i) => (
+        <ToolApprovalCard
+          key={a.id ?? i}
+          approval={a}
+          onSubmit={onApproval && i === approvals.length - 1 && isOpen(a) ? (d) => onApproval(a.id, d) : undefined}
+        />
+      ))}
       {analysis.hypotheses?.length ? (
         <Box>
           <Text fontSize="sm" fontWeight="semibold" mb={1}>
@@ -533,6 +546,17 @@ export default function TroubleshootDialog({ target }: { target: TroubleshootTar
       setBusy(false);
     }
   };
+  const decideApproval = async (approvalId: string, decisions: ToolDecision[]) => {
+    const pausedId = analysis?.id;
+    setLoaded(null);
+    setSelected(null);
+    await start(`/ai/approvals/${encodeURIComponent(approvalId)}/stream`, { decisions });
+    // Refused (expired, decided elsewhere) or failed: show the stored state of the analysis.
+    if (pausedId) {
+      const { data } = await getTroubleshootAnalysis({ path: { analysis_id: pausedId } });
+      if (data && data.status === "awaiting_approval") setLoaded(data);
+    }
+  };
   const openPrevious = async (id: string) => {
     try {
       const { data } = await getTroubleshootAnalysis({ path: { analysis_id: id }, throwOnError: true });
@@ -681,7 +705,13 @@ export default function TroubleshootDialog({ target }: { target: TroubleshootTar
               <AiStreamProgress state={state} showText={false} />
             ) : null}
             {showResult && analysis ? (
-              <AnalysisReport analysis={analysis} selected={chosen} onSelected={setSelected} onUpdate={setLoaded} />
+              <AnalysisReport
+                analysis={analysis}
+                selected={chosen}
+                onSelected={setSelected}
+                onUpdate={setLoaded}
+                onApproval={(id, d) => void decideApproval(id, d)}
+              />
             ) : null}
           </Stack>
         )}

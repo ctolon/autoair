@@ -10,7 +10,7 @@ AutoAir validates the DAG continuously on the server, the single source of truth
 
 ## Live checks
 
-About 600 ms after each change to the DAG, the builder sends the current spec to the server twice, in parallel:
+About 600 ms after each change to the DAG (longer on DAGs with more than 200 nodes, see [Large DAGs](/docs/user-guide/large-dags)), the builder sends the current spec to the server twice, in parallel:
 
 - `POST /api/validate` runs the validation pipeline described below, without the Airflow import check;
 - `POST /api/codegen` generates the Python file, which feeds the **Code** tab and code mode.
@@ -28,7 +28,7 @@ If the document does not even match the spec schema (an invalid value the server
 | Stage | Checks |
 |---|---|
 | Structure | Duplicate node ids, task ids and function names, unknown parent groups, task group nesting cycles, an end date before the start date, a scheduled DAG without a start date (`scheduled DAGs should define a start_date`, warning). |
-| Graph | Edges to unknown nodes, self-loops, edges to notes, duplicate edges, edges between a group and its own member, XCom references (unknown, to a group or note, to itself, to a disabled task), cycles with task groups expanded to their members. |
+| Graph | Edges to unknown nodes, self-loops, edges to notes, duplicate edges, edges between a group and its own member, XCom references (unknown, to a group or note, to itself, to a disabled task), cycles with task groups expanded to their members, task groups that depend on each other in a cycle when each group counts as one unit (`task_group_cycle`, warning; see below). |
 | Nodes | Operator parameters against the catalog (required, empty, unknown), the operator allowlist, privileged and forbidden operators, Python task syntax and ruff lint, decorator arguments, reserved argument names, dynamic task mapping values, extension node configuration. |
 | Schedule | `@once` / `@continuous` combined with assets, `batch_asset_events=False` with AND conditions, providers needed by asset watchers and OpenLineage settings, `catchup=True` without `max_active_runs` (warning). |
 | Behaviours | Notifiers of callbacks and deadline alerts, setup and teardown rules, retry policies. |
@@ -132,6 +132,10 @@ The server reports messages in English. The UI rewrites the common ones into fri
 
 Messages without a translation are shown as the server sent them.
 
+### Cyclic task group dependencies
+
+A dependency into or out of any task of a task group counts as a dependency of the whole group. A path that leaves a group and comes back into it is therefore a cycle between groups, although the task graph itself has none: with `a` and `b` in group `g` and `bridge` outside it, `a >> bridge >> b` makes `g` depend on `bridge` and `bridge` depend on `g`. Airflow 3.4 shows a DAG warning for such DAGs and Airflow 3.5 is planned to refuse to parse them, so AutoAir reports a `task_group_cycle` warning that names the groups and tasks involved, whatever the target Airflow version. Move tasks between groups (here: `bridge` into `g`, or `b` out of it) so that each group depends on the others in one direction only. Disabled tasks are bridged first, as in the generated code, and XCom references count as dependencies.
+
 ## Problem codes
 
 | Code | Meaning |
@@ -139,6 +143,7 @@ Messages without a translation are shown as the server sent them.
 | `schema` | The document does not match the spec schema. |
 | `duplicate_node`, `duplicate_task_id`, `duplicate_function`, `bad_parent` | Structural conflicts. |
 | `edge_unknown_node`, `self_loop`, `duplicate_edge`, `cycle`, `group_cycle`, `group_edge`, `note_edge` | Graph problems. |
+| `task_group_cycle` | Warning: task groups depend on each other in a cycle. Airflow 3.4 deprecates this and Airflow 3.5 is planned to reject the DAG. |
 | `dates`, `start_date`, `catchup`, `schedule`, `watcher` | Schedule and date problems. |
 | `param`, `reserved_param`, `reserved_arg`, `config`, `unknown_handler` | Parameters of operators, Python tasks and extension nodes. |
 | `syntax`, `lint:<rule>` | Python syntax errors and ruff findings in task code. |
@@ -157,10 +162,11 @@ Messages without a translation are shown as the server sent them.
 | `airflow_version` | A feature needs a newer Airflow than the target version. |
 | `codegen` | The DAG file could not be generated. |
 | `import` | The generated file failed to import in Airflow's `DagBag`. |
+| `import_service` | The [validator service](/docs/deployment/validator-service) could not be asked; a warning by default (`validator.fail_mode=open`: the deploy goes ahead without the import check) or, with `fail_mode=closed`, an error that blocks deploys. |
 
 ## Python lint
 
-The body of every Python task is linted with [ruff](https://docs.astral.sh/ruff/) on the server. The body is wrapped in the function signature the code generator emits, linted from standard input (nothing is executed), and findings are mapped back to body line numbers.
+The body of every Python task is linted with [ruff](https://docs.astral.sh/ruff/) on the server. The body is wrapped in the function signature the code generator emits and linted (nothing is executed), and findings are mapped back to body line numbers. One ruff run lints every task body of a validation, and the server remembers the results of bodies it has already linted, so a DAG with hundreds of Python tasks is not slower to re-check than its changes require.
 
 | Setting | Default | Effect |
 |---|---|---|
@@ -168,11 +174,11 @@ The body of every Python task is linted with [ruff](https://docs.astral.sh/ruff/
 | `editor.python_lint_select_extra` | `[]` | More rules, for example `["S"]` for bandit. |
 | `editor.python_lint_ignore` | `["F401"]` | Rules never reported. |
 | `editor.python_lint_ignore_extra` | `[]` | More ignored rules. |
-| `editor.python_lint_timeout` | `15` | Seconds per lint run. |
+| `editor.python_lint_timeout` | `15` | Seconds per lint run (one run covers all bodies that changed since the last validation). |
 
 Undefined names (`F82x`), syntax errors (`E9`) and `PLE` rules are errors; other findings are warnings. Ruff must be installed on the server (`pip install 'autoair[format]'`); without it, lint is skipped and only syntax errors are reported.
 
-ShellCheck findings on `bash_command` values, `@task.bash` return values and shell scripts are reported as warnings (style notes as info) when ShellCheck is installed (`pip install 'autoair[shell]'`) and `editor.shellcheck_in_validation` is on. `editor.shellcheck_exclude` (default `["SC1091", "SC2034", "SC2154"]`) and `editor.shellcheck_exclude_extra` silence rules that are noise for Airflow commands. Jinja expressions are masked before ShellCheck runs.
+ShellCheck findings on `bash_command` values, `@task.bash` return values and shell scripts are reported as warnings (style notes as info) when ShellCheck is installed (`pip install 'autoair[shell]'`) and `editor.shellcheck_in_validation` is on. `editor.shellcheck_exclude` (default `["SC1091", "SC2034", "SC2154"]`) and `editor.shellcheck_exclude_extra` silence rules that are noise for Airflow commands. Jinja expressions are masked before ShellCheck runs. Like ruff, ShellCheck runs in batches (up to 50 scripts per run) over the scripts it has not seen yet (`editor.shellcheck_timeout`, default 5 seconds, per run); `.shellcheckrc` files are not read.
 
 ## Import check (Validate in Airflow)
 
@@ -188,6 +194,8 @@ The import check executes the generated file, including inline code, on the Auto
 | `dagbag_pool_size` | `2` | Number of warm workers. |
 | `dagbag_pool_max_tasks` | `50` | Checks per worker before it is recycled. |
 | `target_airflow_version` | unset | Validate against this Airflow version instead of the installed one. |
+
+With `validator.url` set, the import runs in a separate [validator service](/docs/deployment/validator-service) instead. When that service cannot be reached the check reports an `import_service` problem: a warning by default (`validator.fail_mode=open`), or an error that blocks deploys with `fail_mode=closed`.
 
 Deployment runs the validation again on the server, with the import check when `import_check_on_deploy` is on, and refuses to deploy a DAG with errors. See [Deploy](/docs/user-guide/deploy).
 

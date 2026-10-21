@@ -10,8 +10,12 @@ import { type Page, expect, test } from "@playwright/test";
  */
 const DEV = process.env.AUTOAIR_DEV_URL ?? "http://localhost:5173";
 const ID = `e2e-notify-${Date.now().toString(36)}`;
-/** A production build served by `vite preview` needs the API base (dev servers use /api). */
-const API_BASE = process.env.AUTOAIR_E2E_API_BASE ?? null;
+/**
+ * A production build served by `vite preview` needs the API base (dev servers use /api). The
+ * page uses its own origin's /api, which vite preview proxies: the private stack's absolute
+ * AUTOAIR_E2E_API_BASE is another origin, which the API does not allow (CORS).
+ */
+const API_BASE = process.env.AUTOAIR_E2E_API_BASE ? "/api" : null;
 
 const nodes = (page: Page) => page.locator(".react-flow__node");
 /** Inspector input of a spec field (fields carry `data-autoair-field`). */

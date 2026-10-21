@@ -57,6 +57,11 @@ def _skip_if_newer(spec: DagSpec) -> None:
 
         if importlib.util.find_spec("airflow.providers.common.ai") is None:
             pytest.skip("apache-airflow-providers-common-ai is not installed")
+    if any(getattr(n, "kind", None) == "blueprint" for n in spec.nodes):
+        import importlib.util
+
+        if importlib.util.find_spec("blueprint") is None:
+            pytest.skip("airflow-blueprint is not installed (autoair[blueprint])")
 
 
 @pytest.mark.parametrize("path", GOLDEN_SPECS, ids=lambda p: p.name)

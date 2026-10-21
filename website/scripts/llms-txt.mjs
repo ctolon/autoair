@@ -25,7 +25,8 @@ const INTRO =
   'server, Docker Compose and Helm), the builder, the optional AI features and MCP server, ' +
   'administration (configuration, IAM, SSO, policy, audit), deployment guides, extension ' +
   'points and the generated configuration and CLI references. Every page is also available ' +
-  'as Markdown in llms-full.txt.';
+  'as Markdown in llms-full.txt, and coding agents can search and read the documentation of ' +
+  'the installed version over MCP with `autoair docs-mcp` (AutoAir docs MCP page below).';
 
 function stripFrontMatter(text) {
   return text.replace(/^---\n[\s\S]*?\n---\n/, '');
@@ -144,6 +145,7 @@ export default function llmsTxtPlugin(context) {
         '## Optional',
         '',
         `- [Full documentation text](${absolute('/llms-full.txt')}): every page above as Markdown, in this order`,
+        `- [Documentation MCP server](${absolute('/docs/ai/docs-mcp')}): search_autoair_docs and read_autoair_doc for coding agents (\`uvx --from 'autoair[mcp]' autoair docs-mcp\`)`,
         `- [REST API reference](${absolute('/api')}): the OpenAPI description of the AutoAir server, rendered`,
         `- [OpenAPI document](${absolute('/openapi.json')}): the same API as JSON`,
         `- [Release notes](${absolute('/blog')}): changes per release`,

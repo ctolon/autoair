@@ -19,13 +19,12 @@ import { LuGitMerge, LuRocket, LuTriangleAlert } from "react-icons/lu";
 import { mergeSpecs } from "../../api/gen/sdk.gen";
 import type { Conflict, ConflictInfo, DagSpec } from "../../api/gen/types.gen";
 import { errorMessage } from "../../api/setup";
+import { useAccess } from "../../lib/access";
 import { useBuilder } from "../../store/builder";
 import { deploy } from "../actions";
 import { DialogShell } from "../components/DialogShell";
-import { GitTokenField } from "../components/GitTokenField";
 import { JsonBlock } from "../components/JsonBlock";
-import { useMeta } from "../hooks";
-import { tokenMissing, useGitTokenInfo } from "../lib/gitToken";
+import { useRetryToken } from "../lib/retryToken";
 import { type Side, allResolved, applyResolutions } from "../lib/conflicts";
 import { type DeployOptions, useLifecycle } from "../store";
 
@@ -36,40 +35,6 @@ function adoptMerged(spec: DagSpec, theirs: DagSpec, etag: string | null | undef
   const pendingPrUrl = st.pendingPrUrl;
   st.load(spec, true, { etag: etag ?? null, pendingPrUrl });
   useBuilder.setState({ dirty: true, baseSpec: theirs, savedDagId: prevSaved ?? spec.dag_id });
-}
-
-/**
- * The git token a retried deploy needs (storage.git.request_token): typed again here, since
- * the first one was dropped right after the deploy that ran into the conflict.
- */
-function useRetryToken() {
-  const meta = useMeta();
-  const team = useBuilder((s) => s.dag.team ?? null);
-  const info = useGitTokenInfo(team, meta?.storage.kind === "git");
-  const [token, setToken] = useState("");
-  const [invalid, setInvalid] = useState(false);
-  const field = (
-    <GitTokenField
-      info={info}
-      value={token}
-      onChange={(v) => {
-        setToken(v);
-        if (v.trim()) setInvalid(false);
-      }}
-      invalid={invalid}
-    />
-  );
-  /** The secret for `deploy()`, or `null` when a required token is missing. */
-  const take = (): { gitToken: string } | null => {
-    if (tokenMissing(info, token)) {
-      setInvalid(true);
-      return null;
-    }
-    const gitToken = token;
-    setToken("");
-    return { gitToken };
-  };
-  return { field, take };
 }
 
 function SideValue({ label, present, value }: { label: string; present: boolean | undefined; value: unknown }) {
@@ -139,48 +104,62 @@ function ConflictRow({
   );
 }
 
-function EjectedBody({ file, request }: { file: string; request: DeployOptions }) {
+function EjectedBody({ conflict, file, request }: { conflict: ConflictInfo; file: string; request: DeployOptions }) {
   const { t } = useTranslation("lifecycle");
+  // The server says whether a forced deploy would be accepted for this user; the switch
+  // (preserve.allow_force_overwrite) and the permission are checked here again.
+  const access = useAccess();
+  const canForce = conflict.force_allowed === true && access.forceOverwrite;
+  const handWritten = conflict.hand_written === true;
   const close = useLifecycle((s) => s.closeDialog);
   const [busy, setBusy] = useState(false);
   const retry = useRetryToken();
   return (
     <DialogShell
-      title={t("conflict.ejectedTitle")}
+      title={handWritten ? t("conflict.handWrittenTitle") : t("conflict.ejectedTitle")}
       size="md"
       footer={
         <>
           <Button size="sm" variant="ghost" onClick={close}>
-            {t("common.cancel")}
+            {canForce ? t("common.cancel") : t("common.close")}
           </Button>
-          <Button
-            size="sm"
-            colorPalette="red"
-            loading={busy}
-            onClick={async () => {
-              const secret = retry.take();
-              if (!secret) return;
-              setBusy(true);
-              close();
-              await deploy({ ...request, force: true }, secret);
-              setBusy(false);
-            }}
-          >
-            {t("conflict.force")}
-          </Button>
+          {canForce ? (
+            <Button
+              size="sm"
+              colorPalette="red"
+              loading={busy}
+              data-testid="conflict-force"
+              onClick={async () => {
+                const secret = retry.take();
+                if (!secret) return;
+                setBusy(true);
+                close();
+                await deploy({ ...request, force: true }, secret);
+                setBusy(false);
+              }}
+            >
+              {t("conflict.force")}
+            </Button>
+          ) : null}
         </>
       }
     >
       <Alert.Root status="warning">
         <Alert.Indicator />
         <Alert.Content>
-          <Alert.Description fontSize="sm">{t("conflict.ejectedHelp")}</Alert.Description>
+          <Alert.Description fontSize="sm">
+            {canForce
+              ? handWritten
+                ? t("conflict.handWrittenHelp")
+                : t("conflict.ejectedHelp")
+              : t("conflict.forceOff")}
+          </Alert.Description>
         </Alert.Content>
       </Alert.Root>
       <Code mt={3} display="block" p={2} fontSize="xs">
         {file}
       </Code>
-      <Box mt={3}>{retry.field}</Box>
+      {canForce ? <Box mt={3}>{retry.field}</Box> : null}
     </DialogShell>
   );
 }
@@ -358,6 +337,6 @@ export default function ConflictDialog({
   spec: DagSpec;
 }) {
   if (conflict.ejected_file && !conflict.current_spec)
-    return <EjectedBody file={conflict.ejected_file} request={request} />;
+    return <EjectedBody conflict={conflict} file={conflict.ejected_file} request={request} />;
   return <MergeBody conflict={conflict} request={request} ours={spec} />;
 }

@@ -73,7 +73,21 @@
       "maxActiveTasksHelp": "Tüm çalıştırmalar genelinde bu DAG'ın aynı anda çalışan en fazla görev sayısı.",
       "runTimeoutHelp": "Bu kadar saniye sonra hâlâ süren çalıştırma başarısız sayılır (dagrun_timeout).",
       "maxConsecutiveFailedHelp": "Art arda bu kadar başarısız çalıştırmadan sonra DAG otomatik duraklatılır (0 = asla).",
-      "pausedUponCreationHelp": "Yeni DAG duraklatılmış başlar: Airflow'da biri açana kadar hiçbir şey çalışmaz."
+      "pausedUponCreationHelp": "Yeni DAG duraklatılmış başlar: Airflow'da biri açana kadar hiçbir şey çalışmaz.",
+      "sourcePolicy": "Kaynak politikası",
+      "sourcePolicyHelp": "Python DAG dosyasının dağıtımda nasıl yazılacağı: spec'ten üretilir ya da elle yazılmış mevcut dosya her değişiklikle yamalanır (yorumlar, biçim ve sıralama korunur).",
+      "sourcePolicyAuto": "Otomatik ({{policy}})",
+      "sourcePolicyName": {
+        "generate": "Üret",
+        "preserve": "Koru",
+        "strict-preserve": "Katı koru"
+      },
+      "sourcePolicyNote": {
+        "generate": "Her dağıtım AutoAir'in ürettiği dosyayı yazar. AutoAir dışında değiştirilmiş bir dosyanın üzerine asla sessizce yazılmaz.",
+        "preserve": "Her dağıtım yalnızca değişeni mevcut dosyaya yamalar; uygulanamayan bir değişiklik dağıtımı bir açıklamayla durdurur.",
+        "strict-preserve": "Koru gibi, ancak değişken olarak yazılmış değerleri değiştirecek, bir operatör sınıfını değiştirecek ya da bir görevi gruplar arasında taşıyacak değişiklikleri de reddeder."
+      },
+      "sourcePolicyNotApplicable": "Yalnızca Python çıktısı için geçerlidir: loader ve YAML dosyaları her zaman üretilir."
     },
     "schedule": {
       "startDate": "Başlangıç tarihi",
@@ -607,7 +621,8 @@
     "python_task": "Python görevi",
     "task_group": "Görev grubu",
     "custom": "Eklenti",
-    "note": "Not"
+    "note": "Not",
+    "blueprint": "Blueprint"
   },
   "node": {
     "taskId": "Görev kimliği",
@@ -1170,5 +1185,22 @@
     "llmConnectionHelp": "Model sağlayıcısının bağlantısı (pydantic-ai: OpenAI, Anthropic, Bedrock…).",
     "modelId": "Model",
     "modelIdHelp": "sağlayıcı:model, ör. openai:gpt-5 ya da anthropic:claude-sonnet-4-5 (boş: bağlantının varsayılanı)."
+  },
+  "blueprint": {
+    "stepId": "Adım kimliği",
+    "stepIdHelp": "Blueprint'in altında oluşturulduğu görev veya grup kimliği (step_id).",
+    "version": "Sürüm",
+    "versionHelp": "Her sürüm kendi yapılandırmasına sahip ayrı bir şablondur; geçişte değerler korunur, yeni forma göre kontrol edin.",
+    "disabled": "Devre dışı",
+    "disabledHelp": "Adımı oluşturulan DAG'a dahil etme (tuvalde kalır).",
+    "runtime": "Bu DAG'ın ayrıştırılması için Airflow ortamında airflow-blueprint ve {{module}} modülü (blueprint şablonları) gerekir.",
+    "config": "Yapılandırma",
+    "missing": "{{name}} v{{version}} blueprint'i katalogda yok: {{error}}",
+    "noSchema": "Yapılandırma şeması okunamadı ({{error}}); yapılandırma denetlenmiyor.",
+    "unknownReason": "bilinmeyen neden",
+    "preview": "Görev önizlemesi",
+    "refresh": "Yenile",
+    "previewFailed": "Önizleme oluşturulamadı: {{error}}",
+    "previewHelp": "Bu adımın mevcut yapılandırmayla oluşturduğu görevler burada görünür."
   }
 }

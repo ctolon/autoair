@@ -56,6 +56,16 @@ class NotifierList(BaseModel):
     notifiers: list[dict[str, Any]]
 
 
+class BlueprintList(BaseModel):
+    available: bool = Field(
+        description="False when the blueprint catalog is off (features.blueprints) or missing."
+    )
+    blueprints: list[dict[str, Any]] = Field(
+        description="Blueprint versions: name, version, class_path, config_class, config_schema."
+    )
+    total: int = 0
+
+
 class ValidationOutcome(BaseModel):
     ok: bool
     problems: list[SpecProblem]
@@ -71,7 +81,8 @@ class DagCode(BaseModel):
     dag_id: str
     document_type: str = Field(
         description="raw: the hand-written file (edit and save it with save_raw_dag_code); "
-        "spec: the file generated from the visual spec (edit the spec instead)."
+        "spec: the DAG file of a visual spec, generated or (source policy preserve) the "
+        "hand-written file the DAG keeps; edit the spec instead (saves patch that file)."
     )
     code: str
 
@@ -80,11 +91,40 @@ class DagList(Page):
     dags: list[StoredDag]
 
 
+class SourceSummary(BaseModel):
+    """How the DAG file is written (source policy): generated, or the existing file patched."""
+
+    policy: str = Field(description="generate, preserve or strict-preserve.")
+    action: str = Field(
+        description="generate, preserve (the existing file is patched), unchanged, blocked "
+        "(a file changed outside AutoAir), refused (the change cannot be applied to the file)."
+    )
+    target_state: str = Field(description="absent, clean, ejected or foreign.")
+    operations: list[str] = []
+    warnings: list[str] = []
+    refusals: list[str] = []
+    options: list[str] = []
+    diff: str = Field(default="", description="Unified diff of the DAG file (may be cut).")
+    diff_truncated: bool = False
+    target_sha: str | None = Field(
+        default=None,
+        description="Hash of the DAG file the plan was made from ('' = none): pass it to "
+        "save_dag_spec as expected_target_sha to save exactly what was previewed.",
+    )
+    content_hidden: bool = Field(
+        default=False,
+        description="The target holds a hand-written file AutoAir never wrote: its content "
+        "is not shown.",
+    )
+    message: str = ""
+
+
 class SaveResult(BaseModel):
     saved: bool
     dry_run: bool
     location: str | None = None
     problems: list[SpecProblem] = []
+    source: SourceSummary | None = None
     message: str
 
 

@@ -33,6 +33,7 @@ GENERATED: tuple[tuple[str, str], ...] = (
     ("website/static/schemas/", "run `cd website && npm run export-api`"),
     ("src/autoair/static/plugin/", "run `cd frontend && npm run build`"),
     ("src/autoair/static/standalone/", "run `cd frontend && npm run build`"),
+    ("src/autoair/docs/pages.json", "run `uv run python -m autoair.docs.build`"),
     (
         "tests/golden/expected/",
         "run `AUTOAIR_UPDATE_GOLDEN=1 uv run pytest tests/integration/test_airflow_dags.py"

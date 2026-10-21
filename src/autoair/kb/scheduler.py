@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import logging
 import threading
-import time
 import weakref
 from typing import Any
 
@@ -57,14 +56,23 @@ def check_once(services: Any) -> bool:
     return True
 
 
+# Stop events of the running schedulers. A scheduler whose Services object stays alive (a
+# reference cycle, a test client kept by a fixture) keeps checking and logging for the rest of
+# the process; stop_all() ends them (test teardown, embedding code that rebuilds Services).
+_RUNNING: weakref.WeakSet[threading.Event] = weakref.WeakSet()
+
+
 def start_scheduler(services: Any) -> threading.Thread | None:
     cfg = kb_settings_of(services.settings)
     if cfg.refresh_interval_hours <= 0 and not cfg.refresh_on_start:
         return None
     ref = weakref.ref(services)
+    stop = threading.Event()
+    _RUNNING.add(stop)
 
     def loop() -> None:
-        time.sleep(_START_DELAY)
+        if stop.wait(_START_DELAY):
+            return
         while True:
             current = ref()
             if current is None:
@@ -74,11 +82,26 @@ def start_scheduler(services: Any) -> threading.Thread | None:
             except Exception:
                 log.warning("knowledge-base scheduler check failed", exc_info=True)
             del current
-            time.sleep(_CHECK_EVERY)
+            if stop.wait(_CHECK_EVERY):
+                return
 
     thread = threading.Thread(target=loop, name="autoair-kb-scheduler", daemon=True)
+    thread.stop_event = stop  # type: ignore[attr-defined]  # keeps the event alive with the thread
     thread.start()
     return thread
 
 
-__all__ = ["check_once", "start_scheduler"]
+def stop_scheduler(thread: threading.Thread | None) -> None:
+    """End one scheduler started by ``start_scheduler`` (no-op for ``None``)."""
+    stop = getattr(thread, "stop_event", None)
+    if isinstance(stop, threading.Event):
+        stop.set()
+
+
+def stop_all() -> None:
+    """End every scheduler of this process."""
+    for stop in list(_RUNNING):
+        stop.set()
+
+
+__all__ = ["check_once", "start_scheduler", "stop_all", "stop_scheduler"]

@@ -19,6 +19,8 @@ One Python package, `autoair`; `autoair --help` lists the CLI (`autoair.cli:app`
 | Local mode | `autoair local` | laptop use without an Airflow server (`features.airflow` off) |
 | AI service | `autoair ai-serve` (`autoair.ai.service`) | optional separate process for AI routes; trusts an HMAC identity or Airflow tokens |
 | MCP server | `autoair mcp` (stdio), `autoair mcp-serve --http`, `autoair-mcp`; also mounted at `/mcp` | FastMCP 4 tools for authoring, validating and deploying DAGs |
+| Validator service | `autoair validator-serve` (`autoair.validation.service`) | optional isolated DagBag import checks (HMAC-signed, no network) |
+| Docs MCP | `autoair docs-mcp` (stdio or `--http`) | AutoAir's own docs for coding agents; no state, no settings |
 
 ## Stack
 
@@ -26,9 +28,9 @@ One Python package, `autoair`; `autoair --help` lists the CLI (`autoair.cli:app`
   FastAPI, Pydantic v2, pydantic-settings, Typer, Jinja2, fsspec; HTTP client `httpx2`.
 - State: files, or SQLAlchemy Core (2.x; 1.4 on Airflow 3.0) with SQLite or PostgreSQL
   (psycopg 3; psycopg2 on SQLAlchemy 1.4).
-- Optional extras: `autoair[mcp]` (FastMCP >= 4 on `mcp` >= 2.3; not in `all`, not installable
-  with Airflow 3.1), `autoair[ai]`
-  (`pydantic-ai-slim`) plus per-provider extras (`ai-anthropic`, `ai-openai`, ..., `ai-all`).
+- Core also has `libcst` (source-preserving edits). Extras: `autoair[mcp]` (FastMCP >= 4; not in
+  `all`, not installable with Airflow 3.1), `autoair[ai]` (`pydantic-ai-slim`) plus provider
+  extras (`ai-anthropic`, ..., `ai-all`), `autoair[blueprint]` (`airflow-blueprint`).
 - Frontend: React 19, Chakra UI v3, @xyflow/react 12, zustand 5 + zundo, CodeMirror 6, RJSF 6,
   i18next, TanStack Query, Yjs, Vite 8, TypeScript 6, vitest, Playwright; Node >= 22.18.
 - Docs site: Docusaurus 3.10.
@@ -42,7 +44,7 @@ One Python package, `autoair`; `autoair --help` lists the CLI (`autoair.cli:app`
 | `tests/` | `unit/`, `integration/` (real Airflow), `golden/` (codegen snapshots), `live/` (real services) |
 | `docs/` | in-repo reference (configuration, architecture, IAM/SSO, policy, MCP and AI internals; read on GitHub) |
 | `website/` | user documentation (Docusaurus) published to GitHub Pages |
-| `deploy/` | Dockerfiles, Compose stacks (`deploy/compose/README.md`), Helm values |
+| `deploy/` | Dockerfiles, Compose stacks (`deploy/compose/README.md`), Helm values and charts, Kustomize (`deploy/kustomize/`) |
 | `scripts/` | dev servers, doc generators, audits, release check |
 | `.claude/` | rules, skills, subagents, hooks and settings for Claude Code |
 
@@ -63,10 +65,8 @@ uv sync --extra postgres --extra collab    # extras as needed (see [project.opti
 | Vite dev server | `cd frontend && AUTOAIR_API_PORT=<api port> npx vite --mode standalone --port <free port> --strictPort` |
 | Airflow + plugin | `./scripts/dev-airflow.sh` (env `AIRFLOW_HOME`, `AIRFLOW_PORT`, `AIRFLOW_VENV`, `AUTOAIR_DEV_GIT_REPO`) |
 
-Make targets: `make check` (all static checks), `make test` (pytest + vitest), `make matrix`
-(nox), `make e2e`, `make crawl`, `make codegen`, `make build`, `make docs`, `make audit`.
-`make dev-airflow`, `make serve`, `make ui-dev`, `make demo` and `make docs-serve` bind the
-shared ports (see "Shared demo"): do not run them while the demo is up.
+Make: `check`, `test` (pytest + vitest), `matrix` (nox), `e2e`, `crawl`, `codegen`, `build`,
+`docs`, `audit`. `dev-airflow`, `serve`, `ui-dev`, `demo`, `docs-serve` bind the shared ports.
 
 ## Verify
 
@@ -135,8 +135,7 @@ never write test data to them:
 
 | Port | Service |
 |---|---|
-| 8080 | Airflow API server with the plugin (`scripts/demo.sh`, `AIRFLOW_HOME=.airflow-dev`) |
-| 8793, 8794 | Airflow log servers of the same instance |
+| 8080; 8793, 8794 | Airflow API server with the plugin (`scripts/demo.sh`, `AIRFLOW_HOME=.airflow-dev`); its log servers |
 | 8765 | standalone AutoAir (git mode) |
 | 5173 | Vite dev server |
 | 3000 | Docusaurus dev server |
@@ -174,6 +173,7 @@ Never edited by hand (a PreToolUse hook blocks it and names the generator):
 | `tests/golden/expected/*.py` | `AUTOAIR_UPDATE_GOLDEN=1 uv run pytest tests/integration/test_airflow_dags.py -k golden_source` |
 | `frontend/src/lib/generated/*.gen.ts` | `uv run python scripts/gen_shared_constants.py` |
 | `src/autoair/static/{plugin,standalone}/` | `cd frontend && npm run build` |
+| `src/autoair/docs/pages.json` (gitignored, shipped in the wheel) | `uv run python -m autoair.docs.build` (`hatch_build.py` runs it on every build) |
 | `uv.lock`, `frontend/package-lock.json`, `website/package-lock.json` | `uv lock` / `uv add`, `npm install` |
 | `.artifacts/` (local output, gitignored) | `scan_hardcoded.py --write`, `check:site`, visual runs, screenshots |
 
@@ -195,7 +195,6 @@ Wired in `.claude/settings.json`, scripts in `.claude/hooks/` (stdlib Python, al
   `$TMPDIR/autoair-agent-hooks-<uid>/`.
 
 When a guard asks or denies, do not work around it: tell the user what you wanted to run and
-why. After changing a hook or `settings.json`, run `python3 .claude/hooks/test_hooks.py`; it
-also checks that every hook command names an existing script, because a missing one breaks
-tool calls in every running session. Personal overrides go in `.claude/settings.local.json`
-and `CLAUDE.local.md` (both gitignored).
+why. After changing a hook or `settings.json`, run `python3 .claude/hooks/test_hooks.py` (a
+hook naming a missing script breaks every session). Personal overrides:
+`.claude/settings.local.json`, `CLAUDE.local.md` (gitignored).

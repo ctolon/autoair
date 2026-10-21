@@ -63,6 +63,7 @@ dependencies = [
   "jedi>=0.19",
   "cryptography>=42",
   "pillow>=10",
+  "libcst>=1.8.6",
 ]
 
 [project.optional-dependencies]
@@ -101,7 +102,9 @@ otel = ["opentelemetry-instrumentation-fastapi>=0.50b0", "opentelemetry-sdk>=1.2
 # `ai` installs the agent runtime; add one provider extra per model family (they map to
 # pydantic-ai-slim extras). `ai-ollama` uses Ollama's OpenAI-compatible API.
 ai = ["pydantic-ai-slim>=2.43,<3"]
-ai-anthropic = ["pydantic-ai-slim[anthropic]>=2.43,<3"]
+# anthropic 2.0 (2026-10-21) breaks pydantic-ai 2.59's Anthropic model (message mapping
+# raises TypeError); keep 1.x until pydantic-ai supports it.
+ai-anthropic = ["pydantic-ai-slim[anthropic]>=2.43,<3", "anthropic>=1.12.1,<2"]
 ai-openai = ["pydantic-ai-slim[openai]>=2.43,<3"]
 ai-google = ["pydantic-ai-slim[google]>=2.43,<3"]
 ai-ollama = ["pydantic-ai-slim[openai]>=2.43,<3"]
@@ -111,6 +114,7 @@ ai-mistral = ["pydantic-ai-slim[mistral]>=2.43,<3"]
 ai-cohere = ["pydantic-ai-slim[cohere]>=2.43,<3"]
 ai-all = [
     "pydantic-ai-slim[anthropic,openai,google,bedrock,groq,mistral,cohere]>=2.43,<3",
+    "anthropic>=1.12.1,<2",
 ]
 # Local cross-encoder reranking for retrieval (pulls PyTorch: large).
 ai-rerank = ["sentence-transformers>=3.0"]
@@ -132,6 +136,10 @@ lsp-pyright = ["basedpyright>=1.20"]
 yaml = [
     "pyyaml>=6.0",
 ]
+# Astronomer Blueprint templates as canvas nodes: the catalog imports blueprint modules in a
+# subprocess of this environment to read their config schemas. Generated DAGs need the
+# package (and the blueprint templates) in the Airflow environment as well.
+blueprint = ["airflow-blueprint>=0.3,<1"]
 
 [dependency-groups]
 dev = [
@@ -157,6 +165,8 @@ dev = [
   "shellcheck-py>=0.10",
   "psycopg[binary]>=3.2",
   "pydantic-ai-slim[anthropic,openai,google]>=2.43,<3",
+  "anthropic>=1.12.1,<2",
+  "airflow-blueprint>=0.3,<1",
 ]
 
 [project.urls]
@@ -176,7 +186,15 @@ autoair-mcp = "autoair.mcp.server:main"
 autoair = "autoair.plugin:AutoAirPlugin"
 
 [tool.hatch.build]
-artifacts = ["src/autoair/static/plugin/", "src/autoair/static/standalone/"]
+artifacts = [
+  "src/autoair/static/plugin/",
+  "src/autoair/static/standalone/",
+  "src/autoair/docs/pages.json",
+]
+
+# Packages AutoAir's own documentation (website/docs) as src/autoair/docs/pages.json.
+[tool.hatch.build.hooks.custom]
+path = "hatch_build.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/autoair"]
@@ -193,6 +211,7 @@ include = [
   "/LICENSE",
   "/NOTICE",
   "/noxfile.py",
+  "/hatch_build.py",
 ]
 exclude = ["**/__pycache__", "**/*.py[cod]", "tests/**/.pytest_cache"]
 

@@ -1,0 +1,34 @@
+# The separate AI service (`autoair ai-serve`): AI routes (and /mcp) in their own pods, so
+# LLM credentials and LLM egress stay out of the AutoAir server. The server proxies
+# /api/ai/* to it and signs the caller's identity with an HMAC secret.
+#
+# The AI service loads the server's ConfigMap (autoair-config: Airflow URL, state backend,
+# deploy target), so it sees what the other components merge into it. It shares no volume
+# with the server: use it with components/postgresql and components/git-target (or the
+# object-storage URLs of website/docs/deployment/ai-service.md).
+#
+# Secrets (not part of these manifests):
+#   kubectl -n autoair create secret generic autoair-ai \
+#     --from-literal=shared-secret="$(openssl rand -hex 32)" \
+#     --from-literal=llm-connection='{"conn_type": "pydanticai", "password": "<API key>",
+#                                      "extra": {"model": "anthropic:claude-sonnet-5-5"}}'
+# Optional keys: fernet-key (per-user LLM keys, ai.user_llm.encryption_key).
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+
+resources:
+  - deployment.yaml
+  - service.yaml
+  - pdb.yaml
+
+configMapGenerator:
+  - name: autoair-config
+    behavior: merge
+    envs:
+      - client.env
+  - name: autoair-ai-config
+    envs:
+      - ai.env
+
+patches:
+  - path: client-patch.yaml

@@ -246,6 +246,15 @@ def export_yaml_dag(spec: DagSpec) -> YamlExport:
                 if src != dst and ids[src] not in upstream[dst]:
                     upstream[dst].append(ids[src])
 
+    for bp in spec.blueprint_nodes(include_disabled=False):
+        issues.append(
+            YamlIssue(
+                severity="error",
+                node_id=bp.id,
+                message=f"blueprint step {bp.step_id!r} cannot be expressed in YAML Dags "
+                "(use the python or loader output mode)",
+            )
+        )
     out_tasks: list[dict[str, Any]] = []
     for t in tasks:
         if not isinstance(t, OperatorNode):

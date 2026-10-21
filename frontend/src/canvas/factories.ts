@@ -1,5 +1,6 @@
-import type { OperatorSummary } from "../api/gen/types.gen";
+import type { BlueprintSummary, OperatorSummary } from "../api/gen/types.gen";
 import type {
+  BlueprintSpec,
   BuilderNode,
   CustomSpec,
   NoteSpec,
@@ -52,6 +53,22 @@ export function makeGroupSpec(nodes: BuilderNode[]): TaskGroupSpec {
 
 export function makeNoteSpec(text = ""): NoteSpec {
   return { kind: "note", text, color: "yellow" };
+}
+
+/** An Astronomer Blueprint step; config starts empty (the config model's defaults apply). */
+export function makeBlueprintSpec(
+  bp: Pick<BlueprintSummary, "name" | "version" | "class_path" | "config_class">,
+  nodes: BuilderNode[],
+): BlueprintSpec {
+  return {
+    kind: "blueprint",
+    step_id: uniqueKey(nodes, bp.name),
+    blueprint: bp.name,
+    version: bp.version,
+    class_path: bp.class_path,
+    config_class: bp.config_class ?? null,
+    config: {},
+  };
 }
 
 export function makeCustomSpec(handler: string, nodes: BuilderNode[]): CustomSpec {

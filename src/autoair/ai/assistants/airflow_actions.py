@@ -511,7 +511,9 @@ class ActionBusy(Exception):
         self.by = by
 
 
-def _expired(claimed_at: str | None, timeout: float, now: datetime) -> bool:
+def claim_expired(claimed_at: str | None, timeout: float, now: datetime) -> bool:
+    """Whether a claim made at ``claimed_at`` is older than ``timeout`` seconds (or has no
+    readable time). Shared with tool approvals (:mod:`autoair.ai.approvals`)."""
     if not claimed_at:
         return True
     try:
@@ -534,7 +536,7 @@ def claim(
         raise ActionBusy("done", action.claimed_by)
     if action.status == "rejected":
         raise ActionBusy("rejected")
-    if action.status == "running" and not _expired(action.claimed_at, timeout, current):
+    if action.status == "running" and not claim_expired(action.claimed_at, timeout, current):
         raise ActionBusy("running", action.claimed_by)
     action.status = "running"
     action.claimed_by = by
@@ -577,6 +579,7 @@ __all__ = [
     "block_reason",
     "blocked_result",
     "claim",
+    "claim_expired",
     "effective_mode",
     "execute_action",
     "record_result",

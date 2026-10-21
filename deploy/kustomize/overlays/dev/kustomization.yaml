@@ -1,0 +1,29 @@
+# Development / evaluation: one `autoair serve` pod, file state and DAGs on a
+# PersistentVolumeClaim (local deploy target), no secrets needed.
+#
+#   kubectl kustomize deploy/kustomize/overlays/dev | kubectl apply -f -
+#   kubectl -n autoair-dev port-forward svc/autoair 8765:8765   # http://localhost:8765/ui/
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: autoair-dev
+
+resources:
+  - namespace.yaml
+  - pvc.yaml
+  - ../../base
+
+# Repeated from ../../base: an overlay's images: entry also reaches the containers the
+# components add. Keep the tags equal (CI checks it) and bump them with every release.
+images:
+  - name: ghcr.io/ctolon/autoair
+    newTag: "0.1.0"
+
+configMapGenerator:
+  - name: autoair-config
+    behavior: merge
+    envs:
+      - settings.env
+
+patches:
+  - path: deployment-patch.yaml

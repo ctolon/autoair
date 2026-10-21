@@ -1,0 +1,140 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: autoair
+  labels:
+    app.kubernetes.io/name: autoair
+    app.kubernetes.io/component: server
+spec:
+  # File state on one volume: one replica. More need PostgreSQL (components/postgresql).
+  replicas: 1
+  revisionHistoryLimit: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: autoair
+      app.kubernetes.io/component: server
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: autoair
+        app.kubernetes.io/component: server
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8765"
+        prometheus.io/path: /api/metrics
+    spec:
+      serviceAccountName: autoair
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      # Above server.graceful_shutdown_timeout (25 s) plus the preStop pause.
+      terminationGracePeriodSeconds: 40
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 50000
+        runAsGroup: 0
+        fsGroup: 0
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: autoair
+              app.kubernetes.io/component: server
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: autoair
+              app.kubernetes.io/component: server
+      containers:
+        - name: autoair
+          image: ghcr.io/ctolon/autoair
+          imagePullPolicy: IfNotPresent
+          # dumb-init as PID 1 forwards SIGTERM to uvicorn and reaps git subprocesses.
+          command: [/usr/bin/dumb-init, --, autoair]
+          args: [serve]
+          ports:
+            - name: http
+              containerPort: 8765
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: autoair-config
+          env:
+            # Writable paths on the read-only root file system: git's config and clone cache,
+            # the catalog cache. AIRFLOW_HOME stays /opt/airflow, the folder the image's
+            # precomputed catalog (AUTOAIR_CATALOG_FILE) was built for.
+            - name: HOME
+              value: /tmp
+            - name: TMPDIR
+              value: /tmp
+          securityContext:
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            privileged: false
+            capabilities:
+              drop: [ALL]
+          resources:
+            requests:
+              cpu: 250m
+              memory: 768Mi
+              ephemeral-storage: 256Mi
+            limits:
+              memory: 2Gi
+              ephemeral-storage: 2Gi
+          # The image ships a precomputed catalog, so startup takes seconds; the budget
+          # (3 minutes) covers a custom image that builds its catalog on first start.
+          startupProbe:
+            httpGet:
+              path: /api/health
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 5
+            failureThreshold: 36
+          # 503 while the catalog or the deploy target is unavailable (server.ready_check_*).
+          readinessProbe:
+            httpGet:
+              path: /api/ready
+              port: http
+            periodSeconds: 10
+            # above server.ready_timeout (5 s)
+            timeoutSeconds: 6
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: http
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 3
+          lifecycle:
+            # Endpoints are removed asynchronously: keep serving a few seconds after SIGTERM
+            # is scheduled so in-flight connections from the ingress are not reset.
+            preStop:
+              exec:
+                command: [sleep, "5"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: dags
+              mountPath: /opt/airflow/dags
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 1Gi
+        # The local deploy target (storage.mode=local) and, with the file backend, AutoAir's
+        # state under <dags>/autoair/.autoair. An emptyDir loses both with the pod: overlays
+        # replace it with a PersistentVolumeClaim or switch to git + PostgreSQL.
+        - name: dags
+          emptyDir:
+            sizeLimit: 1Gi

@@ -42,7 +42,7 @@ from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass, field
 from importlib.metadata import entry_points
 from pathlib import Path
-from typing import Any, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 from pydantic import BaseModel, Field, TypeAdapter, ValidationError
 
@@ -92,6 +92,9 @@ from autoair.catalog.static import (
     parse_module,
 )
 from autoair.sections import CatalogSettings
+
+if TYPE_CHECKING:
+    from autoair.blueprints.catalog import BlueprintCatalog
 
 log = logging.getLogger(__name__)
 
@@ -1061,6 +1064,9 @@ class OperatorCatalog:
         self.fallback_timeout = fallback_timeout
         self._lock = threading.Lock()
         self._state: _State | None = None
+        # The blueprint catalog travels with the operator catalog: both are import allowlists
+        # of code generation, and every validation caller already passes this object.
+        self.blueprints: BlueprintCatalog | None = None
 
     @property
     def presentation(self) -> CatalogSettings:

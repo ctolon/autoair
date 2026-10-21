@@ -42,7 +42,8 @@ The JSON Schema checks structure only. Semantic checks (does the operator exist 
 ## Strictness and versioning
 
 - **Unknown fields are rejected** everywhere (`additionalProperties: false`), so a typo never passes silently.
-- `spec_version` is `2`. Documents are migrated step by step before validation (`autoair.spec.migrations`): a version 1 document loads as version 2. A document with a newer `spec_version` than the installed AutoAir supports is refused with "upgrade AutoAir".
+- `spec_version` is `3` (AutoAir 0.2.0 and later). Documents are migrated step by step before validation (`autoair.spec.migrations`): version 1 to 2, then 2 to 3. Both steps only change the version number, because each version added optional parts only: version 3 adds the top-level `source` object and the `blueprint` node kind. Version 1 and 2 documents keep loading and are written as version 3 the next time they are saved or deployed.
+- A document with a newer `spec_version` than the installed AutoAir supports is refused with `spec_version N is newer than this AutoAir supports (M); upgrade AutoAir`. The version was raised to 3 so that AutoAir 0.1.0 refuses a 0.2.0 document with this message (`spec_version 3 is newer than this AutoAir supports (2)`) instead of a validation error about the unknown `blueprint` node kind or the unknown `source` field.
 - Identifiers follow Airflow's rules: `dag_id`, `task_id` and `group_id` match `^[A-Za-z0-9_.-]+$` (at most 250 characters); node `id` values match `^[A-Za-z0-9_-]+$` (at most 100); keyword-argument names are Python identifiers.
 
 ## Example
@@ -51,7 +52,7 @@ A complete, valid spec: a Bash task, a TaskFlow task inside a task group receivi
 
 ```json
 {
-  "spec_version": 2,
+  "spec_version": 3,
   "dag_id": "orders_daily",
   "description": "Load yesterday's orders.",
   "schedule": {"type": "cron", "expression": "0 6 * * *", "timezone": "Europe/Istanbul"},
@@ -147,7 +148,7 @@ with DAG(
 
 | Field | Type | Default | Meaning |
 |---|---|---|---|
-| `spec_version` | `2` | `2` | Document version |
+| `spec_version` | `3` | `3` | Document version |
 | `dag_id` | string | required | Airflow DAG id |
 | `output_mode` | `python`, `loader`, `yaml` | `python` | Generated file: a full Python DAG, a small loader stub that builds the DAG from the spec at parse time, or an Airflow 3.4 YAML DAG |
 | `display_name`, `description`, `doc_md` | string | none | DAG metadata |
@@ -167,7 +168,8 @@ with DAG(
 | `team` | `^[a-z0-9_-]+$` | none | Multi-team: selects the team's deploy target and pickers |
 | `lineage` | `inherit`, `enabled`, `disabled` | `inherit` | OpenLineage selective enable/disable |
 | `environments` | map name → [overlay](#environments) | `{}` | Per-environment overrides applied at deploy time |
-| `nodes` | list of [nodes](#nodes) | `[]` | Tasks, groups, custom nodes, notes |
+| `source` | object | none | Python output mode: how the DAG file is written. `policy` (`auto` default, `generate`, `preserve`, `strict-preserve`), `origin` (`autoair` default, or `python` for DAGs imported from or edited as a Python file), `code` (the hand-written file; writing it needs `code:raw`), `base_sha` (sha256 of the file the editor started from). See [Editing Python DAGs](/docs/user-guide/editing-python-dags) |
+| `nodes` | list of [nodes](#nodes) | `[]` | Tasks, groups, custom nodes, blueprint steps, notes |
 | `edges` | list of [edges](#edges) | `[]` | Dependencies |
 
 ## Nodes
@@ -244,6 +246,26 @@ A node provided by an extension (`autoair.node_kinds`): `handler` names the node
 | `loop` | Airflow 3.4+ task loop: `{"max_iterations": 1..10000, "until_code": "...", "until_name": "until_done"}`; the body must have exactly one terminal task |
 
 Groups do not contain their children; children point at the group with `parent_group`. Groups can nest the same way.
+
+### `blueprint`
+
+A step built from an [Astronomer Blueprint](/docs/user-guide/blueprints) template (`airflow-blueprint`). It is not a task: it has no task settings and no XCom output.
+
+| Field | Meaning |
+|---|---|
+| `step_id` | Task or group id the template renders under (Airflow key syntax) |
+| `blueprint` | Registered template name (snake_case) |
+| `version` | Template version (default `1`) |
+| `class_path` | Importable `module.Class` of the template; validation requires the catalog entry for `blueprint` and `version` |
+| `config_class` | Name of the config model in the same module, or `null` (the code calls `get_config_type()`) |
+| `config` | Config values (plain JSON), checked against the template's config schema |
+| `disabled` | Leave the step out of the generated DAG (default `false`) |
+
+```json
+{"kind": "blueprint", "id": "customers", "step_id": "extract_customers",
+ "blueprint": "extract", "version": 1, "class_path": "company_blueprints.etl.Extract",
+ "config_class": "ExtractConfig", "config": {"source_table": "raw.customers"}}
+```
 
 ### `note`
 

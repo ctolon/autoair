@@ -17,12 +17,15 @@ def render_dag_files(
     registry: HandlerRegistry | None = None,
     python_source: str | None = None,
     strict: bool = False,
+    fingerprint: bool = True,
 ) -> dict[str, str]:
     """``{file name: content}`` for ``spec`` (python and loader output modes).
 
     The ``environment`` overlay is applied when the spec defines one (an unknown
     environment is an error only with ``strict=True``). ``python_source``
-    short-circuits rendering when the caller already rendered it.
+    short-circuits rendering when the caller already rendered it. Generated Python files
+    carry the generator fingerprint (:mod:`autoair.preserve.fingerprint`) unless
+    ``fingerprint=False``; raw code DAGs never do (they are written as typed).
     Other output modes need a renderer supplied by the caller.
     """
     if environment and environment not in spec.environments and not strict:
@@ -36,6 +39,10 @@ def render_dag_files(
             from autoair.codegen import render
 
             python_source = render(effective, registry)
+        if fingerprint and spec.raw_code is None:
+            from autoair.preserve.fingerprint import add
+
+            python_source = add(python_source)
         return {f"{spec.dag_id}.py": python_source}
     if spec.output_mode == "loader":
         return {f"{spec.dag_id}.py": render_stub(spec.dag_id)}

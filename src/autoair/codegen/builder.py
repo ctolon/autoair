@@ -9,6 +9,7 @@ construction. The only user code that ends up executable is the body of a
 from __future__ import annotations
 
 import ast
+import keyword
 import sys
 from collections import defaultdict
 from dataclasses import dataclass
@@ -21,6 +22,7 @@ from autoair.spec import (
     AssetAndTimeScheduleSpec,
     AssetOrTimeScheduleSpec,
     AssetSchedule,
+    BlueprintNode,
     CronSchedule,
     CustomNode,
     DagParam,
@@ -106,6 +108,11 @@ def build_module(
             target.append(_assign(ctx.node_var(node.id), _custom(ctx, node, registry)))
         stmts = _setup_teardown(ctx, node, edges)
         (loop_post[node.parent_group] if node.parent_group in loops else post).extend(stmts)
+
+    for bp in spec.blueprint_nodes(include_disabled=False):
+        if bp.parent_group in loops:
+            raise CodegenError("blueprint steps cannot be placed in a loop group", bp.id)
+        body.extend(_blueprint(ctx, bp))
 
     outer_edges = edges
     for gid, group in loops.items():
@@ -646,6 +653,80 @@ def _custom(ctx: CodegenContext, node: CustomNode, registry: HandlerRegistry) ->
     return handler.build(node, config, ctx)
 
 
+def _plain_value(ctx: CodegenContext, value: object, node_id: str) -> ast.expr:
+    """A blueprint config value: JSON only, since it is validated by a Pydantic model at
+    parse time (an XCom reference or tagged object would not survive that)."""
+    if isinstance(value, dict):
+        if "$type" in value:
+            raise CodegenError("blueprint config values must be plain JSON", node_id)
+        for v in value.values():
+            _plain_value(ctx, v, node_id)
+    elif isinstance(value, list):
+        for v in value:
+            _plain_value(ctx, v, node_id)
+    return ctx.value(value)
+
+
+def _blueprint(ctx: CodegenContext, node: BlueprintNode) -> list[ast.stmt]:
+    """``bp = Template(); bp.step_id = "..."; g = bp.render(Config(...))``: how the blueprint
+    project documents using a template in a Python DAG. Inside a task group the render runs
+    under ``with <group>:`` so the rendered TaskGroup/task is created in it."""
+    module, _, class_name = node.class_path.rpartition(".")
+    cls = ctx.import_name(module, class_name)
+    instance = ctx.reserve_function_name(f"{node.step_id}_blueprint")
+    config_type: ast.expr
+    if node.config_class:
+        config_type = ctx.import_name(module, node.config_class)
+    else:
+        config_type = ast.Call(
+            func=ast.Attribute(value=cls, attr="get_config_type", ctx=ast.Load()),
+            args=[],
+            keywords=[],
+        )
+    if all(k.isidentifier() and not keyword.iskeyword(k) for k in node.config):
+        config: ast.expr = ast.Call(
+            func=config_type,
+            args=[],
+            keywords=[
+                ast.keyword(arg=k, value=_plain_value(ctx, v, node.id))
+                for k, v in node.config.items()
+            ],
+        )
+    else:
+        config = ast.Call(
+            func=ast.Attribute(value=config_type, attr="model_validate", ctx=ast.Load()),
+            args=[_plain_value(ctx, node.config, node.id)],
+            keywords=[],
+        )
+    render = _assign(
+        ctx.node_var(node.id),
+        ast.Call(
+            func=ast.Attribute(
+                value=ast.Name(id=instance, ctx=ast.Load()), attr="render", ctx=ast.Load()
+            ),
+            args=[config],
+            keywords=[],
+        ),
+    )
+    stmts: list[ast.stmt] = [
+        _assign(instance, ast.Call(func=cls, args=[], keywords=[])),
+        ast.Assign(
+            targets=[
+                ast.Attribute(
+                    value=ast.Name(id=instance, ctx=ast.Load()), attr="step_id", ctx=ast.Store()
+                )
+            ],
+            value=ast.Constant(node.step_id),
+        ),
+    ]
+    if node.parent_group:
+        parent = ast.Name(id=ctx.node_var(node.parent_group), ctx=ast.Load())
+        stmts.append(ast.With(items=[ast.withitem(context_expr=parent)], body=[render]))
+    else:
+        stmts.append(render)
+    return stmts
+
+
 def _setup_teardown(
     ctx: CodegenContext, node: TaskNode, edges: list[EffectiveEdge]
 ) -> list[ast.stmt]:
@@ -653,7 +734,7 @@ def _setup_teardown(
     if node.is_setup:
         return [ast.Expr(value=ctx.call(ast.Attribute(value=ref, attr="as_setup", ctx=ast.Load())))]
     if node.is_teardown:
-        nodes = ctx.spec.node_map()
+        nodes = ctx.nodes
         setups = [
             e.source
             for e in edges

@@ -8,7 +8,182 @@ minor versions may contain breaking changes; they are listed under **Changed** o
 
 ## [Unreleased]
 
+### Added
+- Kustomize manifests for Kubernetes (`deploy/kustomize`): a hardened base for `autoair serve`
+  (non-root, read-only root file system, no service account token, probes on `/api/health` and
+  `/api/ready`, PodDisruptionBudget, topology spread), Components for PostgreSQL state with an
+  `autoair db upgrade` init container, the git deploy target, the validator service (no egress),
+  the AI service, a separate MCP server, a Gateway API HTTPRoute (the production default) or an
+  Ingress, HorizontalPodAutoscaler,
+  NetworkPolicies and Prometheus ServiceMonitors, and `dev`, `production` and `airflow-plugin`
+  overlays. Secrets are referenced, never included; credentials stay Airflow connections. CI
+  builds every overlay and validates it with kubeconform. New page: Deployment → Kubernetes
+  with Kustomize.
+- **AutoAir docs MCP**: AutoAir's own documentation (the website pages and the configuration
+  reference) is packaged in the wheel at build time (`hatch_build.py`, `autoair.docs.build`) and
+  served to coding agents by the MCP tools `search_autoair_docs`, `read_autoair_doc` and
+  `list_autoair_docs`: offline, matched to the installed version, without Airflow, the AI extra
+  or a knowledge-base store. `autoair docs-mcp` (stdio, or `--http`) serves only these tools,
+  e.g. `uvx --from 'autoair[mcp]' autoair docs-mcp`; they are also on every AutoAir MCP endpoint
+  (no AutoAir permission, feature flag `features.autoair_docs`). Setup for Claude Code, Cursor,
+  OpenCode and Codex CLI: website page *AI → Docs MCP*.
+- Knowledge base: built-in source kind and component `autoair` (AutoAir's packaged
+  documentation, no network), so `kb_search` and the assistants cite AutoAir pages.
+- Isolated import checks: `autoair validator-serve` runs the DagBag import check in a separate
+  validator service, so the DAG code it imports (raw-code DAGs, Python task bodies) no longer
+  executes in the Airflow API server or `autoair serve` (Python DAG import and test runs still
+  do). Set `validator.url`
+  (`AUTOAIR_VALIDATOR__URL`); requests are HMAC-signed with the password of the Airflow
+  connection `validator.secret_conn_id` (no new secret setting). Workers get a fresh interpreter
+  per check, memory/CPU/file-size/open-file limits, no new privileges, a network namespace where
+  the kernel allows it and a Python audit hook (no subprocesses, sockets, DNS, writes outside
+  their scratch folder or reads of other processes' `/proc`). Retries, a health probe and
+  `validator.fail_mode` (`open` by default: an `import_service` warning and no import check
+  while the validator is down; `closed` blocks deploys instead; `local`). `/health`, `/ready`, `/metrics`
+  (`autoair_validator_*`) on the validator, `autoair_import_checks_total` on the main server.
+  New Helm chart `deploy/helm/autoair-validator` (Deployment, Service, PodDisruptionBudget,
+  NetworkPolicy denying all egress, read-only non-root pods) and Compose overlay
+  `deploy/compose/docker-compose.validator.yml`. New page: Deployment → Validator service.
+- Astronomer Blueprint steps: templates of `airflow-blueprint` (installed packages with the
+  `airflow_blueprint.blueprints` entry point, `blueprints.template_dirs`, `blueprints.modules`)
+  appear in the palette's *Blueprints (Astronomer)* section and become `kind: blueprint` nodes
+  with a config form generated from the template's Pydantic model, version selection, a task
+  preview (inspector and collapsible node) and validation against the config schema. Python and
+  loader output call `Template().render(Config(...))`; the YAML output mode reports them as
+  unsupported, the dag-factory export skips them. The Python importer folds `render()` calls
+  back into blueprint steps. New extra `autoair[blueprint]`, feature switch
+  `features.blueprints`, settings section `blueprints`, routes `/api/blueprints/*` and the MCP
+  tool `list_blueprints`. Guide: User guide → Blueprint steps.
+- Airflow 3.4: `plugin.dag_tab_tags` (`AUTOAIR_PLUGIN__DAG_TAB_TAGS`) shows the **AutoAir**
+  DAG tab only on DAGs with one of the listed tags, through the plugin's `applies_to`
+  scoping. Empty (default) keeps the tab on every DAG page; ignored before Airflow 3.4.
+- Validation warns about task groups that depend on each other in a cycle
+  (`task_group_cycle`), which Airflow 3.4 deprecates and Airflow 3.5 is planned to reject.
+- Editing existing Python DAGs keeps the hand-written file: each DAG has a source policy
+  (`auto`, `generate`, `preserve`, `strict-preserve`; DAG settings and the deploy dialog).
+  Imported and code-mode DAGs default to preserve: a deploy applies only the change to the
+  existing file with a LibCST patch (keyword arguments, TaskFlow bodies, added and removed
+  tasks and dependencies, renames), verifies it with a round-trip import and the DagBag
+  check, and never regenerates the file on its own. The deploy dialog previews the DAG file
+  as a unified diff (`POST /api/specs/{dag_id}/source-preview`, MCP `preview_dag_source`);
+  refused changes explain why and offer raw code or a deliberate switch to `generate`.
+  A stopped deploy says why by the file's state (the hand-written file AutoAir keeps, a file
+  changed outside AutoAir, or one AutoAir did not create); "Keep as raw code DAG" and
+  "Overwrite the file" follow the user's `code:raw` and `deploy:overwrite_ejected`; a source
+  policy picked in the deploy dialog changes the DAG only when it deploys (Cancel keeps it).
+  Code mode and the Code tab show the hand-written file. New settings `preserve.*`, feature flags
+  `source_preserve` and `strict_source_preserve`. `libcst` is a new core dependency.
+- Generated DAG files carry a fingerprint line (`# autoair:fingerprint sha256=…`), so a file
+  edited outside AutoAir is recognised on folder, object-storage and git targets even without
+  AutoAir's state. Such a deploy stops and offers to apply the change to the edited file
+  (merged with the outside edits); `preserve.ejected_files` (`block`, `warn`, `overwrite`)
+  sets the behaviour. New permission `deploy:overwrite_ejected` (Admin; never from a
+  wildcard) for a confirmed overwrite.
+- Tool-call approval for AI agents (pydantic-ai deferred tools): when the developer or admin
+  assistant or a troubleshooting analysis calls a tool that changes something (`remember`,
+  external MCP tools not marked `readOnlyHint`), the run pauses with an approval card showing
+  the tool and its masked arguments; the user who started the run approves or denies each
+  call (optionally with a reason) and the run resumes in the same answer or analysis.
+  Approvals are stored with the state (multi-replica safe, decided at most once, expiring
+  after `ai.approvals.ttl_seconds`) and audited. New settings `ai.approvals.*`, new endpoints
+  `GET /api/ai/approvals`, `GET /api/ai/approvals/{id}` and
+  `POST /api/ai/approvals/{id}/stream`. New page: AI → Tool-call approval.
+- Large DAGs: above 150 nodes the canvas can zoom out to an overview of the whole graph
+  (**Fit view**), and below 40 % zoom task cards turn into light, colour-tinted boxes with
+  their name (problems, run states, diff and selection stay visible). Benchmarks for large
+  DAGs: `scripts/gen_large_dag.py` (synthetic specs), `scripts/bench_large_dag.py` (server
+  timings) and `frontend/e2e/large-graph.spec.ts` (load, layout, frame rate, memory). New
+  page: User guide → Large DAGs (measured limits and tuning).
+- `preserve.allow_force_overwrite` (`AUTOAIR_PRESERVE__ALLOW_FORCE_OVERWRITE`, default
+  `false`): the "Overwrite (force)" choice is offered and accepted only when it is `true`, for
+  the hand-written file AutoAir keeps for a DAG, a DAG file changed outside AutoAir and `force`
+  deploys of the loader and YAML output modes and raw code. The caller still needs
+  `deploy:overwrite_ejected` and an explicit confirmation; `/api/meta` reports
+  `allow_force_overwrite`, and the source-plan and conflict dialogs hide the overwrite button
+  otherwise. Source plans refuse with the new code `overwrite_disabled`.
+- `server.harden_process` (`AUTOAIR_SERVER__HARDEN_PROCESS`, default `true`) controls whether
+  `autoair serve`, `autoair local` (and their uvicorn workers), `autoair mcp-serve --http` and
+  `autoair ai-serve` make their process non-dumpable. Turn it off only to debug with py-spy,
+  gdb or core dumps; the server then logs a warning at start-up. Never applied in the Airflow
+  plugin.
+
 ### Changed
+- `spec_version` is now 3. Version 3 adds only optional parts (`source` and the `blueprint`
+  node kind); version 1 and 2 documents keep loading and are written as version 3 the next
+  time they are saved or deployed. **Upgrade note:** AutoAir 0.1.0 refuses version 3 specs
+  with "spec_version 3 is newer than this AutoAir supports (2); upgrade AutoAir", also in the
+  loader stubs inside Airflow. Upgrade every AutoAir process that reads the same specs
+  together (plugin, `autoair serve` replicas, MCP and AI services, the `autoair` package in
+  Airflow's dag-processor and workers); rolling back to 0.1.0 needs the specs from before the
+  upgrade.
+- Overwriting a DAG file AutoAir would otherwise not replace now needs
+  `preserve.allow_force_overwrite=true` (default `false`). `preserve.ejected_files=overwrite`
+  takes effect only with it (otherwise it behaves like `block`, also for administrators), and
+  regenerating the kept hand-written file (switch to generate) needs it as well as
+  `deploy:overwrite_ejected`. Deleting a kept hand-written DAG still needs only the
+  permission. Files without AutoAir's marker are never overwritten by `force`. A deploy that
+  would replace the kept hand-written file without a source plan (another output mode, a
+  conversion to raw code) returns HTTP 200 with `deployed: false`, `status: "ejected"` and
+  `conflict.ejected_file`, `conflict.hand_written` and `conflict.force_allowed` instead of
+  HTTP 409; ejected results without a source plan also carry `conflict.force_allowed`.
+  **Upgrade note:** deployments that relied on `preserve.ejected_files=overwrite` or on
+  regenerating kept hand-written files must set `AUTOAIR_PRESERVE__ALLOW_FORCE_OVERWRITE=true`;
+  API clients that handled the 409 must read `status: "ejected"` instead.
+- MCP `save_raw_dag_code`: a raw code DAG that replaces its own code no longer needs
+  `deploy:overwrite_ejected`, like the REST deploy (`code:raw` is still required over HTTP).
+  The file is written only while it is unchanged since AutoAir wrote it; MCP has no `force`,
+  so a file changed outside AutoAir is refused. Replacing a visual DAG's kept file is still
+  refused.
+- **Upgrade note:** the validator service (`autoair validator-serve`) and the main server
+  must run the same AutoAir version; there is no mixed-version compatibility window. Upgrade
+  and roll back both together.
+- Knowledge base defaults: `kb.sources` is now `official` plus `autoair`, and `kb.components`
+  includes `autoair`. With `kb.refresh_on_start` the server now builds the (small) index of
+  AutoAir's own documentation at start-up even when air-gapped. A `kb.sources` list you set
+  replaces the default; add `{"id": "autoair", "kind": "autoair"}` to keep AutoAir's pages.
+- The warm DagBag pool exchanges JSON with its workers instead of pickles, so DAG code that
+  writes to the worker's pipe can no longer execute code in the AutoAir process when the
+  parent reads the reply. Workers run in their own process group, and stopping one also stops
+  the processes it started.
+- CI tests the Airflow 3.4.0b2 pre-release (was 3.4.0b1). No final 3.4 exists yet. Airflow
+  3.4 needs Python 3.11 or newer; AutoAir keeps supporting Python 3.10 with Airflow 3.0-3.3.
+- A local deploy whose reparse request Airflow refuses (`403`, for example a file without a
+  registered DAG on Airflow 3.4 without the `REPARSE_ALL` permission, or `404`) says so in the
+  deploy message instead of "could not contact Airflow"; the deploy itself succeeds. A
+  `409` (a reparse of the file is still queued) is reported as "reparse already requested".
+- The deploy option `force` no longer overwrites a Python DAG file that was changed outside
+  AutoAir: answer the stopped deploy with `source_resolution` instead. For loader stubs it
+  needs `deploy:overwrite_ejected`.
+- **Deployer** cannot deploy a DAG that keeps its hand-written Python file: the round
+  trip needs `code:execute` and writing the imported file needs `code:raw`. The refusal
+  names the missing permission. New built-in role **CodeDeployer** (Deployer +
+  `code:execute` + `code:raw`) for those deploys; or deploy with the `generate` policy.
+  Regenerating a hand-written file AutoAir keeps needs `deploy:overwrite_ejected` and
+  `preserve.allow_force_overwrite=true`; deleting it needs the permission.
+- Imported DAGs (Python file, Airflow, repository import, MCP) and code applied in the code
+  mode keep their Python file (`source.origin: python`); deploying it as written needs
+  `code:execute` for the round trip and `code:raw` when the file comes from the spec. The
+  repository import dialog can generate the files instead. Promoting such a DAG between
+  environments is refused (`409`).
+- Calls of `remember` and of external MCP tools without `readOnlyHint: true` now wait for
+  the user's approval by default (previously they ran directly). Exempt tools with
+  `ai.approvals.default.exempt` or `ai.approvals.agents.<agent>.exempt`. Troubleshooting
+  analyses can have the new status `awaiting_approval`.
+- Validation lints all Python task bodies with one ruff run and shell scripts with one
+  ShellCheck run per 50 scripts, and remembers results of unchanged bodies (a failed run is
+  retried, not remembered; `.shellcheckrc` files are no longer read): validating a 1,000-task DAG takes
+  about 0.3 s the first time and 0.1 s afterwards (was 2-5 s, one process per task).
+  `editor.python_lint_timeout` and `editor.shellcheck_timeout` now apply per batched run.
+- Editor performance on large DAGs: dragging no longer serialises the whole document for undo
+  history, live checks and collaboration on every frame; node badges, run-state overlays and
+  the inspector no longer re-render or rescan every node per change; live checks wait longer
+  after the last change on DAGs with more than 200 nodes (up to 2 s); an auto layout that
+  finishes after the graph changed is discarded instead of applied.
+- Testing: visual regression baselines inside the Airflow UI (`npm run test:visual:plugin`):
+  the eight standalone screens plus the connection form, clear and backfill dialogs and asset
+  actions, light and dark, against a private Airflow with the plugin. The browser runs in the
+  Playwright Docker image so the baselines match on every Linux machine and in CI (the
+  non-blocking *Frontend · visual regression* job runs both suites).
 - `autoair[all]` no longer includes `mcp`: FastMCP 4 needs Starlette 1.x, which Airflow 3.1's
   FastAPI pin excludes, so `all` now installs next to every supported Airflow. Use
   `autoair[all,mcp]` on Airflow 3.0, 3.2 and newer or standalone. The `sqlite`, `postgres` and
@@ -16,6 +191,9 @@ minor versions may contain breaking changes; they are listed under **Changed** o
   Compatibility (extras per Airflow version).
 
 ### Fixed
+- Airflow 3.4: the latest log of a task waiting for a retry (`up_for_retry`) is the failed
+  try again, not the upcoming try that has no log yet (run panel, AI troubleshooting and fix,
+  MCP `get_task_log`). `GET /api/airflow/capabilities` reports `retry_try_is_next`.
 - The SQLite and PostgreSQL state backends and the pgvector knowledge-base store work on
   SQLAlchemy 1.4, the version Airflow 3.0 installs (previously an `ImportError` on
   `sqlalchemy.Connection`). On SQLAlchemy 1.4 PostgreSQL goes through psycopg2.
@@ -25,6 +203,42 @@ minor versions may contain breaking changes; they are listed under **Changed** o
   the browser (`toISOString`) no longer fail to parse.
 - Python DAG import on Airflow 3.2: `CronTriggerTimetable("@daily", ...)` is recognised as a
   preset again (SDK timetables keep the preset unresolved).
+- Security: a hand-written DAG file adopted over MCP (`save_dag_spec` with source policy
+  preserve) is recorded as kept, like a REST deploy, so regenerating or deleting it needs
+  `deploy:overwrite_ejected`. The deploy targets (local folder, object storage, git) now refuse
+  to replace or remove a kept file on every write path that skips the source plan: switching
+  the DAG to the loader or YAML output mode, converting it to a raw code DAG, MCP saves and
+  promotions. A deploy with `force` by a holder of `deploy:overwrite_ejected` still may, with
+  `preserve.allow_force_overwrite=true` and only for a file with AutoAir's marker; a raw code
+  DAG keeps editing its own code.
+- Security: a DAG that writes part of a reply to the import-check worker's pipe and stops no
+  longer hangs a DagBag pool thread (and, in the validator service, a capacity slot until a
+  restart): the check's deadline covers reading the whole reply, after which the worker is
+  replaced. Replies carry a per-check nonce, so code left running from an earlier check
+  cannot answer for a later one.
+- Security: the validator service signs its `/v1/check` answers with the HMAC key, bound to
+  the request's nonce (`x-autoair-validator-response-signature`); the main server rejects
+  unsigned or mismatched answers and treats the validator as unavailable
+  (`validator.fail_mode` applies). Update the validator and the main server together.
+- Security: `autoair serve`, `autoair local`, `autoair mcp-serve --http` and `autoair ai-serve`
+  make their process non-dumpable at start-up (Linux), so DAG code in their child processes
+  cannot read the server's environment through `/proc`. The Airflow plugin leaves Airflow's
+  process unchanged; use `validator.url` there.
+- Security: denial reasons of AI tool approvals are scrubbed of secrets and passed through the
+  guardrails before they reach the model, the stored steps and the audit record.
+- Security: for a hand-written file AutoAir did not write (content hidden), deploy results no
+  longer return the merged `stored_spec`, and import and round-trip errors no longer quote the
+  file.
+- Security: the MCP `save_dag_spec` validates a preserved hand-written file with the same
+  inputs as the REST deploy (operator templates, target Airflow version, user and action for
+  OPA).
+- Blueprint task previews report an unavailable validator service as a preview error instead
+  of HTTP 500.
+- The deploy audit record and commit context say when the import check was skipped
+  (`validation.import_check_skipped`: `fail_open` when the validator was unavailable,
+  `permission` without `code:execute`).
+- The validator's Kustomize NetworkPolicy admits Airflow api-server pods only from the
+  namespace `airflow` (a placeholder to adjust) instead of from every namespace.
 
 ## [0.1.0] - 2026-10-21
 

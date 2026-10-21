@@ -20,8 +20,8 @@ an LLM-oriented description that says *when* to use it, MCP annotations
 
 | Group | Tools |
 |---|---|
-| Catalog | `search_knowledge` (ranked search over operators, guides, saved DAGs, templates), `list_operators`, `get_operator_schema`, `get_dagspec_schema`, `list_node_kinds`, `list_notifiers` |
-| Specs | `validate_dag_spec`, `apply_spec_patch` (JSON-patch edits addressed by node id), `generate_code`, `list_dags` (filter `document_type`: `spec`/`raw`), `get_dag_spec`, `get_dag_code` (the DAG file and its `document_type`), `import_python_dag`, `save_dag_spec` (confirm), `save_raw_dag_code` (confirm; raw code DAGs, needs `code:raw`), `delete_dag_spec` (confirm) |
+| Catalog | `search_knowledge` (ranked search over operators, guides, saved DAGs, templates), `list_operators`, `get_operator_schema`, `get_dagspec_schema`, `list_node_kinds`, `list_notifiers`, `list_blueprints` (Astronomer Blueprint templates with config schemas; `features.blueprints`) |
+| Specs | `validate_dag_spec`, `apply_spec_patch` (JSON-patch edits addressed by node id), `generate_code`, `list_dags` (filter `document_type`: `spec`/`raw`), `get_dag_spec`, `get_dag_code` (the DAG file and its `document_type`), `import_python_dag`, `preview_dag_source` (what `save_dag_spec` writes as the DAG file: generated, or the hand-written file patched, with a diff), `save_dag_spec` (confirm; follows the DAG's source policy, validates a patched hand-written file like the REST deploy and records it as the kept file, so regenerating it needs a REST deploy with `preserve.allow_force_overwrite=true` and `deploy:overwrite_ejected`, and `delete_dag_spec` refuses it (the REST delete needs `deploy:overwrite_ejected`)), `save_raw_dag_code` (confirm; raw code DAGs, needs `code:raw`; replaces the code of an existing raw code DAG without `deploy:overwrite_ejected`), `delete_dag_spec` (confirm) |
 | Analysis | `review_dag_spec`, `scan_dag_leaks`, `optimize_dag_parameters` (from run history) |
 | Airflow | `list_connections`, `list_variables`, `get_dag_status`, `list_dag_runs`, `get_task_log`, `trigger_dag` (confirm) |
 | Research | `search_installed_docs` (offline search over the installed providers' docstrings, metadata and example DAGs, the knowledge base and fetched pages), `read_source` (installed module / class / method source, confined to site-packages and configured folders), `list_installed_packages`, `get_package_info` (+ PyPI when online), `fetch_doc` (allow-listed sites, online mode only) |
@@ -29,6 +29,7 @@ an LLM-oriented description that says *when* to use it, MCP annotations
 | Operator templates | `list_operator_templates`, `get_operator_template` (a version and the history), `save_operator_template` (confirm; creates a template or publishes the next version, needs the `etag` as `if_match` for an existing id; the task is validated first and errors refuse the save), `delete_operator_template` (confirm; deletes every version). `builder:use` to read, `template:write` to write, all need `features.templates` |
 | Memory | `list_memories`, `remember`, `forget` |
 | Knowledge base | `kb_search` (the indexed Airflow / provider / Astronomer documentation, hits with URL, version and source), `kb_sources`, `kb_status`; `ai:use` and `features.kb`, no LLM needed. `autoair kb mcp` serves only these three over stdio |
+| AutoAir documentation | `search_autoair_docs` (BM25 over AutoAir's own documentation packaged with the installed version; passages with page path and URL), `read_autoair_doc` (one page as Markdown by path, route or URL, `max_chars` 1,000-100,000, default 20,000, continued with `next_offset`; only packaged pages, nothing is read from disk or the network), `list_autoair_docs` (every page with title, description and URL). No AutoAir permission (the docs are public; over HTTP the caller is still authenticated) and `features.autoair_docs`; no Airflow, AI extra or knowledge-base store needed. `autoair docs-mcp` serves only these three |
 
 **Resources**: `autoair://schema/dagspec`, `autoair://operators` (index),
 `autoair://operators/{fqn}/schema`, `autoair://dags`, `autoair://dags/{dag_id}/spec`,
@@ -64,7 +65,14 @@ an LLM-oriented description that says *when* to use it, MCP annotations
   (`mask_error_details`).
 * Raw code DAGs are arbitrary Python: `save_raw_dag_code`, and `save_dag_spec` with a spec that
   sets `raw_code`, need the `code:raw` permission and the `python_code` and `code_editor`
-  features; `save_raw_dag_code` never replaces a visual (spec-backed) DAG.
+  features; `save_raw_dag_code` never replaces a visual (spec-backed) DAG or the hand-written
+  file AutoAir keeps for one.
+* A raw code DAG (its stored spec has `raw_code`) that replaces its own code is written like
+  the REST deploy does it (`raw_write`, `allow_hand_written`): no `deploy:overwrite_ejected` is
+  needed, because the caller sends the complete file. The file is written only while it is
+  unchanged since AutoAir last wrote it. MCP has no `force` and no overwrite path, so a file
+  changed outside AutoAir is refused; overwriting it needs the REST deploy with
+  `preserve.allow_force_overwrite=true` and `deploy:overwrite_ejected`.
 * Research tools only read installed sources and configured folders; `fetch_doc` only
   exists when online research is enabled and is limited to allow-listed domains with SSRF,
   size and rate limits. Fetched text is treated as untrusted data.
@@ -97,6 +105,32 @@ The same server can run in three places, with the same auth in each:
 | Standalone | `autoair mcp-serve --http --port 8766` (streamable HTTP at `/mcp/`), or stdio: `autoair mcp-serve` / `autoair mcp` / `autoair-mcp` | HTTP: the caller's Airflow bearer token verified against Airflow (`--no-auth` for local experiments); stdio: `AUTOAIR_AIRFLOW_TOKEN` |
 
 `autoair mcp --http` / `autoair-mcp --http` serve HTTP without authentication, for local use only.
+
+### Documentation-only server (`autoair docs-mcp`)
+
+`autoair docs-mcp` serves only the three AutoAir documentation tools, like LangChain's docs MCP
+server: stdio by default, `--http` for streamable HTTP at `http://HOST:PORT/mcp` (default
+`127.0.0.1:8767`; `--host`, `--port`, `--path`). It reads no settings and keeps no state; over
+HTTP it has no authentication, since it serves only the public documentation. It needs the
+`mcp` extra (FastMCP) and nothing else, so it runs in its own environment, also where
+`autoair[mcp]` cannot share Airflow 3.1's environment:
+
+```bash
+claude mcp add autoair-docs -- uvx --from 'autoair[mcp]' autoair docs-mcp              # Claude Code
+codex mcp add autoair-docs -- uvx --from 'autoair[mcp]' autoair docs-mcp               # Codex CLI
+claude mcp add --transport http autoair-docs http://docs-host:8767/mcp                 # shared HTTP
+```
+
+Cursor, OpenCode, generic JSON and troubleshooting: [AutoAir docs MCP](https://ctolon.github.io/autoair/docs/ai/docs-mcp).
+
+The documentation is packaged when the wheel is built: `hatch_build.py` runs
+`autoair.docs.build`, which turns `website/docs/**` (front matter title and description, MDX
+components as text, admonitions as labels, code blocks verbatim, site links as absolute URLs)
+and `docs/configuration-reference.md` into `src/autoair/docs/pages.json`, a gitignored build
+artefact listed in `[tool.hatch.build] artifacts`. In a source checkout the pages are built
+from the sources at run time, so they are never stale while the docs are edited
+(`uv run python -m autoair.docs.build` writes the file by hand). The knowledge base indexes
+the same pages through its built-in `autoair` source.
 
 The in-app endpoint runs FastMCP's low-level server with a per-request, stateless session
 manager: Airflow mounts plugin apps as sub-applications whose ASGI lifespans never run, so

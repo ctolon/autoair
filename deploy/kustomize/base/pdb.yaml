@@ -1,0 +1,15 @@
+# maxUnavailable keeps node drains possible with a single replica; overlays/production
+# switches to minAvailable: 1 once there are two or more.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: autoair
+  labels:
+    app.kubernetes.io/name: autoair
+    app.kubernetes.io/component: server
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: autoair
+      app.kubernetes.io/component: server

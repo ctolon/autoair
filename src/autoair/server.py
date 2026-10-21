@@ -115,10 +115,13 @@ def build_app(options: ServeOptions, settings: Settings | None = None) -> FastAP
 def app_factory() -> FastAPI:
     """uvicorn ``--factory`` entry of worker processes."""
     from autoair.logging_setup import configure_logging
+    from autoair.validation.sandbox import harden_server_process
 
     options = ServeOptions.from_env(os.environ[OPTIONS_ENV])
     settings = settings_for(options)
     configure_logging(settings.logging)
+    # a spawned worker is dumpable again
+    harden_server_process("server worker", enabled=settings.server.harden_process)
     return build_app(options, settings)
 
 
@@ -211,8 +214,12 @@ def run(
     import uvicorn
 
     from autoair.logging_setup import configure_logging
+    from autoair.validation.sandbox import harden_server_process
 
     configure_logging(settings.logging)
+    harden_server_process(
+        "local" if options.local else "server", enabled=settings.server.harden_process
+    )
     kwargs = uvicorn_options(settings, host=host, port=port)
     scheme = "https" if kwargs.get("ssl_certfile") else "http"
     shown = "127.0.0.1" if host in ("0.0.0.0", "::") else host  # noqa: S104 - display only

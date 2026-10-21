@@ -36,7 +36,10 @@ autoair kb search "deferrable S3KeySensor"
 `autoair serve` and the Airflow plugin also build the index on their own: shortly after start-up
 when it is empty (`kb.refresh_on_start`, on) and then every `kb.refresh_interval_hours` (24).
 Without `kb.online` the default `official` source is skipped; see
-[Air-gapped setup](/docs/ai/knowledge-base-air-gapped) for the alternatives.
+[Air-gapped setup](/docs/ai/knowledge-base-air-gapped) for the alternatives. The default `autoair`
+source, AutoAir's own documentation packaged with the installed version, is indexed online and
+air-gapped alike. Coding agents that only want AutoAir's documentation can use
+[AutoAir docs MCP](/docs/ai/docs-mcp) instead, which needs no index.
 
 ## Architecture
 

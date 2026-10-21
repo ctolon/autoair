@@ -15,7 +15,7 @@ Flags restrict what [IAM](/docs/admin/iam) allows; they never grant anything. A 
 
 ## Flags
 
-All flags default to `true` except `code_edit_inline` and `ide_language_server`.
+All flags default to `true` except `code_edit_inline`, `strict_source_preserve` and `ide_language_server`.
 
 | Flag | Default | API and CLI effect when off | UI effect when off |
 |---|---|---|---|
@@ -36,6 +36,8 @@ All flags default to `true` except `code_edit_inline` and `ide_language_server`.
 | `visual_editor` | `true` | The visual (canvas) editor. At least one of `visual_editor` and `code_editor` must be on: switching both off is a configuration error at start-up, and the admin panel refuses it (`422`). | Off (code only): no canvas, palette, insert palette, auto-layout or canvas commands; visual DAGs open in the synced code mode and raw code DAGs in the raw code editor. **Open in visual builder** is hidden. |
 | `code_editor` | `true` | Direct code editing: the synced code mode of visual DAGs (`POST /api/interchange/python/sync` answers `404` when off) and [raw code DAGs](/docs/user-guide/code-mode#raw-code-dags) (saving one answers `404` when off). Applying code needs `spec:write`, `code:execute` and `python_code`; saving raw code needs `spec:write`, `code:raw` and `python_code`. | Off (visual only): no **Visual \| Code** toggle and no code mode; **New raw code DAG** is hidden; an existing raw code DAG opens read-only with a notice. |
 | `code_edit_inline` | `false` | Makes the bottom panel's **Code** tab editable, with the same import-on-apply as the code mode. | When on, the **Code** tab becomes an editor instead of a read-only preview. |
+| `source_preserve` | `true` | [Source-preserving deploys](/docs/user-guide/editing-python-dags): off, the source policy Auto means Generate for every DAG, an explicit Preserve or Strict preserve is refused at deploy (`source_refused`), and files changed outside AutoAir stay protected (`preserve.ejected_files`). | The deploy preview shows generated files only. |
+| `strict_source_preserve` | `false` | On: every Preserve deploy runs as Strict preserve (risky edits are refused instead of warned about). | The deploy preview shows the policy as Strict preserve. |
 | `ide_language_server` | `false` | IDE-grade IntelliSense in code editors through a per-session language server (basedpyright or pylsp, bash-language-server), configured in the `lsp` section. Off: the built-in jedi completions. | When on, code editors connect to the language server over a WebSocket. |
 
 The exact descriptions are in the [configuration reference](/docs/reference/configuration#features).

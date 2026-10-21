@@ -24,7 +24,8 @@ import { isTaskNode, nodeKey } from "../../lib/types";
 import { useBuilder } from "../../store/builder";
 import { JsonBlock } from "../components/JsonBlock";
 import { StateBadge } from "../components/StateBadge";
-import { isRunActive, nodeTaskId } from "../lib/runOverlay";
+import { useAirflowCapabilities } from "../capabilities";
+import { isRunActive, latestLogTry, nodeTaskId } from "../lib/runOverlay";
 import { useLifecycle } from "../store";
 import { useSelectedRunOverlay } from "../useRunOverlaySync";
 
@@ -122,7 +123,8 @@ export default function TaskTab() {
   const [mapIndexSel, setMapIndex] = useState<number | null>(null);
   const mapIndex = mapIndexSel ?? (mapped.length ? (mapped[0]?.map_index ?? -1) : -1);
   const ti = instances.find((x) => (x.map_index ?? -1) === mapIndex);
-  const maxTry = Math.max(1, ti?.try_number ?? 1);
+  const caps = useAirflowCapabilities();
+  const maxTry = latestLogTry(ti, !!caps.retry_try_is_next);
   const [trySel, setTry] = useState<number | null>(null);
   const tryNumber = Math.min(trySel ?? maxTry, maxTry);
   const live =

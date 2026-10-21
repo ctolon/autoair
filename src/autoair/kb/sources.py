@@ -14,7 +14,9 @@ Kinds and layouts:
 * ``git`` / ``path`` - a checkout or folder (local or object storage) in the
   ``airflow_repo`` layout (apache/airflow sources), ``sphinx_site`` layout (a downloaded
   copy of the docs site) or ``files`` layout (any Markdown/rst/HTML/text);
-* ``bundle`` - a KB bundle (pages already parsed).
+* ``bundle`` - a KB bundle (pages already parsed);
+* ``autoair`` - AutoAir's own documentation packaged with the wheel (:mod:`autoair.docs`):
+  one unit at the installed AutoAir version, pages already parsed, never any network.
 """
 
 from __future__ import annotations
@@ -638,6 +640,52 @@ def _folder_units(
         yield from _files_units(reader, ctx, source, fingerprint)
 
 
+# --------------------------------------------------------------------------- AutoAir docs
+
+
+def _autoair_units(source: KbSourceConfig, components: list[str]) -> Iterator[Unit]:
+    """The packaged AutoAir documentation as one unit (the ``autoair`` component)."""
+    if "autoair" not in components:
+        return
+    from autoair import __version__
+    from autoair.docs.index import DocPage, DocsUnavailable, load_data, sections_of
+
+    try:
+        data = load_data()
+    except DocsUnavailable as exc:
+        raise SourceError(str(exc)) from exc
+    pages = [DocPage.model_validate(raw) for raw in data.get("pages") or []]
+    unit = Unit(
+        key=f"{source.id}:autoair:{__version__}",
+        source=source.id,
+        component="autoair",
+        package="autoair",
+        version=__version__,
+        fingerprint=_sha(json.dumps([__version__, data], sort_keys=True)),
+    )
+    for page in pages:
+        if not matches(page.path, source.include, source.exclude):
+            continue
+
+        def load(_e: str | None, _m: str | None, page: DocPage = page) -> Loaded:
+            doc = PageDoc(
+                id=page.path,
+                source=source.id,
+                unit=unit.key,
+                component="autoair",
+                package="autoair",
+                version=__version__,
+                url=page.url,
+                title=page.title,
+                sections=sections_of(page),
+            )
+            return Loaded(content=page.markdown, fmt="md", doc=doc)
+
+        unit.pages.append(PageRef(url=page.url, title=page.title, load=load))
+    if unit.pages:
+        yield unit
+
+
 # --------------------------------------------------------------------------- entry point
 
 
@@ -719,6 +767,8 @@ def plan_units(
                 base = source.url
             folder = _FsReader(fs, root, ctx.settings.fetch.max_page_bytes, base)
             yield from _folder_units(folder, ctx, source, components, versions, fingerprint)
+        elif source.kind == "autoair":
+            yield from _autoair_units(source, components)
         # bundle sources are imported by autoair.kb.bundle (pages are already parsed).
     except (FetchError, OSError, ValueError) as exc:
         raise SourceError(str(exc)) from exc

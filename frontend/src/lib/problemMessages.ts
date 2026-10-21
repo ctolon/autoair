@@ -50,6 +50,11 @@ const RULES: Rule[] = [
     vars: (m) => ({ template: m[1] ?? "", version: m[2] ?? "" }),
   },
   { re: /^dependency cycle: (.*)$/, key: "cycle", vars: (m) => ({ path: m[1] ?? "" }) },
+  {
+    re: /^task groups depend on each other in a cycle: (.*?)\. A dependency into or out of/,
+    key: "taskGroupCycle",
+    vars: (m) => ({ members: m[1] ?? "" }),
+  },
   { re: /^end_date must be after start_date/, key: "dates" },
   { re: /^a node cannot depend on itself/, key: "selfLoop" },
   { re: /^notes cannot be connected/, key: "noteEdge" },
@@ -57,6 +62,23 @@ const RULES: Rule[] = [
   { re: /^XCom reference to unknown node '([^']+)'/, key: "xcomUnknown", vars: (m) => ({ id: m[1] ?? "" }) },
   { re: /^a branch task needs at least one downstream task/, key: "branch" },
   { re: /^a loop group needs at least one task/, key: "loopEmpty" },
+  // Astronomer Blueprint steps (autoair.validation.blueprints)
+  {
+    re: /^blueprint '([^']+)' v(\d+) is not in the blueprint catalog/,
+    key: "blueprintUnknown",
+    vars: (m) => ({ name: m[1] ?? "", version: m[2] ?? "" }),
+  },
+  {
+    re: /^the Airflow environment needs airflow-blueprint and the module '([^']+)'/,
+    key: "blueprintRuntime",
+    vars: (m) => ({ module: m[1] ?? "" }),
+  },
+  { re: /^blueprint steps cannot be expressed in YAML Dags/, key: "blueprintOutputMode" },
+  { re: /^blueprint steps cannot be placed in a loop group/, key: "blueprintLoop" },
+  { re: /^blueprint steps are switched off/, key: "blueprintDisabled" },
+  { re: /^blueprint config values must be plain JSON/, key: "blueprintPlainJson" },
+  { re: /^a newer version of '([^']+)' is available/, key: "blueprintOutdated", vars: (m) => ({ name: m[1] ?? "" }) },
+  { re: /^XCom must reference a task, not a blueprint step/, key: "xcomBlueprint" },
   // Raw code DAGs (autoair.validation.raw)
   { re: /^raw code DAGs are Python and need allow_python_code/, key: "rawPythonDisabled" },
   { re: /^the DAG file is empty/, key: "rawEmpty" },
@@ -72,6 +94,17 @@ const RULES: Rule[] = [
     vars: (m) => ({ name: m[1] ?? "" }),
   },
   { re: /^(\S+) is forbidden by policy$/, key: "rawForbidden", vars: (m) => ({ name: m[1] ?? "" }) },
+  // The validator service (autoair.validation.dagbag_check.ImportCheckUnavailable)
+  {
+    re: /^the import check service is unavailable \((.*)\); deploys are blocked/,
+    key: "importServiceClosed",
+    vars: (m) => ({ reason: m[1] ?? "" }),
+  },
+  {
+    re: /^the import check service is unavailable \((.*)\); the DAG was not imported/,
+    key: "importServiceOpen",
+    vars: (m) => ({ reason: m[1] ?? "" }),
+  },
   {
     re: /^the file did not define DAG '([^']+)' \(found: ([^)]*)\)/,
     key: "rawImportMissing",

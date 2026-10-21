@@ -8,6 +8,10 @@ export AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_ALL_ADMINS="${ALL_ADMINS:-True}"
 export AIRFLOW__DAG_PROCESSOR__REFRESH_INTERVAL=5
 export AIRFLOW__DAG_PROCESSOR__MIN_FILE_PROCESS_INTERVAL=5
 export AIRFLOW__API__PORT="${AIRFLOW_PORT:-8080}"
+# Task workers reach the execution API at [core] execution_api_server_url, which Airflow
+# defaults to http://localhost:8080/execution/; follow the chosen port so a private instance
+# never sends its tasks to another Airflow on 8080.
+export AIRFLOW__CORE__EXECUTION_API_SERVER_URL="${AIRFLOW__CORE__EXECUTION_API_SERVER_URL:-http://localhost:${AIRFLOW__API__PORT}/execution/}"
 # Optional: also track a git repository (GitDagBundle) — used to test AutoAir's git mode.
 if [ -n "${AUTOAIR_DEV_GIT_REPO:-}" ]; then
   export AIRFLOW__DAG_PROCESSOR__DAG_BUNDLE_CONFIG_LIST="[

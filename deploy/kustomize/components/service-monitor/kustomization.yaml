@@ -1,0 +1,10 @@
+# Prometheus Operator: scrape /api/metrics of every `autoair serve` pod (server.metrics_enabled,
+# on by default) and /metrics of the validator. Needs the monitoring.coreos.com CRDs; the
+# release label must match your Prometheus' serviceMonitorSelector. With
+# components/network-policies, allow the Prometheus namespace in (see its comments).
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+
+resources:
+  - servicemonitor.yaml
+  - networkpolicy.yaml

@@ -1,0 +1,12 @@
+apiVersion: v2
+name: autoair-validator
+description: >-
+  AutoAir validator service (autoair validator-serve) - DagBag import checks of untrusted
+  DAG code in a locked-down Deployment, next to Airflow installed with the official chart.
+type: application
+version: 0.2.0
+appVersion: "0.2.0"
+home: https://github.com/ctolon/autoair
+sources:
+  - https://github.com/ctolon/autoair
+keywords: [airflow, autoair, validator]

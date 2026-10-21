@@ -9,6 +9,7 @@ import type { BuilderNode, TaskFlowNode } from "../lib/types";
 import { nodeKey } from "../lib/types";
 import { effectiveTaskId } from "../lib/xcom";
 import { selectedNode, useBuilder } from "../store/builder";
+import { useStableSelector } from "../store/stable";
 import { useFocusRequest } from "../store/focus";
 import { problemText } from "../lib/problemMessages";
 import { ProblemCode, splitLine } from "../widgets/ProblemCode";
@@ -19,6 +20,7 @@ import { useInsertTarget } from "../widgets/xcomDnd";
 import { useIsRaw } from "../codemode/store";
 import { DagSettingsPanel, RawDagSettingsPanel } from "./DagSettings";
 import { BehaviourTab } from "./inspector/BehaviourTab";
+import { BlueprintInspector } from "./inspector/BlueprintInspector";
 import { DataTab } from "./inspector/DataTab";
 import { DocsTab } from "./inspector/DocsTab";
 import { ExecutionTab } from "./inspector/ExecutionTab";
@@ -115,8 +117,8 @@ function TaskHeaderFields({ node }: { node: TaskFlowNode }) {
   const update = useUpdate<"operator">(node.id);
   const spec = node.data.spec;
   const taskIdError = useFieldError(node.id, "task_id");
-  const nodes = useBuilder((s) => s.nodes);
-  const effective = effectiveTaskId(nodes, node.id);
+  // A string, not the node array: no re-render on every drag frame.
+  const effective = useBuilder((s) => effectiveTaskId(s.nodes, node.id));
   return (
     <Stack gap={2}>
       <HStack align="start">
@@ -265,9 +267,24 @@ function kindLabel(node: BuilderNode, t: (k: string) => string): string {
   return t(`kinds.${node.type}`);
 }
 
+/** The inspected parts of a node: not its position, measured size or selection flags. */
+function sameInspected(a: BuilderNode | undefined, b: BuilderNode | undefined): boolean {
+  return (
+    a === b ||
+    (!!a &&
+      !!b &&
+      a.id === b.id &&
+      a.type === b.type &&
+      a.data === b.data &&
+      a.parentId === b.parentId &&
+      a.style === b.style)
+  );
+}
+
 export function Inspector() {
   const { t } = useTranslation("inspector");
-  const node = useBuilder(selectedNode);
+  // Dragging the inspected node must not re-render the forms on every frame.
+  const node = useBuilder(useStableSelector(selectedNode, sameInspected));
   const removeNode = useBuilder((s) => s.removeNode);
   const edgeSelected = useBuilder((s) => s.edges.some((e) => e.selected));
   const raw = useIsRaw();
@@ -302,6 +319,7 @@ export function Inspector() {
           <TaskInspector key={node.id} node={node} />
         ) : null}
         {node.type === "task_group" ? <GroupInspector key={node.id} node={node} /> : null}
+        {node.type === "blueprint" ? <BlueprintInspector key={node.id} node={node} /> : null}
         {node.type === "note" ? <NoteInspector key={node.id} node={node} /> : null}
       </Stack>
     </EditingNodeContext.Provider>

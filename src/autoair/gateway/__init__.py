@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import datetime
 import json
+import re
 from typing import Any, TypeVar
 from urllib.parse import quote
 
@@ -254,6 +255,29 @@ class PoolState(_Loose):
     include_deferred: bool | None = None
 
 
+def parse_version(version: str | None) -> tuple[int, int, int] | None:
+    """``"3.4.0b2"`` -> ``(3, 4, 0)``; ``None`` for a missing or unparsable version."""
+    if not version:
+        return None
+    m = re.match(r"^(\d+)(?:\.(\d+))?(?:\.(\d+))?", version.strip())
+    if not m:
+        return None
+    return int(m.group(1)), int(m.group(2) or 0), int(m.group(3) or 0)
+
+
+def log_try_number(ti: TaskInstanceInfo, server: tuple[int, int, int] | None) -> int:
+    """The newest try of ``ti`` that can have a log.
+
+    From Airflow 3.4 an ``up_for_retry`` task instance already carries the *upcoming* try
+    number (the failed try is archived as ``try_number - 1``); before 3.4 it keeps the failed
+    try's number until the retry starts. An unknown server version keeps the old reading.
+    """
+    latest = max(1, ti.try_number)
+    if ti.state == "up_for_retry" and server is not None and server >= (3, 4, 0):
+        return max(1, latest - 1)
+    return latest
+
+
 class AirflowError(Exception):
     def __init__(self, status: int, detail: str) -> None:
         super().__init__(f"Airflow API {status}: {detail}")
@@ -273,6 +297,8 @@ class AirflowGateway:
         fetch_concurrency: int = FETCH_CONCURRENCY,
         page_size: int = PAGE_SIZE,
     ) -> None:
+        self._server_version: tuple[int, int, int] | None = None
+        self._server_version_read = False
         self.fetch_concurrency = max(1, fetch_concurrency)
         self.page_size = max(1, page_size)
         # Airflow's UI API (``/ui/...``, e.g. connection form metadata) lives beside /api/v2.
@@ -311,6 +337,22 @@ class AirflowGateway:
 
     async def version(self) -> dict[str, Any]:
         return dict(await self._request("GET", "/version"))
+
+    async def server_version(self) -> tuple[int, int, int] | None:
+        """The server's Airflow version (once per gateway, i.e. per request); ``None`` when
+        it cannot be read."""
+        if not self._server_version_read:
+            self._server_version_read = True
+            try:
+                self._server_version = parse_version(str((await self.version()).get("version")))
+            except AirflowError:
+                self._server_version = None
+        return self._server_version
+
+    async def latest_log_try(self, ti: TaskInstanceInfo) -> int:
+        """The newest try of ``ti`` with a log, by the server's try_number semantics."""
+        server = await self.server_version() if ti.state == "up_for_retry" else None
+        return log_try_number(ti, server)
 
     async def connections(self) -> list[ConnectionInfo]:
         return [

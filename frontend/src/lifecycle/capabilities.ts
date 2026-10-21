@@ -13,6 +13,7 @@ export const NO_CAPABILITIES: AirflowCapabilities = {
   keep_task_state: false,
   backfill_run_on_latest_version: false,
   scheduling_state: false,
+  retry_try_is_next: false,
 };
 
 /**

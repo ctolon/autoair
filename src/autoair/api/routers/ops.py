@@ -33,6 +33,13 @@ LATENCY = Histogram(
     buckets=(0.005, 0.02, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10),
 )
 DEPLOYS = Counter("autoair_deploys_total", "Deploy attempts", ["result"], registry=REGISTRY)
+IMPORT_CHECKS = Counter(
+    "autoair_import_checks_total",
+    "DagBag import checks by where they ran (local pool / validator service) and result "
+    "(ok, failed, unavailable)",
+    ["backend", "result"],
+    registry=REGISTRY,
+)
 
 
 class Health(BaseModel):

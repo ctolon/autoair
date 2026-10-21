@@ -69,6 +69,12 @@ class SourceCollector:
         self._by_ref[ref] = n
         return n
 
+    def restore(self, citations: Iterable[Citation], used_tools: Iterable[str] = ()) -> None:
+        """Continue the numbering of an earlier part of the same turn (a resumed run)."""
+        for c in citations:
+            self.add(c.kind, c.title, c.ref, c.snippet)
+        self.used_tools.extend(used_tools)
+
     def refs(self) -> list[str]:
         return [f"{c.kind}:{c.ref}" for c in self.citations]
 

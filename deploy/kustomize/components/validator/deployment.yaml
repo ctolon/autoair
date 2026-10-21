@@ -1,0 +1,105 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: autoair-validator
+  labels:
+    app.kubernetes.io/name: autoair-validator
+    app.kubernetes.io/component: validator
+spec:
+  replicas: 2
+  revisionHistoryLimit: 5
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: autoair-validator
+      app.kubernetes.io/component: validator
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: autoair-validator
+        app.kubernetes.io/component: validator
+        app.kubernetes.io/part-of: autoair
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8791"
+        prometheus.io/path: /metrics
+    spec:
+      # The validator talks to nothing in the cluster: no API token in the pod.
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 50000
+        runAsGroup: 0
+        fsGroup: 0
+        seccompProfile:
+          type: RuntimeDefault
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: autoair-validator
+              app.kubernetes.io/component: validator
+      containers:
+        - name: validator
+          image: ghcr.io/ctolon/autoair
+          imagePullPolicy: IfNotPresent
+          # dumb-init as PID 1 reaps any process the DAG code manages to leave behind.
+          command: [/usr/bin/dumb-init, --, autoair]
+          args: [validator-serve, --host, 0.0.0.0, --port, "8791"]
+          ports:
+            - name: http
+              containerPort: 8791
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: autoair-validator-config
+          env:
+            # The validator reads only this variable and never passes it to its workers.
+            - name: AIRFLOW_CONN_AUTOAIR_VALIDATOR
+              valueFrom:
+                secretKeyRef:
+                  name: autoair-validator
+                  key: connection
+          securityContext:
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            privileged: false
+            capabilities:
+              drop: [ALL]
+          resources:
+            requests:
+              cpu: 500m
+              memory: 1Gi
+            limits:
+              cpu: "2"
+              # pool_size x memory_limit_mb plus the service process
+              memory: 3Gi
+              ephemeral-storage: 1Gi
+          startupProbe:
+            httpGet:
+              path: /ready
+              port: http
+            periodSeconds: 5
+            failureThreshold: 36
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 20
+            timeoutSeconds: 5
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        # Scratch space: AIRFLOW_HOME, temporary DAG files.
+        - name: tmp
+          emptyDir:
+            sizeLimit: 512Mi

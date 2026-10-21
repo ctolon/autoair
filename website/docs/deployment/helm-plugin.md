@@ -9,7 +9,7 @@ AutoAir runs **inside Airflow's API server**, deployed with the official Apache 
 - `deploy/docker/Dockerfile`: the official `apache/airflow` image plus the AutoAir wheel and a precomputed operator catalog.
 - `deploy/helm/values-autoair.yaml`: chart values for a git-based setup (pull-request mode, `GitDagBundle`) with stateless API servers.
 
-For a first Helm installation without these production concerns, see [Installation with Helm](/docs/installation/helm). For the overall layout, see [Kubernetes reference architecture](/docs/deployment/kubernetes).
+For a first Helm installation without these production concerns, see [Installation with Helm](/docs/installation/helm). For the overall layout, see [Kubernetes reference architecture](/docs/deployment/kubernetes). To run AutoAir as its own service next to Airflow from raw manifests instead, see [Kubernetes with Kustomize](/docs/deployment/kustomize).
 
 ## Building the image
 
@@ -220,5 +220,6 @@ In plugin mode the collaboration ticket key is derived from Airflow's `[api_auth
 
 - [Git bundles and git-sync](/docs/deployment/git-bundles)
 - [Kubernetes reference architecture](/docs/deployment/kubernetes)
+- [Kubernetes with Kustomize](/docs/deployment/kustomize)
 - [Separate AI service](/docs/deployment/ai-service)
 - [Configuration reference](/docs/reference/configuration)

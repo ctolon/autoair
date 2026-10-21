@@ -1,0 +1,61 @@
+{
+  "spec_version": 3,
+  "dag_id": "blueprints",
+  "description": "Astronomer Blueprint steps next to regular tasks",
+  "start_date": "2024-01-01T00:00:00",
+  "schedule": { "type": "preset", "preset": "@daily" },
+  "nodes": [
+    {
+      "kind": "operator",
+      "id": "start",
+      "task_id": "start",
+      "operator": "airflow.providers.standard.operators.empty.EmptyOperator"
+    },
+    { "kind": "task_group", "id": "ingest", "group_id": "ingest" },
+    {
+      "kind": "blueprint",
+      "id": "customers",
+      "parent_group": "ingest",
+      "step_id": "extract_customers",
+      "blueprint": "extract",
+      "version": 1,
+      "class_path": "tests.blueprint_templates.etl.Extract",
+      "config_class": "ExtractConfig",
+      "config": { "source_table": "raw.customers", "batch_size": 500 }
+    },
+    {
+      "kind": "blueprint",
+      "id": "orders",
+      "parent_group": "ingest",
+      "step_id": "extract_orders",
+      "blueprint": "extract",
+      "version": 2,
+      "class_path": "tests.blueprint_templates.etl.ExtractV2",
+      "config": { "tables": ["orders", "order_lines"] }
+    },
+    {
+      "kind": "blueprint",
+      "id": "load",
+      "step_id": "load",
+      "blueprint": "load",
+      "version": 1,
+      "class_path": "tests.blueprint_templates.etl.Load",
+      "config_class": "LoadConfig",
+      "config": { "target_table": "analytics.customer_orders", "mode": "overwrite" }
+    },
+    {
+      "kind": "blueprint",
+      "id": "notify",
+      "step_id": "notify",
+      "blueprint": "notify_team",
+      "version": 1,
+      "class_path": "tests.blueprint_templates.etl.TeamNotifier",
+      "config_class": "NotifyConfig"
+    }
+  ],
+  "edges": [
+    { "source": "start", "target": "ingest" },
+    { "source": "ingest", "target": "load" },
+    { "source": "load", "target": "notify" }
+  ]
+}

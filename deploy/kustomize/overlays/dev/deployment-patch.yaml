@@ -1,0 +1,22 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: autoair
+spec:
+  # A ReadWriteOnce volume cannot be mounted by the old and the new pod at once.
+  strategy:
+    type: Recreate
+    rollingUpdate: null
+  template:
+    spec:
+      containers:
+        - name: autoair
+          resources:
+            requests:
+              cpu: 100m
+              memory: 512Mi
+      volumes:
+        - name: dags
+          emptyDir: null
+          persistentVolumeClaim:
+            claimName: autoair-dags

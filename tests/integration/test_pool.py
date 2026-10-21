@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import time
 
 import pytest
@@ -100,3 +101,96 @@ def test_check_source_uses_singleton_pool_and_escape_hatch(monkeypatch):
         assert dagbag_check._use_pool(None) is False
     finally:
         shutdown_pool()
+
+
+def test_worker_cannot_make_the_parent_unpickle(pool, tmp_path):
+    """DAG code that writes a pickle to the worker's pipe must not run code in the parent
+    (the pipe carries JSON only)."""
+    marker = tmp_path / "parent-executed"
+    code = (
+        MARK
+        + "import os, pickle, re, struct, time\n"
+        + "cmd = open('/proc/self/cmdline', 'rb').read().decode()\n"
+        + "fd = int(re.search(r'_worker_entry\\((\\d+)', cmd).group(1))\n"
+        + "class Evil:\n"
+        + "    def __reduce__(self):\n"
+        + f"        return (open, ({str(marker)!r}, 'w'))\n"
+        + "data = pickle.dumps(('ok', Evil()))\n"
+        + "os.write(fd, struct.pack('!i', len(data)) + data)\n"
+        + "time.sleep(5)\n"
+    )
+    result = pool.submit(code, "evil.py", 30)
+    assert not result.ok
+    assert "crashed" in result.import_errors[0] or "invalid" in result.import_errors[0]
+    assert not marker.exists()
+    assert pool.submit(DAG.format(dag_id="after_evil"), "after.py", 60).ok
+
+
+def test_stopping_a_worker_kills_its_process_group(tmp_path):
+    """A process the DAG code started dies with the worker (own process group)."""
+    pid_file = tmp_path / "child.pid"
+    code = (
+        MARK
+        + "import subprocess, sys\n"
+        + "p = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(120)'])\n"
+        + f"open({str(pid_file)!r}, 'w').write(str(p.pid))\n"
+        + "raise ValueError('started')\n"
+    )
+    with DagBagPool(1, max_tasks_per_child=1) as p:
+        assert "started" in p.submit(code, "child.py", 30).import_errors[0]
+        child = int(pid_file.read_text())
+        deadline = time.monotonic() + 10
+        while time.monotonic() < deadline:
+            try:
+                os.kill(child, 0)
+            except ProcessLookupError:
+                break
+            time.sleep(0.1)
+        else:
+            os.kill(child, 9)
+            raise AssertionError("the child of the recycled worker survived")
+
+
+def test_a_partial_reply_cannot_hang_the_pool(tmp_path):
+    """DAG code that writes a length header to the worker's pipe and stops must not block the
+    parent past the check's timeout (the deadline covers the whole reply)."""
+    code = (
+        MARK
+        + "import os, re, struct, time\n"
+        + "cmd = open('/proc/self/cmdline', 'rb').read().decode()\n"
+        + "fd = int(re.search(r'_worker_entry\\((\\d+)', cmd).group(1))\n"
+        + "os.write(fd, struct.pack('!i', 1000))\n"
+        + "time.sleep(120)\n"
+    )
+    with DagBagPool(1, max_tasks_per_child=50) as p:
+        p.warmup()
+        started = p.started
+        t0 = time.perf_counter()
+        result = p.submit(code, "hang.py", 2.0)
+        assert time.perf_counter() - t0 < 15
+        assert not result.ok
+        assert "timed out" in result.import_errors[0]
+        assert p.started == started + 1  # the worker was replaced, its slot released
+        assert p.submit(DAG.format(dag_id="after_hang"), "after.py", 60).ok
+
+
+def test_a_reply_for_another_check_is_refused(tmp_path):
+    """A complete forged reply without this check's nonce (as code left running from an
+    earlier check would write) is not taken as the result."""
+    code = (
+        MARK
+        + "import json, os, re, struct, time\n"
+        + "cmd = open('/proc/self/cmdline', 'rb').read().decode()\n"
+        + "fd = int(re.search(r'_worker_entry\\((\\d+)', cmd).group(1))\n"
+        + "fake = {'tag': 'ok', 'result': {'dag_ids': ['forged'], 'task_ids': {},\n"
+        + "        'import_errors': []}, 'nonce': 'guessed'}\n"
+        + "data = json.dumps(fake).encode()\n"
+        + "os.write(fd, struct.pack('!i', len(data)) + data)\n"
+        + "time.sleep(5)\n"
+    )
+    with DagBagPool(1, max_tasks_per_child=50) as p:
+        result = p.submit(code, "forged.py", 30)
+        assert not result.ok
+        assert result.dag_ids == []
+        assert "invalid reply" in result.import_errors[0]
+        assert p.submit(DAG.format(dag_id="after_forged"), "after.py", 60).ok

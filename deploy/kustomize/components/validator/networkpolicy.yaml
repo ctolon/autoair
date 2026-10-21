@@ -1,0 +1,38 @@
+# Ingress only from the AutoAir pods (and the Airflow api-servers when the plugin
+# uses the same validator); no egress at all, DNS included: the validator needs no network,
+# and DAG code it imports must not reach any.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: autoair-validator
+  labels:
+    app.kubernetes.io/name: autoair-validator
+    app.kubernetes.io/component: validator
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: autoair-validator
+      app.kubernetes.io/component: validator
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        # The AutoAir server, AI service and MCP server pods of this namespace.
+        - podSelector:
+            matchExpressions:
+              - key: app.kubernetes.io/name
+                operator: In
+                values: [autoair, autoair-ai, autoair-mcp]
+        # Airflow api-servers with the plugin (labels of the official chart) in the
+        # namespace "airflow": a placeholder, set it to the namespace Airflow runs in (a
+        # namespaceSelector of {} would admit every pod labelled component=api-server in
+        # any namespace). Prometheus scraping /metrics needs its own entry here.
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: airflow
+          podSelector:
+            matchLabels:
+              component: api-server
+      ports:
+        - port: 8791
+          protocol: TCP
+  egress: []

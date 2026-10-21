@@ -520,7 +520,10 @@ class Ingestor:
         self, ref: PageRef, etag: str | None, modified: str | None
     ) -> tuple[Loaded, str, list[Section]]:
         loaded = ref.load(etag, modified)
-        if loaded.not_modified or loaded.doc is not None:
+        if loaded.doc is not None:
+            # Already parsed by the source (the packaged AutoAir documentation).
+            return loaded, loaded.doc.title or ref.title, list(loaded.doc.sections)
+        if loaded.not_modified:
             return loaded, ref.title, []
         title, sections = parse(loaded.content, loaded.fmt, title=ref.title, resolve=loaded.resolve)
         return loaded, title, sections

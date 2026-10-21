@@ -185,6 +185,13 @@ async def promote_environment(
 
     def render(spec: DagSpec, environment: str | None) -> dict[str, str]:
         # Called by the target with the spec it promotes, before anything is written.
+        if _keeps_hand_written_file(services, spec):
+            raise _Rejected(
+                409,
+                f"{spec.dag_id!r} keeps its hand-written DAG file (source policy preserve): "
+                "promoting regenerates the file, which would replace it; promote the file "
+                "through the repository, or switch the DAG to the generate policy first",
+            )
         report = validate(spec, environment)
         if not report.ok:
             raise _Rejected(422, _invalid_detail(report, environment))
@@ -273,6 +280,12 @@ async def promote_environment(
         )
     )
     return result
+
+
+def _keeps_hand_written_file(services: Any, spec: DagSpec) -> bool:
+    from autoair.preserve.service import keeps_hand_written_file
+
+    return keeps_hand_written_file(spec, getattr(services, "settings", None))
 
 
 class _Rejected(Exception):

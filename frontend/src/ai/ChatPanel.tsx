@@ -33,7 +33,7 @@ import { useBuilder } from "../store/builder";
 import { ChatMarkdown } from "./ChatMarkdown";
 import { AssistantMessage, ToolChips, UserBubble } from "./ChatMessageView";
 import { visibleStreamText } from "./chatText";
-import { type AssistantMode, type SendContext, useAiChat } from "./store";
+import { type AssistantMode, type SendContext, awaitingApproval, useAiChat } from "./store";
 import { ThreadList } from "./ThreadList";
 
 const EXAMPLES: Record<AssistantMode, string[]> = {
@@ -53,6 +53,7 @@ function Composer({ disabled }: { disabled: boolean }) {
   const { t } = useTranslation("ai");
   const draft = useAiChat((s) => s.draft);
   const pending = useAiChat((s) => !!s.pending);
+  const paused = useAiChat((s) => awaitingApproval(s.messages));
   const ref = useRef<HTMLTextAreaElement>(null);
   const open = useAiChat((s) => s.open);
   useEffect(() => {
@@ -105,8 +106,8 @@ function Composer({ disabled }: { disabled: boolean }) {
           </IconButton>
         )}
       </HStack>
-      <Text fontSize="2xs" color="fg.subtle">
-        {t("chat.hint")}
+      <Text fontSize="2xs" color={paused ? "orange.fg" : "fg.subtle"} data-testid="chat-hint">
+        {paused ? t("approval.newMessageCancels") : t("chat.hint")}
       </Text>
     </Stack>
   );
@@ -176,6 +177,11 @@ function Messages() {
             busy={!!pending}
             onFollowUp={followUp}
             onRegenerate={regenerate}
+            onApproval={
+              m.id
+                ? (approvalId, decisions) => void useAiChat.getState().decideApproval(m.id ?? "", approvalId, decisions)
+                : undefined
+            }
             onProposal={(p) =>
               useAiChat.getState().replaceMessage({
                 ...m,
@@ -187,7 +193,7 @@ function Messages() {
       )}
       {pending ? (
         <>
-          <UserBubble text={pending.userText} />
+          {pending.resumeOf ? null : <UserBubble text={pending.userText} />}
           <Stack gap={2} data-testid="chat-pending" aria-busy="true">
             <ToolChips tools={pending.stream.tools} />
             <HStack gap={2} color="fg.muted" fontSize="xs">

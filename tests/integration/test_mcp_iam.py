@@ -20,6 +20,7 @@ importorskip_mcp()
 
 from autoair.api.app import build_services, create_app  # noqa: E402
 from autoair.auth import TokenVerifier, bearer_passthrough  # noqa: E402
+from autoair.docs.mcp import DOCS_TOOLS  # noqa: E402
 from autoair.iam.config import IamSettings  # noqa: E402
 from autoair.mcp.iam import TOOL_PERMISSIONS  # noqa: E402
 from autoair.mcp.server import create_mcp_server  # noqa: E402
@@ -103,7 +104,11 @@ def test_users_without_permissions_cannot_write_or_execute(tmp_path: Path) -> No
     assert "spec:write" in result["content"][0]["text"]
     assert not list(tmp_path.rglob("mcp_iam*"))
     assert _call(client, nobody, "delete_dag_spec", {"dag_id": "x", "confirm": True})["isError"]
-    assert _tools(client, nobody) == set()
+    # Only the AutoAir documentation tools: they need no permission (the docs are public).
+    assert _tools(client, nobody) == set(DOCS_TOOLS)
+    found = _call(client, nobody, "search_autoair_docs", {"query": "install the plugin"})
+    assert not found["isError"]
+    assert found["structuredContent"]["hits"]
 
     viewer = _as("Viewer")  # read-only: no code execution through the import check
     denied = _call(client, viewer, "validate_dag_spec", {"spec": SPEC, "import_check": True})

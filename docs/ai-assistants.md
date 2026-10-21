@@ -17,7 +17,8 @@ chat opens as a right-side drawer, which you can expand to full screen.
 
 Each assistant has a tool allow-list, `ai.assistants.<mode>.tools` (fnmatch). The developer
 assistant is also limited by `ai.guardrails.tool_allowlist` for the caller's role. The admin
-assistant's tools are read-only by construction.
+assistant's tools are read-only by construction, except `remember`. Calls of tools that change
+something wait for the user's approval ([Tool-call approval](#tool-call-approval)).
 
 ## A turn
 
@@ -90,6 +91,84 @@ Nothing changes without these explicit steps.
 
 Code blocks in answers have **Copy** and **Insert** buttons. Insert puts Python into the
 selected `python_task` and Bash/SQL into the selected operator's `bash_command` / `sql`.
+
+## Tool-call approval
+
+Guide on the documentation site: [Tool-call approval](https://ctolon.github.io/autoair/docs/ai/tool-approval).
+
+Tools that change something outside the run are deferred tools: the agent can call them, but
+the call runs only after the user who started the run approves it.
+
+**Classification.** Every agent tool has a class, `AgentTool.kind` (`ai/tools.py`): `write`
+for `remember` (stores a memory) and for external MCP tools the server does not mark
+`readOnlyHint: true`; `read` for everything else. The server's annotation decides, never the
+model. The policy (`ai.approvals`, `ai/approvals.py::needs_approval`) selects the tools whose
+calls wait: by class (`classes`, default `["write"]`), by name pattern (`tools`, always wait),
+minus exemptions (`exempt`). `ai.approvals.agents.<developer|admin|troubleshoot>` replaces
+`ai.approvals.default` for one agent. With `ai.approvals.enabled=false` the tools that would
+wait are not offered to the model at all. One-shot agent requests that cannot pause
+(`POST /api/ai/ask`) never offer them.
+
+**Pausing.** `ai/agent.py` wraps the selected tools so a call raises pydantic-ai's
+`ApprovalRequired` unless `ctx.tool_call_approved`, and adds `DeferredToolRequests` to the
+output types. The run then ends with `stopped="approval"` and the pending calls
+(`PendingToolCall`: id, tool, class, description, arguments with secret-named fields masked,
+strings scrubbed by `scrub_secrets` and the guardrail pipeline, registered request secrets
+masked, cut to `ai.approvals.max_argument_chars`). Read-only calls of the same model turn run
+normally. The caller stores a `ToolApproval` document (collection `ai_tool_approvals`, key
+`<user hash>.<id>`): the view, the run's pydantic-ai messages, the request and context needed
+to rebuild the tool set (spec, MCP selections, troubleshooting scope and evidence pack, the
+citations so far), the model requests and steps already used, and `expires_at`
+(`ai.approvals.ttl_seconds`). A chat answer carries the view in `ChatMessage.approvals`; an
+analysis in `TroubleshootAnalysis.approvals`, with `status="awaiting_approval"`. The stream's
+`status` event `approval` announces the pause, and the turn's audit record names
+`approval_pending` and `approval_tools`.
+
+**Deciding.** `POST /api/ai/approvals/{id}/stream` with one decision per pending call
+(`{"decisions": [{"id": "<tool call id>", "approved": false, "reason": "…"}]}`):
+
+1. The approval is looked up under the caller's user key: another user gets 404, so only the
+   user who started the run can decide it. The agent's own gate applies again (the admin
+   assistant needs `ai:admin` or `admin:panel`; troubleshooting needs `airflow:read` and
+   `features.airflow`). No new permission exists for approving.
+2. The decisions are validated (every pending call exactly once, reasons at most
+   `ai.approvals.max_reason_chars`; 422) and the approval is **claimed** with a
+   compare-and-set: `pending` -> `resuming` with the claimer and time. An expired approval is
+   stored as `expired` (410, audited as `<feature>:tool_approval_expired`); anything not
+   pending is 409. Two replicas receiving the same decision resume the run once.
+3. Each decision is written to the AI audit log and the audit trail as
+   `assistant:tool_approved` / `assistant:tool_denied` (or `troubleshoot:…`) with the tool,
+   call id, reason and approval id.
+4. The run resumes: the tool set is rebuilt with the caller's current credentials and
+   settings (a tool that is no longer allowed is not available), the stored messages are the
+   history, and `DeferredToolResults` carry `ToolApproved` or `ToolDenied` (the denial text,
+   with the reason, goes to the model; reasons pass the input guardrails). Budgets continue:
+   the remaining model turns are the agent's `max_steps` minus those already used. The
+   stream ends like the original one: `assistant_turn` (the same chat message, completed) or
+   `troubleshoot` (the same analysis id). A resumed run may pause again with a new approval.
+5. The approval is recorded as `resolved` (its messages and context are dropped), or `failed`
+   when the run raised or the client went away. A refusal before the stream started (no
+   model, guardrail) releases the claim, since nothing ran. A `resuming` claim older than
+   `ai.approvals.claim_timeout_seconds` is shown as `failed` and never taken over, so an
+   approved tool runs at most once.
+
+A new message or a regenerate in the thread cancels a pending approval (409 while one is
+being resumed); a paused answer is sent to the model as text afterwards, because its stored
+messages end with unanswered tool calls. `GET /api/ai/approvals` lists the caller's open
+approvals and `GET /api/ai/approvals/{id}` returns one; thread and analysis reads refresh the
+approval views they carry. Beyond `ai.approvals.max_pending_per_user` the oldest pending
+approval is cancelled; closed ones are deleted after `ai.approvals.retention_hours`.
+
+**Relation to troubleshooting actions.** The Airflow actions of `ai.troubleshoot.airflow_actions`
+are proposals in the finished analysis, executed by the API after the analysis; tool approval
+pauses the agent before a tool call. They share the claim-then-record pattern and claim clock
+(`airflow_actions.claim_expired`). In `hitl` mode every write tool call of the analysis waits
+for approval even when `exempt` would let it run; in `read_only` and `apply` mode the
+`ai.approvals` rule applies as configured.
+
+**AI service.** The routes are part of the AI router, so with `ai.service_url` they are proxied
+to the separate AI service like every `/api/ai/*` route; the service stores the approvals in
+its own state and identifies the approver from the signed identity or the verified token.
 
 ## Prompts and prompt variables
 

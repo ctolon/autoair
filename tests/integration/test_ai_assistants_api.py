@@ -569,7 +569,7 @@ def test_troubleshoot_filesystem_and_mcp_scope(
     (logs / "scheduler.log").write_text("ok\nERROR scheduler heartbeat lost\n")
     metrics = FastMCP("metrics")
 
-    @metrics.tool
+    @metrics.tool(annotations={"readOnlyHint": True})
     def db_health(host: str) -> str:
         """Health of a database host."""
         return f"{host} is down since 10:02"

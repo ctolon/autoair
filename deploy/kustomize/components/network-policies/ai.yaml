@@ -1,0 +1,69 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: autoair-ai
+  labels:
+    app.kubernetes.io/name: autoair-ai
+    app.kubernetes.io/component: ai
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: autoair-ai
+      app.kubernetes.io/component: ai
+  policyTypes: [Ingress, Egress]
+  ingress:
+    # Only the proxying AutoAir server (and Airflow api-servers using this AI service).
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: autoair
+              app.kubernetes.io/component: server
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: airflow
+          podSelector:
+            matchLabels:
+              component: api-server
+      ports:
+        - port: 8790
+          protocol: TCP
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: airflow
+          podSelector:
+            matchLabels:
+              component: api-server
+      ports:
+        - port: 8080
+          protocol: TCP
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: autoair-validator
+      ports:
+        - port: 8791
+          protocol: TCP
+    # PostgreSQL, the LLM endpoint and the git host over HTTPS. Narrow to their addresses.
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except: [169.254.169.254/32]
+      ports:
+        - port: 5432
+          protocol: TCP
+        - port: 443
+          protocol: TCP

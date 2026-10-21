@@ -1,7 +1,7 @@
 # Authoring DagSpec documents
 
 ## Document shape
-A DagSpec (`spec_version: 2`) holds DAG settings plus `nodes` and `edges`.
+A DagSpec (`spec_version: 3`) holds DAG settings plus `nodes` and `edges`.
 Edges are `{ "source": "<node id>", "target": "<node id>" }` (source runs first).
 
 ## Node kinds

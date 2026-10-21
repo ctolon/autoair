@@ -161,13 +161,33 @@ export async function deploy(opts: DeployOptions = {}, secret: { gitToken?: stri
         ...(opts.directPush != null ? { direct_push: opts.directPush } : {}),
         ...(opts.prDescription ? { pr_description: opts.prDescription } : {}),
         ...(opts.gitConnId ? { git_conn_id: opts.gitConnId } : {}),
+        ...(opts.sourceResolution ? { source_resolution: opts.sourceResolution } : {}),
+        ...(opts.sourceTargetSha != null ? { source_target_sha: opts.sourceTargetSha } : {}),
       },
       headers,
       throwOnError: true,
     });
     useBuilder.getState().setProblems(res.report.problems);
     if (!res.deployed) {
-      if (res.conflict?.current_spec || res.conflict?.ejected_file) {
+      // The source policy stopped it: a DAG file changed outside AutoAir, or a change the
+      // existing (hand-written) file cannot take.
+      if (res.source && (res.status === "source_refused" || res.status === "ejected")) {
+        useLifecycle.getState().openDialog({
+          kind: "source",
+          plan: res.source,
+          request: { ...opts, environment, sourceResolution: null, sourceTargetSha: null },
+          spec,
+        });
+      } else if (res.conflict?.ejected_file && !res.conflict.current_spec && !res.conflict.force_allowed) {
+        // A changed or kept DAG file the server would not overwrite for this user
+        // (preserve.allow_force_overwrite, deploy:overwrite_ejected): say why, offer no force.
+        toaster.create({
+          type: "error",
+          title: res.conflict.hand_written ? t("conflict.handWrittenTitle") : t("conflict.ejectedTitle"),
+          description: res.message,
+          duration: 12_000,
+        });
+      } else if (res.conflict?.current_spec || res.conflict?.ejected_file) {
         useLifecycle.getState().openDialog({
           kind: "conflict",
           conflict: res.conflict,
@@ -190,6 +210,9 @@ export async function deploy(opts: DeployOptions = {}, secret: { gitToken?: stri
         }),
       );
     }
+    // A preserve deploy merged changes made to the file outside AutoAir: the stored spec
+    // carries them, so the document takes it over (one undoable step).
+    if (res.stored_spec) useBuilder.getState().replaceSpec(res.stored_spec);
     useBuilder.getState().markSaved(spec.dag_id, { etag: res.etag ?? null, pendingPrUrl: res.pr_url ?? null });
     syncDeepLink(spec.dag_id);
     await invalidateAfterSave(spec.dag_id);
@@ -199,6 +222,15 @@ export async function deploy(opts: DeployOptions = {}, secret: { gitToken?: stri
       description: res.pr_url ? `${res.message}\n${res.pr_url}` : res.message,
       duration: res.pr_url ? 12_000 : 5_000,
     });
+    const warnings = (res.source?.warnings ?? []).filter((w) => typeof w === "string");
+    if (warnings.length) {
+      toaster.create({
+        type: "warning",
+        title: t("source.deployedWithWarnings"),
+        description: warnings.slice(0, 5).join("\n"),
+        duration: 10_000,
+      });
+    }
     return true;
   } catch (e) {
     toaster.create(gitTokenToast(e) ?? { type: "error", title: t("deploy.failed"), description: errorMessage(e) });

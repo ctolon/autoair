@@ -116,7 +116,7 @@ The agent can call tools of external MCP servers that an administrator allowed f
 `troubleshoot` agent, configured in `ai.mcp_client.servers` or the admin panel's **MCP servers** tab.
 Tool results are truncated, scrubbed and treated as untrusted; a server that cannot be reached is
 reported and the analysis continues without it. Configuration and security are described in
-[MCP client](/docs/ai/mcp#mcp-client-external-servers-for-autoairs-agents).
+[MCP client](/docs/ai/mcp#mcp-client-external-servers-for-autoairs-agents). A tool the server does not mark read-only pauses the analysis until you approve the call ([Tool-call approval](/docs/ai/tool-approval)).
 
 ## The report
 

@@ -1,0 +1,75 @@
+# The validator service for the demo stack: DagBag import checks run in their own
+# locked-down container instead of the Airflow api-server and the AutoAir replicas.
+#
+#   docker compose -f docker-compose.demo.yml -f docker-compose.validator.yml up -d --wait
+#
+# The container has a read-only root file system, no capabilities, no new privileges, a
+# non-root user and memory/CPU/process limits, and sits only on an internal network without
+# a route to the internet. Compose cannot make that network one-way: the plugin and the
+# replicas join it, so the validator can reach them (and this demo's Airflow makes every
+# visitor an administrator). Production: the Helm chart's NetworkPolicy (no egress at all).
+# Both sides share the HMAC key as the
+# Airflow connection autoair_validator (environment backend). Workstation only: the key
+# has a public default; set DEMO_VALIDATOR_KEY in .env before exposing anything.
+
+x-validator-client-env: &validator-client-env
+  AUTOAIR_VALIDATOR__URL: http://autoair-validator:8791
+  AUTOAIR_VALIDATOR__FAIL_MODE: ${DEMO_VALIDATOR_FAIL_MODE:-open}
+  AIRFLOW_CONN_AUTOAIR_VALIDATOR: '{"conn_type": "generic", "password": "${DEMO_VALIDATOR_KEY:-local-demo-validator-hmac-key-change-me}"}'
+
+x-validator-client-networks: &validator-client-networks
+  - default
+  - validator
+
+services:
+  airflow-apiserver:            # the plugin
+    environment: *validator-client-env
+    networks: *validator-client-networks
+    depends_on:
+      autoair-validator:
+        condition: service_healthy
+  autoair-a:
+    environment: *validator-client-env
+    networks: *validator-client-networks
+  autoair-b:
+    environment: *validator-client-env
+    networks: *validator-client-networks
+
+  autoair-validator:
+    image: ${DEMO_IMAGE:-autoair-demo:local}
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile.demo
+      args:
+        AIRFLOW_VERSION: ${DEMO_AIRFLOW_VERSION:-3.3.2}
+    entrypoint: [/usr/bin/dumb-init, --, autoair]
+    command: [validator-serve, --host, 0.0.0.0, --port, "8791"]
+    environment:
+      AIRFLOW_HOME: /tmp/airflow
+      HOME: /tmp
+      AUTOAIR_CACHE_DIR: /tmp/autoair-cache
+      AUTOAIR_LOGGING__LEVEL: ${DEMO_AUTOAIR_LOG_LEVEL:-INFO}
+      AUTOAIR_VALIDATOR__POOL_SIZE: ${DEMO_VALIDATOR_POOL_SIZE:-2}
+      AUTOAIR_VALIDATOR__MEMORY_LIMIT_MB: "1024"
+      AIRFLOW_CONN_AUTOAIR_VALIDATOR: '{"conn_type": "generic", "password": "${DEMO_VALIDATOR_KEY:-local-demo-validator-hmac-key-change-me}"}'
+    user: "50000:0"
+    read_only: true
+    tmpfs:
+      - /tmp:size=512m,mode=1777
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 3g
+    cpus: 2
+    pids_limit: 256
+    networks: [validator]
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://localhost:8791/ready', timeout=5)"]
+      interval: 10s
+      timeout: 10s
+      retries: 30
+      start_period: 30s
+    restart: unless-stopped
+
+networks:
+  validator:
+    internal: true

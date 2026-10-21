@@ -72,20 +72,30 @@ const json = (body: unknown, status = 200) => ({
   body: JSON.stringify(body),
 });
 
-/** Fixed clock, API base, English UI; Airflow REST answers mocked. */
-export async function prepare(page: Page, opts: { dagId?: string | null } = {}): Promise<void> {
+/**
+ * Fixed clock, API base, English UI; Airflow REST answers mocked. `apiBase: null` injects no
+ * host configuration (the Airflow plugin finds its API itself and opens DAGs by `#dag=`).
+ */
+export async function prepare(
+  page: Page,
+  opts: { dagId?: string | null; apiBase?: string | null } = {},
+): Promise<void> {
   await page.clock.setFixedTime(FIXED_NOW);
-  await page.addInitScript((dagId) => {
-    (window as unknown as { __AUTOAIR_CONFIG__: object }).__AUTOAIR_CONFIG__ = {
-      apiBase: "/api",
-      ...(dagId ? { initialDagId: dagId } : {}),
-    };
-    try {
-      localStorage.setItem("autoair.lang", "en");
-    } catch {
-      /* storage unavailable: the default language is English */
-    }
-  }, opts.dagId ?? null);
+  await page.addInitScript(
+    ([dagId, apiBase]) => {
+      if (apiBase !== null)
+        (window as unknown as { __AUTOAIR_CONFIG__: object }).__AUTOAIR_CONFIG__ = {
+          apiBase,
+          ...(dagId ? { initialDagId: dagId } : {}),
+        };
+      try {
+        localStorage.setItem("autoair.lang", "en");
+      } catch {
+        /* storage unavailable: the default language is English */
+      }
+    },
+    [opts.dagId ?? null, opts.apiBase === undefined ? "/api" : opts.apiBase] as const,
+  );
   await page.route("**/api/airflow/connections?*", (r) => r.fulfill(json(CONNECTIONS)));
   await page.route("**/api/airflow/connections", (r) =>
     r.request().method() === "GET" ? r.fulfill(json(CONNECTIONS)) : r.fallback(),
@@ -186,3 +196,72 @@ export const BULK_RESULT = {
     { path: "tests/test_dags.py", status: "excluded", dags: [], import_errors: [] },
   ],
 };
+
+/**
+ * The plugin suite's DAG: the same pipeline, with an asset outlet on `extract_orders` (asset
+ * actions) and a SQL task whose `conn_id` offers "New connection" (connection form).
+ */
+export const PLUGIN_SPEC = {
+  ...SPEC,
+  nodes: SPEC.nodes.map((n) => {
+    if (n.id === "extract") return { ...n, outlets: [{ name: "orders" }] };
+    if (n.id === "done")
+      return {
+        kind: "operator",
+        id: "done",
+        task_id: "publish_report",
+        operator: "airflow.providers.common.sql.operators.sql.SQLExecuteQueryOperator",
+        params: { conn_id: "warehouse_prod", sql: "SELECT count(*) FROM orders" },
+        position: n.position,
+      };
+    return n;
+  }),
+};
+
+/** Mocks the plugin screens need on top of `prepare`: assets, connection types, run overlay. */
+export async function preparePlugin(page: Page): Promise<void> {
+  await page.route("**/autoair/api/airflow/assets", (r) =>
+    r.request().method() === "GET" ? r.fulfill(json(ASSETS)) : r.fallback(),
+  );
+  await page.route("**/autoair/api/airflow/assets?*", (r) => r.fulfill(json(ASSETS)));
+  await page.route("**/autoair/api/catalog/connection-types", (r) => r.fulfill(json(CONNECTION_TYPES)));
+  await page.route("**/autoair/api/airflow/connections/hook-meta", (r) => r.fulfill(json(HOOK_META)));
+  await page.route("**/autoair/api/airflow/dags/*/runs/*/overlay", (r) => r.fulfill(json(RUN_OVERLAY)));
+}
+
+const ASSETS = [{ id: 7, name: "orders", uri: "s3://warehouse/orders", group: "asset" }];
+const CONNECTION_TYPES = [
+  {
+    conn_type: "postgres",
+    hook_class: "airflow.providers.postgres.hooks.postgres.PostgresHook",
+    hook_name: "Postgres",
+    provider: "apache-airflow-providers-postgres",
+    default_conn_name: "postgres_default",
+  },
+  { conn_type: "generic", hook_class: null, hook_name: "Generic", provider: "apache-airflow", default_conn_name: null },
+];
+const HIDDEN = { hidden: true, title: null, placeholder: null };
+const HOOK_META = [
+  {
+    connection_type: "postgres",
+    hook_name: "Postgres",
+    hook_class_name: "airflow.providers.postgres.hooks.postgres.PostgresHook",
+    default_conn_name: "postgres_default",
+    standard_fields: {
+      description: null,
+      url_schema: HIDDEN,
+      host: { hidden: false, title: "Host", placeholder: "db.example.com" },
+      port: { hidden: false, title: "Port", placeholder: "5432" },
+      login: { hidden: false, title: "Login", placeholder: null },
+      password: { hidden: false, title: "Password", placeholder: null },
+    },
+    extra_fields: {
+      sslmode: {
+        schema: { type: ["string", "null"], title: "SSL mode", enum: ["disable", "require", "verify-full"] },
+        description: "libpq sslmode",
+        default: "require",
+      },
+    },
+  },
+];
+const RUN_OVERLAY = { run: RUNS[0], task_instances: [] };

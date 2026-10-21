@@ -131,7 +131,10 @@ commands refuse (exit code 2) and `/api/meta` reports `features` so the UI hides
 | `iam` | `true` | AutoAir's own authorization (roles, mapping, approvals, direct-push roles); off = permissions come from Airflow only, see [iam.md](iam.md#switching-iam-off-autoair_features__iamfalse) |
 | `visual_editor`, `code_editor` | `true` | the canvas editor and direct code editing (code mode, raw code DAGs); at least one stays on |
 | `code_edit_inline` | `false` | an editable Code tab in the bottom panel |
+| `source_preserve` | `true` | source-preserving deploys: hand-written DAG files are patched instead of regenerated (source policy preserve / strict-preserve, the `preserve` section) |
+| `strict_source_preserve` | `false` | every preserve deploy runs as strict-preserve |
 | `ide_language_server` | `false` | language-server completions in code editors (the `lsp` section) |
+| `blueprints` | `true` | Astronomer Blueprint steps: the palette's Blueprints section, `/api/blueprints/*`, the MCP tool `list_blueprints` (the `blueprints` section; schemas need `autoair[blueprint]`) |
 
 ### Switching flags at runtime (admin panel)
 
@@ -272,10 +275,13 @@ same context (see [IAM § audit](iam.md#8-audit)).
 | Area | Guide | Reference |
 |---|---|---|
 | Core, storage and deploy targets | [Configuration](https://ctolon.github.io/autoair/docs/admin/configuration#storage-and-deploy-target), [Deploy](https://ctolon.github.io/autoair/docs/user-guide/deploy), [Git bundles](https://ctolon.github.io/autoair/docs/deployment/git-bundles) | [top level](configuration-reference.md#top-level), [`storage`](configuration-reference.md#storage), [`storage.git`](configuration-reference.md#storagegit) |
+| Import checks, validator service | [Validation](https://ctolon.github.io/autoair/docs/user-guide/validation#import-check-validate-in-airflow), [Validator service](https://ctolon.github.io/autoair/docs/deployment/validator-service), [import-checks.md](architecture/import-checks.md) | [top level](configuration-reference.md#top-level) (`import_check_*`, `dagbag_pool*`), [`validator`](configuration-reference.md#validator) |
+| Editing existing Python DAGs (source policies, files changed outside AutoAir) | [Editing existing Python DAGs](https://ctolon.github.io/autoair/docs/user-guide/editing-python-dags), [architecture](architecture/source-preserving-edits.md) | [`preserve`](configuration-reference.md#preserve), [`features`](configuration-reference.md#features) |
 | Policy and OPA | [Policy](https://ctolon.github.io/autoair/docs/admin/policy), [policy.md](policy.md) | [`policy`](configuration-reference.md#policy) |
 | Identity, roles, approvals, audit | [IAM](https://ctolon.github.io/autoair/docs/admin/iam), [Audit](https://ctolon.github.io/autoair/docs/admin/audit), [iam.md](iam.md) | [`iam`](configuration-reference.md#iam), [`audit`](configuration-reference.md#audit) |
 | Sign-in with the Airflow session | [SSO](https://ctolon.github.io/autoair/docs/admin/sso), [sso.md](sso.md) | [`sso`](configuration-reference.md#sso) |
 | Catalog, operators, icons | [Custom operators](https://ctolon.github.io/autoair/docs/extending/custom-operators), [Operator metadata](https://ctolon.github.io/autoair/docs/extending/operator-metadata) | [`catalog`](configuration-reference.md#catalog), [`discovery`](configuration-reference.md#discovery), [`icons`](configuration-reference.md#icons) |
+| Astronomer Blueprint templates | [Blueprint steps](https://ctolon.github.io/autoair/docs/user-guide/blueprints) | [`blueprints`](configuration-reference.md#blueprints) |
 | Environments and teams | [Environments](https://ctolon.github.io/autoair/docs/user-guide/environments), [Multi-team](https://ctolon.github.io/autoair/docs/user-guide/multi-team) | [top level](configuration-reference.md#top-level) |
 | State store | [Database](https://ctolon.github.io/autoair/docs/admin/database), [Scaling](https://ctolon.github.io/autoair/docs/admin/scaling), [state-and-scaling.md](architecture/state-and-scaling.md) | [`database`](configuration-reference.md#database) |
 | Server, TLS, HTTP headers, outbound connections | [TLS and HTTP headers](https://ctolon.github.io/autoair/docs/admin/tls-and-headers) | [`server`](configuration-reference.md#server), [`outbound`](configuration-reference.md#outbound) |

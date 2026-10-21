@@ -25,6 +25,7 @@ from autoair.api.deps import ServicesDep, get_gateway, policy_of
 from autoair.api.features import ensure_feature
 from autoair.api.git_token import GitTokenHeader, accept_token, http_error, scrubbed_errors
 from autoair.api.routers.ops import DEPLOYS
+from autoair.api.source_plans import existing_file, plan_for, writes_client_code
 from autoair.audit import request_user
 from autoair.gateway import AirflowError, AirflowGateway
 from autoair.governance import (
@@ -48,18 +49,21 @@ from autoair.iam.proposals import (
     now_iso,
 )
 from autoair.persistence.protocols import ProposalRepository
+from autoair.preserve.service import SourcePlan, applicable, can_force_overwrite
 from autoair.secret_mask import mask
 from autoair.spec import DagSpec
 from autoair.storage import (
     ConflictError,
     DeployTarget,
     EjectedError,
+    HandWrittenError,
     NotFoundError,
     SpecSummary,
     StorageError,
     StoredSpec,
     spec_etag,
 )
+from autoair.storage.base import is_owned, sha256_text
 from autoair.storage.credentials import CredentialsError, ResolvedTarget, resolve_user_target
 from autoair.storage.git import GitMode, GitTarget
 from autoair.storage.request_token import (
@@ -108,7 +112,28 @@ class DeployRequest(BaseModel):
         description="per_user git credentials: the user's Airflow connection to commit with "
         "(must match storage.git.user_conn_id_pattern; default: the template's).",
     )
-    force: bool = False
+    force: bool = Field(
+        default=False,
+        description="Overwrite a generated file that was changed outside AutoAir, or the "
+        "hand-written file AutoAir keeps (output modes other than python and raw code; needs "
+        "preserve.allow_force_overwrite and 'deploy:overwrite_ejected', otherwise ignored). "
+        "Python DAG files use source_resolution instead.",
+    )
+    source_resolution: Literal["preserve", "overwrite"] | None = Field(
+        default=None,
+        description="Answer to a deploy that stopped at a DAG file changed outside AutoAir "
+        "(status 'ejected'): preserve applies the change to that file (LibCST patch); "
+        "overwrite regenerates it and discards the outside changes (needs "
+        "preserve.allow_force_overwrite, 'deploy:overwrite_ejected' and, for a file "
+        "changed outside AutoAir, preserve.ejected_files=overwrite).",
+    )
+    source_target_sha: str | None = Field(
+        default=None,
+        max_length=64,
+        description="The `target_sha` of the source preview the user reviewed: the deploy "
+        "stops ('source_refused') when the DAG file in the target is no longer that one "
+        "('' = there was no file).",
+    )
     create_only: bool = Field(
         default=False,
         description="Only create: when the DAG already exists in the target the deploy "
@@ -146,9 +171,21 @@ class ConflictInfo(BaseModel):
     current_version: str | None = None
     current_spec: DagSpec | None = None
     ejected_file: str | None = None
+    hand_written: bool = Field(
+        default=False,
+        description="ejected_file is the hand-written DAG file AutoAir keeps for this DAG "
+        "(not a generated file changed outside AutoAir).",
+    )
+    force_allowed: bool = Field(
+        default=False,
+        description="Deploying again with force=true would overwrite ejected_file for this "
+        "caller (preserve.allow_force_overwrite and 'deploy:overwrite_ejected').",
+    )
 
 
-DeployStatus = Literal["deployed", "invalid", "conflict", "ejected", "pending_approval"]
+DeployStatus = Literal[
+    "deployed", "invalid", "conflict", "ejected", "pending_approval", "source_refused"
+]
 
 
 class DeployResult(BaseModel):
@@ -168,6 +205,17 @@ class DeployResult(BaseModel):
     conflict: ConflictInfo | None = None
     proposal_etag: str | None = Field(
         default=None, description="Etag of the stored deploy proposal (pending_approval)."
+    )
+    source: SourcePlan | None = Field(
+        default=None,
+        description="Python DAGs: how the DAG file was (or would be) written -- generated "
+        "or the existing file patched (source policy), with the diff; 'source_refused': why "
+        "the change cannot be applied to the existing file.",
+    )
+    stored_spec: DagSpec | None = Field(
+        default=None,
+        description="The spec as stored, when it differs from the one sent (a preserve "
+        "deploy merged changes made to the file outside AutoAir): reload it.",
     )
     message: str
 
@@ -214,6 +262,15 @@ class ProposalDeployRequest(BaseModel):
 
 class DeleteResult(BaseModel):
     deleted: bool
+
+
+def _force_refusal(services: Services, principal: Principal) -> str | None:
+    """Why a forced overwrite would not be accepted for this caller (None: it would)."""
+    if not can_force_overwrite(services.settings.preserve):
+        return "overwriting it is turned off here (preserve.allow_force_overwrite)"
+    if not principal.has(P.DEPLOY_OVERWRITE_EJECTED):
+        return "overwriting it needs the AutoAir permission 'deploy:overwrite_ejected'"
+    return None
 
 
 def _etag(value: str | None) -> str | None:
@@ -306,9 +363,11 @@ def validate_for_write(
     env: str | None = None,
     *,
     action: Literal["deploy", "promote"] = "deploy",
+    source: str | None = None,
 ) -> ValidationReport:
     """The validation every write runs (deploy, promotion): static checks, policy rules and
-    OPA for ``env``, plus the import check when enabled and allowed. Blocking."""
+    OPA for ``env``, plus the import check when enabled and allowed. ``source``: the file a
+    source-preserving deploy writes (checked instead of the generated one). Blocking."""
     settings = services.settings
     run_import, skipped = _import_check(services, principal)
     report = validate_spec(
@@ -322,6 +381,7 @@ def validate_for_write(
         templates=services.templates.lock,
         environment=env,
         context={"user": principal.user, "action": action},
+        source=source,
     )
     if skipped is not None:
         report.problems.append(skipped)
@@ -329,9 +389,16 @@ def validate_for_write(
 
 
 async def _validate(
-    services: Services, principal: Principal, effective: DagSpec, env: str | None = None
+    services: Services,
+    principal: Principal,
+    effective: DagSpec,
+    env: str | None = None,
+    *,
+    source: str | None = None,
 ) -> ValidationReport:
-    return await run_in_threadpool(validate_for_write, services, principal, effective, env)
+    return await run_in_threadpool(
+        lambda: validate_for_write(services, principal, effective, env, source=source)
+    )
 
 
 async def check_raw_write(request: Request, principal: Principal, spec: DagSpec) -> None:
@@ -430,6 +497,8 @@ async def deploy_spec(
         pr_description=body.pr_description,
         git_conn_id=body.git_conn_id,
         token=token,
+        resolution=body.source_resolution,
+        reviewed_target_sha=body.source_target_sha,
     )
     if result.deployed and approvers:  # an identical pending proposal is now deployed
         await run_in_threadpool(_store(services).delete, dag_id, etag)
@@ -460,6 +529,19 @@ async def _propose(
 ) -> DeployResult:
     """Store ``spec`` as a deploy proposal (validated first; nothing goes live)."""
     effective = spec.with_environment(env) if env and env in spec.environments else spec
+    if not principal.has(P.CODE_RAW):
+        target = services.target_for(spec.team)
+        if await run_in_threadpool(writes_client_code, services, spec, target, env):
+            DEPLOYS.labels("source_refused").inc()
+            return DeployResult(
+                deployed=False,
+                status="source_refused",
+                report=ValidationReport(ok=True, problems=[]),
+                message="this proposal would write the DAG's hand-written Python file "
+                "(imported or edited in the code mode), which needs the AutoAir permission "
+                "'code:raw' (for example the CodeDeployer role); switch the source policy to "
+                "'generate' to propose the generated file instead",
+            )
     report = await _validate(services, principal, effective, env)
     if not report.ok:
         DEPLOYS.labels("invalid").inc()
@@ -589,6 +671,45 @@ def _commit_as_service(services: Services, team: str | None, resolved: ResolvedT
     return bool(choice == "service")
 
 
+# Appended to the deploy message when the file was written but Airflow did not take the
+# reparse request: the DAG processor still finds the file on its next bundle refresh.
+_NEXT_REFRESH = "Airflow will pick it up on the next bundle refresh"
+
+
+async def _request_reparse(gateway: AirflowGateway, dag_id: str) -> tuple[bool, str]:
+    """Ask Airflow to reparse the deployed DAG's file: (requested, note for the message).
+
+    A refused reparse never fails the deploy (the file is already written). Airflow answers
+    403 when the caller may not edit the DAG and, from 3.4, for a file that has no registered
+    DAG (an import error) unless the caller has the ``REPARSE_ALL`` view (admins by default);
+    3.0-3.3 answer 404 for such a file.
+    """
+    try:
+        status = await gateway.dag_status(dag_id)
+    except AirflowError as exc:
+        return False, f"; could not contact Airflow ({mask(exc.detail)})"
+    if not (status.exists and status.file_token):
+        return False, "; Airflow will pick the new DAG up on the next bundle refresh"
+    try:
+        await gateway.reparse(status.file_token)
+    except AirflowError as exc:
+        detail = mask(exc.detail)
+        if exc.status == 403:
+            return False, (
+                f"; Airflow refused the reparse request (403: {detail}): reparsing needs edit "
+                "permission on the DAG, and on Airflow 3.4+ the REPARSE_ALL permission for a "
+                f"file without a registered DAG; {_NEXT_REFRESH}"
+            )
+        if exc.status == 409:
+            # A parsing request for the file is still queued (Airflow keeps one per file and
+            # answers a second one with a unique-constraint 409): the new content is parsed.
+            return True, "; reparse already requested"
+        if exc.status == 404:
+            return False, f"; Airflow does not know the DAG file yet (404); {_NEXT_REFRESH}"
+        return False, f"; the reparse request failed ({exc.status}: {detail}); {_NEXT_REFRESH}"
+    return True, "; reparse requested"
+
+
 async def _credential_audit(resolved: ResolvedTarget) -> dict[str, Any]:
     """Which credentials a write used (audit): ``credential: request-token`` (plus the git
     host's name for the token's owner, when it tells) or the connection's source."""
@@ -621,6 +742,18 @@ def _stored_etag(target: DeployTarget, dag_id: str, env: str | None) -> str | No
     except Exception:  # unreadable/unreachable: the etag is informative only
         return None
     return stored.etag if stored else None
+
+
+def _stored_is_raw(target: DeployTarget, dag_id: str, env: str | None) -> bool:
+    """The stored spec is a raw code DAG (unreadable: no)."""
+    try:
+        if isinstance(target, GitTarget):
+            stored = target.get(dag_id, environment=env)
+        else:
+            stored = target.get(dag_id)
+    except Exception:  # unreadable/unreachable: treated as not raw, the safe answer
+        return False
+    return stored is not None and stored.spec.raw_code is not None
 
 
 def _reviews(services: Services, dag_id: str, etag: str, author: str | None) -> list[str]:
@@ -688,26 +821,87 @@ async def _deploy(
     pr_description: str | None = None,
     git_conn_id: str | None = None,
     token: RequestToken | None = None,
+    resolution: Literal["preserve", "overwrite"] | None = None,
+    reviewed_target_sha: str | None = None,
 ) -> DeployResult:
     """Validate, render and write ``spec`` (authorization already checked). Every write
     carries the deploy context (autoair.governance): commit/PR text and the audit record.
-    ``token``: the git token typed for this request (used for this write only)."""
+    ``token``: the git token typed for this request (used for this write only).
+
+    Python DAGs follow their source policy (:mod:`autoair.preserve`): the file is generated,
+    or the existing file is patched; a file changed outside AutoAir is never overwritten
+    silently (``resolution`` answers a deploy that stopped there)."""
     dag_id = spec.dag_id
     effective = spec.with_environment(env) if env and env in spec.environments else spec
-    report = await _validate(services, principal, effective, env)
     user = _user(request, principal)
+    plan: SourcePlan | None = None
+    resolved: ResolvedTarget | None = None
+    if applicable(spec):
+        resolved = await _write_target(
+            services, gateway, target, team=spec.team, user=user, conn_id=git_conn_id, token=token
+        )
+        try:
+            with scrubbed_errors(token), span("source_plan", dag_id=dag_id):
+                plan = await run_in_threadpool(
+                    lambda: plan_for(
+                        services,
+                        principal,
+                        spec,
+                        target=resolved.target if resolved else target,
+                        environment=env,
+                        push_mode=push_mode,
+                        resolution=resolution,
+                    )
+                )
+        except StorageError as exc:
+            raise HTTPException(status_code=409, detail=mask(str(exc))) from exc
+        if reviewed_target_sha is not None and plan.target_sha != reviewed_target_sha:
+            plan.action = "refused"
+            plan.source = None
+            plan.options = []
+            plan.message = (
+                "the DAG file in the target changed since you previewed this deploy: preview "
+                "it again"
+            )
+        blocked = _source_stop(plan)
+        if blocked is not None:
+            return blocked
+    preserved = plan.source if plan is not None and plan.action != "generate" else None
+    report = await _validate(services, principal, effective, env, source=preserved)
     if not report.ok:
         DEPLOYS.labels("invalid").inc()
         return DeployResult(
             deployed=False,
             status="invalid",
             report=report,
+            source=plan,
             message="validation failed; nothing was written",
         )
-    resolved = await _write_target(
-        services, gateway, target, team=spec.team, user=user, conn_id=git_conn_id, token=token
-    )
+    if resolved is None:
+        resolved = await _write_target(
+            services, gateway, target, team=spec.team, user=user, conn_id=git_conn_id, token=token
+        )
     writer = resolved.target
+    to_store = plan.stored_spec if plan is not None and plan.stored_spec is not None else spec
+    may_force = can_force_overwrite(services.settings.preserve) and principal.has(
+        P.DEPLOY_OVERWRITE_EJECTED
+    )
+    if plan is None and force and not may_force:
+        # An overwrite of an ejected or kept hand-written file needs the switch and the
+        # permission; without them the deploy stops at that file (EjectedError).
+        force = False
+    takeover: str | None = None
+    if spec.raw_code is not None:
+        # A hand-written file kept as a raw code DAG ("keep as raw code" after a refused
+        # patch): its own content may replace it even though AutoAir did not create it.
+        current = await run_in_threadpool(existing_file, writer, dag_id, env, push_mode)
+        if current is not None and current.content.rstrip("\n") == spec.raw_code.rstrip("\n"):
+            takeover = sha256_text(current.content)
+    raw_edit = (
+        spec.raw_code is not None
+        and takeover is None
+        and await run_in_threadpool(_stored_is_raw, target, dag_id, env)
+    )
     before = base_etag or await run_in_threadpool(_stored_etag, target, dag_id, env)
     context = await run_in_threadpool(
         lambda: _context(
@@ -727,15 +921,33 @@ async def _deploy(
     )
     as_service = _commit_as_service(services, spec.team, resolved)
     try:
-        with span("render", dag_id=dag_id, output_mode=spec.output_mode):
-            files = await run_in_threadpool(services.render_files, spec, env)
+        if plan is not None and plan.source is not None and spec.output_mode == "python":
+            # The plan already rendered (or patched) the file: write exactly that.
+            files = {f"{dag_id}.py": plan.source}
+        else:
+            with span("render", dag_id=dag_id, output_mode=spec.output_mode):
+                files = await run_in_threadpool(services.render_files, spec, env)
         save_args: dict[str, Any] = {
             "base_etag": base_etag,
             "author": user,
             "message": message,
             "environment": env,
-            "force": force,
+            "force": force if plan is None else False,
         }
+        if plan is not None and plan.expected_sha is not None:
+            # Write over the file the plan was made from, only while it is unchanged.
+            save_args["expected"] = {f"{dag_id}.py": plan.expected_sha}
+        elif takeover is not None:
+            save_args["expected"] = {f"{dag_id}.py": takeover}
+            save_args["hand_written"] = True  # deleting it later needs the permission
+        if plan is not None and (plan.hand_written or plan.overwrite):
+            save_args["hand_written"] = plan.hand_written
+        if plan is None and (force or raw_edit):
+            # Without a source plan (loader/YAML output modes, raw code) the target refuses
+            # to replace a kept hand-written file unless this caller may: force is only
+            # still set with deploy:overwrite_ejected; a raw code DAG that already was one
+            # replaces its own code, which the editor showed in full.
+            save_args["allow_hand_written"] = True
         if isinstance(writer, GitTarget):
             save_args["mode"] = push_mode
             save_args["context"] = context
@@ -750,7 +962,7 @@ async def _deploy(
             subject = (message or "").strip() or f"AutoAir: update DAG {dag_id}"
             save_args["message"] = commit_message(subject, context, co_author=False)
         with scrubbed_errors(token):
-            result = await run_in_threadpool(lambda: writer.save(spec, files, **save_args))
+            result = await run_in_threadpool(lambda: writer.save(to_store, files, **save_args))
     except ConflictError as exc:
         DEPLOYS.labels("conflict").inc()
         cur = exc.current
@@ -767,12 +979,49 @@ async def _deploy(
         )
     except EjectedError as exc:
         DEPLOYS.labels("ejected").inc()
+        detail = (
+            "the file changed while the deploy was prepared; preview the change again"
+            if plan is not None
+            else _force_refusal(services, principal)
+            or "deploy with force to overwrite the manual changes"
+        )
         return DeployResult(
             deployed=False,
             status="ejected",
             report=report,
-            message=mask(str(exc)),
-            conflict=ConflictInfo(ejected_file=str(exc.path)),
+            source=plan,
+            message=mask(f"{exc.path} was modified outside AutoAir (ejected); {detail}"),
+            conflict=ConflictInfo(
+                ejected_file=str(exc.path), force_allowed=plan is None and may_force
+            ),
+        )
+    except HandWrittenError as exc:
+        # The hand-written file AutoAir keeps (a deploy without a source plan: another
+        # output mode, a conversion to raw code): reported like an ejected file, so the UI
+        # offers the overwrite only where it would be accepted.
+        DEPLOYS.labels("ejected").inc()
+        # Force never replaces a file without AutoAir's marker (check_overwrite): such a
+        # kept file changes only through a source plan (python output) or as raw code.
+        kept_file = await run_in_threadpool(existing_file, writer, dag_id, env, push_mode)
+        owned = kept_file is not None and is_owned(kept_file.content)
+        detail = (
+            _force_refusal(services, principal)
+            if owned
+            else "AutoAir never overwrites a file it did not create; change it with the "
+            "python output mode (preserve) or keep the DAG as raw code"
+        ) or "deploy with force to overwrite it"
+        return DeployResult(
+            deployed=False,
+            status="ejected",
+            report=report,
+            source=plan,
+            message=mask(
+                f"{exc.path} is the hand-written DAG file AutoAir keeps for this DAG; "
+                f"replacing it discards it: {detail}"
+            ),
+            conflict=ConflictInfo(
+                ejected_file=str(exc.path), hand_written=True, force_allowed=may_force and owned
+            ),
         )
     except HTTPException:
         DEPLOYS.labels("error").inc()
@@ -797,6 +1046,11 @@ async def _deploy(
         "commit_author": "service" if as_service else "user",
         **audit_extra,
     }
+    if plan is not None:
+        details["source_policy"] = plan.policy
+        details["source_action"] = plan.action
+        if plan.overwrite:
+            details["overwrote_ejected"] = True
     await run_in_threadpool(
         lambda: services.audit.record("deploy", user=user, dag_id=dag_id, **details)
     )
@@ -805,16 +1059,8 @@ async def _deploy(
     if target.kind == "local" and not result.pr_url and not services.settings.feature("airflow"):
         msg += "; Airflow will pick it up on the next bundle refresh"  # no Airflow server
     elif target.kind == "local" and not result.pr_url:
-        try:
-            status = await gateway.dag_status(dag_id)
-            if status.exists and status.file_token:
-                await gateway.reparse(status.file_token)
-                reparsed = True
-                msg += "; reparse requested"
-            else:
-                msg += "; Airflow will pick the new DAG up on the next bundle refresh"
-        except AirflowError as exc:
-            msg += f"; could not contact Airflow ({exc.detail})"
+        reparsed, note = await _request_reparse(gateway, dag_id)
+        msg += note
     elif result.pr_url:
         msg += f"; review and merge {result.pr_url} to release it"
     else:
@@ -828,8 +1074,44 @@ async def _deploy(
         pr_url=result.pr_url,
         branch=result.branch,
         reparse_requested=reparsed,
+        source=plan,
+        stored_spec=_returned_spec(to_store, spec, plan),
         message=msg,
     )
+
+
+def _returned_spec(stored: DagSpec, sent: DagSpec, plan: SourcePlan | None) -> DagSpec | None:
+    """DeployResult.stored_spec: the spec stored instead of the one sent, except for a file
+    the caller may not see (its merge result would show what the file contains)."""
+    if stored is sent or (plan is not None and plan.content_hidden):
+        return None
+    return stored
+
+
+def _source_stop(plan: SourcePlan) -> DeployResult | None:
+    """The deploy result when the source plan stops the deploy (an ejected file, a refused
+    patch); None when it goes ahead."""
+    empty = ValidationReport(ok=True, problems=[])
+    if plan.action == "blocked":
+        DEPLOYS.labels("ejected").inc()
+        return DeployResult(
+            deployed=False,
+            status="ejected",
+            report=empty,
+            source=plan,
+            message=mask(plan.message),
+            conflict=ConflictInfo(ejected_file=plan.target_file),
+        )
+    if plan.action == "refused":
+        DEPLOYS.labels("source_refused").inc()
+        return DeployResult(
+            deployed=False,
+            status="source_refused",
+            report=empty,
+            source=plan,
+            message=mask(plan.message),
+        )
+    return None
 
 
 class GitCredentialsInfo(BaseModel):
@@ -971,6 +1253,81 @@ async def preview_deploy(
     )
 
 
+class SourcePreviewRequest(BaseModel):
+    spec: DagSpec
+    environment: str | None = None
+    direct_push: bool | None = Field(
+        default=None, description="As in the deploy request (decides the git branch read)."
+    )
+    source_resolution: Literal["preserve", "overwrite"] | None = Field(
+        default=None,
+        description="Preview the answer to an ejected file: preserve (patch it) or overwrite.",
+    )
+
+
+@write_router.post(
+    "/{dag_id}/source-preview",
+    operation_id="previewSource",
+    dependencies=[require(P.SPEC_WRITE)],
+)
+async def preview_source(
+    dag_id: str,
+    body: SourcePreviewRequest,
+    request: Request,
+    services: ServicesDep,
+    principal: PrincipalDep,
+    gateway: Annotated[AirflowGateway, Depends(get_gateway)],
+    git_token: GitTokenHeader,
+) -> SourcePlan:
+    """What a deploy of ``body.spec`` would write as the DAG file, without writing: the
+    source policy in force, whether the file in the target was changed outside AutoAir, and
+    the unified diff of the generated or patched file. Preserve plans import the existing
+    and the patched file in a sandboxed subprocess (round-trip check), so this can take a
+    few seconds."""
+    spec = body.spec
+    if spec.dag_id != dag_id:
+        raise HTTPException(status_code=400, detail="dag_id in path and body differ")
+    env = _environment(services, spec, body.environment)
+    target = services.target_for(spec.team)
+    token = accept_token(
+        services, request, git_token, kind=target.kind, cfg=_git_cfg(services, spec.team)
+    )
+    push_mode = await _push_mode(request, principal, services, target, body.direct_push, spec)
+    if not applicable(spec):
+        return SourcePlan(
+            applicable=False,
+            action="not_applicable",
+            message="the source policy applies to Python DAG files only",
+        )
+    resolved = await _write_target(
+        services,
+        gateway,
+        target,
+        team=spec.team,
+        user=_user(request, principal),
+        conn_id=None,
+        token=token,
+    )
+    try:
+        with scrubbed_errors(token):
+            plan: SourcePlan = await run_in_threadpool(
+                lambda: plan_for(
+                    services,
+                    principal,
+                    spec,
+                    target=resolved.target,
+                    environment=env,
+                    push_mode=push_mode,
+                    resolution=body.source_resolution,
+                )
+            )
+    except StorageError as exc:
+        raise HTTPException(status_code=409, detail=mask(str(exc))) from exc
+    if not plan.content_hidden:
+        plan.content = plan.source
+    return plan
+
+
 @write_router.delete("/{dag_id}", operation_id="deleteSpec", dependencies=[require(P.SPEC_DELETE)])
 async def delete_spec(
     dag_id: str,
@@ -1037,6 +1394,8 @@ async def delete_spec(
         )
     as_service = _commit_as_service(services, team, resolved)
     kwargs: dict[str, Any] = {"base_etag": _etag(if_match), "author": user}
+    if principal.has(P.DEPLOY_OVERWRITE_EJECTED):
+        kwargs["allow_hand_written"] = True  # a hand-written file AutoAir keeps
     if isinstance(writer, GitTarget) and context is not None:
         kwargs.update(context=context, co_author=as_service)
         if not as_service:

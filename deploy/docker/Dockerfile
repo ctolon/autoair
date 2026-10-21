@@ -1,6 +1,12 @@
 # syntax=docker/dockerfile:1
 # AutoAir on the official Apache Airflow image: the Airflow plugin (api-server), and the
-# `autoair serve` / `autoair ai-serve` commands, from one image. Published to GHCR by
+# `autoair serve` / `autoair ai-serve` / `autoair validator-serve` commands, from one image.
+# The validator (isolated DAG import checks) runs from the same image so it has exactly the
+# providers your DAGs import:
+#   docker run --read-only --tmpfs /tmp -e AIRFLOW_HOME=/tmp/airflow \
+#     -e AIRFLOW_CONN_AUTOAIR_VALIDATOR='{"conn_type":"generic","password":"..."}' \
+#     my-airflow-autoair:3.3.2 autoair validator-serve --host 0.0.0.0
+# Published to GHCR by
 # .github/workflows/release.yml as ghcr.io/ctolon/autoair.
 #
 #   make build                                   # frontend bundles + dist/autoair-*.whl
@@ -45,5 +51,5 @@ COPY --chown=airflow:0 --chmod=0555 deploy/docker/healthcheck.py /opt/autoair/he
 HEALTHCHECK --interval=30s --timeout=10s --start-period=90s --retries=5 \
     CMD ["python", "/opt/autoair/healthcheck.py"]
 
-EXPOSE 8080 8765 8790
+EXPOSE 8080 8765 8790 8791
 USER airflow

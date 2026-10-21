@@ -3,7 +3,13 @@ import type { DagSpec } from "../../api/gen/types.gen";
 type SpecNode = NonNullable<DagSpec["nodes"]>[number];
 
 const keyOf = (n: SpecNode): string | null =>
-  n.kind === "task_group" ? `g:${n.group_id}` : n.kind === "note" ? null : `t:${n.task_id}`;
+  n.kind === "task_group"
+    ? `g:${n.group_id}`
+    : n.kind === "note"
+      ? null
+      : n.kind === "blueprint"
+        ? `b:${n.step_id}`
+        : `t:${n.task_id}`;
 
 /**
  * Copies canvas positions from `previous` onto `next` for nodes with the same task/group id

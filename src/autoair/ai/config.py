@@ -763,6 +763,106 @@ class TroubleshootSettings(_Section):
 
 
 McpAgent = Literal["troubleshoot", "developer", "admin"]
+#: Side-effect class of an agent tool: ``read`` only reads; ``write`` changes something
+#: outside the run (stored memories, external MCP tools the server does not mark read-only).
+ToolClass = Literal["read", "write"]
+ApprovalAgent = Literal["developer", "admin", "troubleshoot"]
+
+
+def _write_class() -> list[ToolClass]:
+    return ["write"]
+
+
+class ToolApprovalRule(_Section):
+    """Which tool calls of an agent wait for a human decision before they run."""
+
+    classes: list[ToolClass] = Field(
+        default_factory=_write_class,
+        description="Tool classes whose calls need approval (JSON list in the environment): "
+        "write = tools that change something (stored memories, external MCP tools not marked "
+        "read-only); read = every read-only tool too. [] = none by class.",
+    )
+    tools: list[str] = Field(
+        default_factory=list,
+        description="Tool names (fnmatch, e.g. mcp__jira__*) that always need approval, "
+        "whatever their class; takes precedence over exempt.",
+    )
+    exempt: list[str] = Field(
+        default_factory=list,
+        description="Tool names (fnmatch) that never need approval although their class "
+        "does, e.g. remember. Ignored for write tools of a troubleshooting analysis in hitl "
+        "mode.",
+    )
+
+
+class ToolApprovalSettings(_Section):
+    """Human approval of individual agent tool calls (pydantic-ai deferred tools)."""
+
+    enabled: bool = Field(
+        default=True,
+        description="Pause a run when the agent calls a tool that needs approval and ask the "
+        "user who started it. False: such tools are not offered to the agent at all (it "
+        "never runs them unapproved).",
+    )
+    default: ToolApprovalRule = Field(
+        default_factory=ToolApprovalRule,
+        description="Rule of every agent without its own entry in agents.",
+    )
+    agents: dict[ApprovalAgent, ToolApprovalRule] = Field(
+        default_factory=dict,
+        description="Rule per agent (developer, admin, troubleshoot), replacing default for "
+        'that agent, e.g. {"developer": {"classes": ["write"], "exempt": ["remember"]}} '
+        "(JSON in the environment).",
+    )
+    ttl_seconds: float = Field(
+        default=3_600,
+        ge=60,
+        le=604_800,
+        description="Seconds a pending approval can be decided; afterwards it expires and "
+        "the paused run cannot be resumed (the user asks again).",
+    )
+    max_pending_per_user: int = Field(
+        default=20,
+        ge=1,
+        le=500,
+        description="Pending approvals per user; a new one beyond this cancels the oldest.",
+    )
+    retention_hours: float = Field(
+        default=168,
+        ge=1,
+        description="Hours decided, expired and cancelled approvals are kept (their outcome "
+        "stays in the AI audit log).",
+    )
+    claim_timeout_seconds: float = Field(
+        default=900,
+        ge=30,
+        le=86_400,
+        description="Seconds a resumed approval may stay claimed by the replica running it; "
+        "a claim older than this (the replica died) is shown as failed. It is never taken "
+        "over, so an approved tool runs at most once.",
+    )
+    max_argument_chars: int = Field(
+        default=4_000,
+        ge=200,
+        le=100_000,
+        description="Characters of a tool call's arguments shown on the approval card "
+        "(longer values are cut; secrets are always masked).",
+    )
+    max_reason_chars: int = Field(
+        default=1_000,
+        ge=0,
+        le=10_000,
+        description="Longest reason a user may give with a decision (it is sent to the "
+        "model with a denial). 0 = no reasons.",
+    )
+    store_url: str | None = Field(
+        default=None,
+        description="Where pending approvals live (fsspec URL); default <state>/ai-approvals "
+        "(rows of the SQL database when database.backend is sqlite/postgresql).",
+    )
+
+    def rule(self, agent: ApprovalAgent) -> ToolApprovalRule:
+        return self.agents.get(agent, self.default)
 
 
 def _default_agents() -> list[McpAgent]:
@@ -985,6 +1085,10 @@ class AiSettings(_Section):
         default_factory=McpClientSettings, description="External MCP servers (agent tools)."
     )
     rules: RulesSettings = Field(default_factory=RulesSettings, description="Project AI rules.")
+    approvals: ToolApprovalSettings = Field(
+        default_factory=ToolApprovalSettings,
+        description="Human approval of individual agent tool calls.",
+    )
     upgrade: UpgradeSettings = Field(
         default_factory=UpgradeSettings, description="Airflow upgrade assistant."
     )
@@ -1044,6 +1148,8 @@ __all__ = [
     "RetrievalSettings",
     "Role",
     "RulesSettings",
+    "ToolApprovalRule",
+    "ToolApprovalSettings",
     "TroubleshootFilesystem",
     "TroubleshootResources",
     "TroubleshootSettings",

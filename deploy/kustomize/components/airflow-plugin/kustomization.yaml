@@ -1,0 +1,26 @@
+# Plugin mode for Airflow deployed from plain manifests you manage with Kustomize: the
+# AutoAir image (Apache Airflow + AutoAir, ghcr.io/ctolon/autoair:<version> is built on
+# apache/airflow:3.3.2) for every Airflow component, and AutoAir settings on the api-server.
+# Airflow installed with the official Helm chart uses deploy/helm/values-autoair.yaml
+# instead: `helm upgrade` would overwrite these patches.
+#
+# Every Airflow component gets the image, so workers and the dag-processor import the same
+# providers as the operator palette. Use the AutoAir tag built for your Airflow version
+# (<version>-airflow<airflow version>) or your own image (deploy/docker/Dockerfile).
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+
+images:
+  - name: apache/airflow
+    newName: ghcr.io/ctolon/autoair
+    newTag: "0.1.0-airflow3.3.2"
+
+patches:
+  # Every Deployment labelled like the official chart's api-server, whatever its name; the
+  # container must be called api-server (rename it here if yours differs).
+  - path: api-server-patch.yaml
+    target:
+      group: apps
+      version: v1
+      kind: Deployment
+      labelSelector: component=api-server

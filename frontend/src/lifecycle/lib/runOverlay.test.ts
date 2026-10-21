@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { DagSpec, TaskInstanceInfo } from "../../api/gen/types.gen";
-import { aggregateState, buildRunOverlay, effectiveTaskIds, isRunActive, nodeTaskId } from "./runOverlay";
+import { aggregateState, buildRunOverlay, effectiveTaskIds, isRunActive, latestLogTry, nodeTaskId } from "./runOverlay";
 
 type SpecNode = NonNullable<DagSpec["nodes"]>[number];
 
@@ -82,5 +82,17 @@ describe("buildRunOverlay", () => {
     expect(isRunActive({ run: { dag_run_id: "x", state: "success" }, task_instances: [] })).toBe(false);
     expect(isRunActive({ run: { dag_run_id: "x", state: "running" }, task_instances: [] })).toBe(true);
     expect(isRunActive(undefined)).toBe(false);
+  });
+});
+
+describe("latestLogTry", () => {
+  it("steps back from the upcoming try of an up_for_retry instance on Airflow 3.4", () => {
+    expect(latestLogTry({ state: "up_for_retry", try_number: 2 }, true)).toBe(1);
+    expect(latestLogTry({ state: "failed", try_number: 2 }, true)).toBe(2);
+  });
+  it("keeps try_number before Airflow 3.4 and for missing instances", () => {
+    expect(latestLogTry({ state: "up_for_retry", try_number: 2 }, false)).toBe(2);
+    expect(latestLogTry(undefined, true)).toBe(1);
+    expect(latestLogTry({ state: "up_for_retry", try_number: 1 }, true)).toBe(1);
   });
 });

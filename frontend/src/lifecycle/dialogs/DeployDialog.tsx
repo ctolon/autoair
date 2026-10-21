@@ -1,13 +1,18 @@
 import { Alert, Button, Checkbox, Field, NativeSelect, Stack, Text, Textarea } from "@chakra-ui/react";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { LuGitCommitHorizontal, LuGitPullRequestArrow, LuHardDrive, LuRocket } from "react-icons/lu";
 
+import type { SourcePlan } from "../../api/gen/types.gen";
+import { type SourcePolicyChoice, policyOf, withPolicy } from "../../lib/sourcePolicy";
 import { useBuilder } from "../../store/builder";
+import { toSpec } from "../../store/convert";
+import { SourcePolicyField } from "../../widgets/SourcePolicyField";
 import { deploy } from "../actions";
 import { DeployGovernance, type GovernanceValue } from "../components/DeployGovernance";
 import { DialogShell } from "../components/DialogShell";
 import { GitTokenField } from "../components/GitTokenField";
+import { SourcePreview } from "../components/SourcePlan";
 import { useEnvironments, useMeta } from "../hooks";
 import { deployEffect, suggestCommitMessage } from "../lib/deployEffect";
 import { tokenMissing, useGitTokenInfo } from "../lib/gitToken";
@@ -27,6 +32,22 @@ export default function DeployDialog({ focus }: { focus: "message" | "environmen
     return suggestCommitMessage(st.toSpec(), st.baseSpec);
   });
   const [busy, setBusy] = useState(false);
+  // The previewed DAG file: the deploy writes only while the target's file is that one.
+  const [reviewed, setReviewed] = useState<SourcePlan | null>(null);
+  // The document as it would be deployed: the file preview follows edits (e.g. the policy).
+  const dagState = useBuilder((s) => s.dag);
+  const nodes = useBuilder((s) => s.nodes);
+  const edges = useBuilder((s) => s.edges);
+  // The source policy chosen here is a draft (like the environment and the message): the
+  // preview follows it, Deploy applies it to the document as one undoable step, Cancel or
+  // Escape drops it.
+  const [policyDraft, setPolicyDraft] = useState<SourcePolicyChoice | null>(null);
+  const docPolicy = policyOf(dagState);
+  const pendingPolicy = policyDraft !== null && policyDraft !== docPolicy ? policyDraft : null;
+  const spec = useMemo(() => {
+    const doc = toSpec(dagState, nodes, edges);
+    return pendingPolicy !== null ? { ...doc, source: withPolicy(doc, pendingPolicy) } : doc;
+  }, [dagState, nodes, edges, pendingPolicy]);
   const rights = meta?.iam?.deploy;
   // Users allowed to bypass the pull request (deploy:direct_push) may push straight to the branch.
   const canDirectPush = rights?.git_mode === "pr" && rights.direct_push;
@@ -51,6 +72,11 @@ export default function DeployDialog({ focus }: { focus: "message" | "environmen
     setBusy(true);
     const environment = env || null;
     if (environment !== storeEnv) useBuilder.getState().setEnvironment(environment);
+    if (pendingPolicy !== null) {
+      const st = useBuilder.getState();
+      st.setDag({ source: withPolicy(st.dag, pendingPolicy) });
+      setPolicyDraft(null);
+    }
     const ok = await deploy(
       {
         message: message.trim() || null,
@@ -58,6 +84,7 @@ export default function DeployDialog({ focus }: { focus: "message" | "environmen
         ...(canDirectPush && directPush ? { directPush: true } : {}),
         prDescription: governance.prDescription.trim() || null,
         gitConnId: governance.gitConnId,
+        ...(reviewed?.target_sha != null ? { sourceTargetSha: reviewed.target_sha } : {}),
       },
       { gitToken: tokenInfo && tokenInfo.mode !== "off" ? gitToken : null },
     );
@@ -144,6 +171,20 @@ export default function DeployDialog({ focus }: { focus: "message" | "environmen
               ) : null}
             </Alert.Content>
           </Alert.Root>
+        ) : null}
+        {spec.raw_code == null ? (
+          <Stack gap={2} data-testid="deploy-source">
+            <Text fontSize="sm" fontWeight="semibold">
+              {t("source.dagFile")}
+            </Text>
+            <SourcePolicyField value={policyDraft ?? docPolicy} onChange={setPolicyDraft} />
+            {pendingPolicy !== null ? (
+              <Text fontSize="xs" color="fg.muted" data-testid="deploy-policy-draft">
+                {t("source.policyDraftNote")}
+              </Text>
+            ) : null}
+            <SourcePreview spec={spec} environment={env || null} onPlan={setReviewed} />
+          </Stack>
         ) : null}
         {canDirectPush ? (
           <Checkbox.Root

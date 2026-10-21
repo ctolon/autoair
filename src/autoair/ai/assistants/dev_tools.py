@@ -266,6 +266,7 @@ def memory_tools(
             "Store a convention/preference the user explicitly asked you to remember.",
             RememberInput,
             remember,
+            kind="write",
         ),
     ]
 

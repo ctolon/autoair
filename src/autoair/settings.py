@@ -27,6 +27,7 @@ from pydantic import (
 from pydantic_settings import NoDecode, SettingsConfigDict
 
 from autoair.ai.config import AiSettings
+from autoair.blueprints.config import BlueprintSettings
 from autoair.collab import CollabSettings
 from autoair.config_sources import AutoAirBaseSettings, parse_file_list
 from autoair.iam.config import IamSettings
@@ -34,6 +35,7 @@ from autoair.kb.config import KbSettings
 from autoair.lsp.config import LspSettings
 from autoair.marketplace import MarketplaceSource
 from autoair.persistence.config import DatabaseSettings
+from autoair.preserve.config import PreserveSettings
 from autoair.sections import (
     AdminSettings,
     AuditSettings,
@@ -54,6 +56,7 @@ from autoair.sections import (
     ServerSettings,
     SsoSettings,
     UiSettings,
+    ValidatorSettings,
 )
 from autoair.storage.config import StorageSettings
 
@@ -139,11 +142,38 @@ class FeatureFlags(BaseModel):
         "for agents, MCP (kb_search, kb_sources, kb_status) and the admin panel (see the kb "
         "section). Works without autoair[ai] (keyword search).",
     )
+    autoair_docs: bool = Field(
+        default=True,
+        description="AutoAir's own documentation for agents: the MCP tools "
+        "search_autoair_docs, read_autoair_doc and list_autoair_docs, which read the "
+        "documentation packaged with this version (offline, no knowledge-base store). The "
+        "knowledge base's autoair source is switched separately (kb.sources).",
+    )
+    source_preserve: bool = Field(
+        default=True,
+        description="Source-preserving deploys: DAGs whose source policy is preserve or "
+        "strict-preserve (by default those imported from or edited as hand-written Python) "
+        "get each change applied to their existing file as a minimal patch (LibCST) "
+        "instead of a regenerated file. Off: every DAG file is generated; hand-written "
+        "files are then protected by preserve.ejected_files.",
+    )
+    strict_source_preserve: bool = Field(
+        default=False,
+        description="Run every preserve deploy as strict-preserve: refuse each change that "
+        "cannot be applied exactly (no replaced variable references, operator class "
+        "changes or group moves through task_group=).",
+    )
     ide_language_server: bool = Field(
         default=False,
         description="IDE-grade IntelliSense in code editors through a per-session language "
         "server (basedpyright or pylsp, bash-language-server; see the lsp section). Off: "
         "the built-in jedi completions.",
+    )
+    blueprints: bool = Field(
+        default=True,
+        description="Astronomer Blueprint templates (airflow-blueprint) as canvas nodes: the "
+        "palette's Blueprints section, config forms and task previews (see the blueprints "
+        "section). Reading config schemas needs autoair[blueprint].",
     )
 
     @model_validator(mode="after")
@@ -286,6 +316,11 @@ class Settings(AutoAirBaseSettings):
         default_factory=CatalogSettings,
         description="Catalog presentation: connection-parameter detection, palette groups, "
         "parameter widgets, package metadata (AUTOAIR_CATALOG__<FIELD>).",
+    )
+    blueprints: BlueprintSettings = Field(
+        default_factory=BlueprintSettings,
+        description="Where the blueprint catalog finds Astronomer Blueprint templates "
+        "(AUTOAIR_BLUEPRINTS__<FIELD>).",
     )
     cors_origins: list[str] = Field(
         default_factory=list, description="Standalone: allowed CORS origins."
@@ -438,6 +473,11 @@ class Settings(AutoAirBaseSettings):
     interchange: InterchangeSettings = Field(
         default_factory=InterchangeSettings, description="DAG imports (Python, YAML, JSON)."
     )
+    preserve: PreserveSettings = Field(
+        default_factory=PreserveSettings,
+        description="Editing existing Python DAG files: source policies and ejected-file "
+        "protection (AUTOAIR_PRESERVE__<FIELD>).",
+    )
     icons: IconSettings = Field(default_factory=IconSettings, description="Custom node icons.")
     sandbox: SandboxSettings = Field(
         default_factory=SandboxSettings,
@@ -474,6 +514,12 @@ class Settings(AutoAirBaseSettings):
     )
     local: LocalModeSettings = Field(
         default_factory=LocalModeSettings, description="`autoair local` (no Airflow server)."
+    )
+    validator: ValidatorSettings = Field(
+        default_factory=ValidatorSettings,
+        description="Import checks in a separate validator service (autoair validator-serve) "
+        "and the limits it applies to the processes importing user code "
+        "(AUTOAIR_VALIDATOR__<FIELD>).",
     )
 
     # --- marketplace (signed template indexes; see autoair.marketplace)

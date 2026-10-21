@@ -1,0 +1,14 @@
+# Public access through an Ingress on its own host name (the standalone UI cannot live under
+# a sub-path). Edit the host, the TLS Secret and the class; set the public URLs below.
+# Gateway API users take components/gateway-api instead.
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+
+resources:
+  - ingress.yaml
+
+configMapGenerator:
+  - name: autoair-config
+    behavior: merge
+    envs:
+      - settings.env

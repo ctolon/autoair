@@ -177,7 +177,7 @@ def test_marketplace_endpoints(tmp_path: Path):
 def test_import_spec_json_migrates_and_reports(client):
     ok = client.post("/api/interchange/spec/import", json={"source": json.dumps(SPEC)})
     assert ok.status_code == 200, ok.text
-    assert ok.json()["spec_version"] == 2
+    assert ok.json()["spec_version"] == 3
     assert ok.json()["dag_id"] == "api_v2"
     bad = client.post("/api/interchange/spec/import", json={"source": '{"dag_id": "x y"}'})
     assert bad.status_code == 422

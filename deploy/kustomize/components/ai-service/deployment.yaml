@@ -1,0 +1,145 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: autoair-ai
+  labels:
+    app.kubernetes.io/name: autoair-ai
+    app.kubernetes.io/component: ai
+spec:
+  # Assistant threads and replay detection live in the shared state: with PostgreSQL any
+  # replica continues a conversation. With the file backend keep one replica.
+  replicas: 2
+  revisionHistoryLimit: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: autoair-ai
+      app.kubernetes.io/component: ai
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: autoair-ai
+        app.kubernetes.io/component: ai
+        app.kubernetes.io/part-of: autoair
+    spec:
+      serviceAccountName: autoair
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      # Agent runs stream for minutes; give open streams time to finish.
+      terminationGracePeriodSeconds: 60
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 50000
+        runAsGroup: 0
+        fsGroup: 0
+        seccompProfile:
+          type: RuntimeDefault
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: autoair-ai
+              app.kubernetes.io/component: ai
+      containers:
+        - name: ai
+          image: ghcr.io/ctolon/autoair
+          imagePullPolicy: IfNotPresent
+          command: [/usr/bin/dumb-init, --, autoair]
+          args: [ai-serve, --host, 0.0.0.0, --port, "8790"]
+          ports:
+            - name: http
+              containerPort: 8790
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: autoair-config
+            - configMapRef:
+                name: autoair-ai-config
+          env:
+            - name: HOME
+              value: /tmp
+            - name: TMPDIR
+              value: /tmp
+            - name: AUTOAIR_AI__SERVICE__SHARED_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: autoair-ai
+                  key: shared-secret
+            - name: AIRFLOW_CONN_AUTOAIR_LLM
+              valueFrom:
+                secretKeyRef:
+                  name: autoair-ai
+                  key: llm-connection
+            - name: AUTOAIR_AI__USER_LLM__ENCRYPTION_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: autoair-ai
+                  key: fernet-key
+                  optional: true
+            # Shared state: the same secrets as the server when components/postgresql,
+            # components/git-target are used, and the validator's key with components/validator
+            # (absent Secrets are skipped).
+            - name: AUTOAIR_DATABASE__PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: autoair-db
+                  key: password
+                  optional: true
+            - name: AIRFLOW_CONN_GIT_DAGS
+              valueFrom:
+                secretKeyRef:
+                  name: autoair-git
+                  key: connection
+                  optional: true
+            - name: AIRFLOW_CONN_AUTOAIR_VALIDATOR
+              valueFrom:
+                secretKeyRef:
+                  name: autoair-validator
+                  key: connection
+                  optional: true
+          securityContext:
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            privileged: false
+            capabilities:
+              drop: [ALL]
+          resources:
+            requests:
+              cpu: 250m
+              memory: 1Gi
+              ephemeral-storage: 256Mi
+            limits:
+              memory: 4Gi
+              ephemeral-storage: 2Gi
+          startupProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 5
+            failureThreshold: 36
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 20
+            timeoutSeconds: 5
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 2Gi

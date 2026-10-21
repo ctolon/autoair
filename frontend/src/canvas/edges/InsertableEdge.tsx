@@ -6,6 +6,7 @@ import { LuPlus } from "react-icons/lu";
 
 import type { BuilderEdge } from "../../lib/types";
 import { useBuilder } from "../../store/builder";
+import { useLowDetail } from "../lowDetail";
 import { useCanvasUi } from "../uiStore";
 
 /** Display-only data the canvas attaches to edges. */
@@ -67,20 +68,19 @@ export const InsertableEdge = memo(function InsertableEdge(props: EdgeProps<Buil
   const data = props.data as EdgeViewData | undefined;
   const text = typeof label === "string" ? label : "";
   const showPlus = (hover || selected) && !editing;
+  const lowDetail = useLowDetail();
+  const style = {
+    ...props.style,
+    ...(data?.setupTeardown ? { strokeDasharray: "6 4" } : {}),
+    ...(selected ? { stroke: "var(--chakra-colors-blue-500)", strokeWidth: 2 } : {}),
+  };
+
+  // Zoomed far out on a large graph: the line only (no label, no insert button, no portal).
+  if (lowDetail && !editing) return <BaseEdge id={id} path={path} markerEnd={markerEnd} style={style} />;
 
   return (
     <g onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}>
-      <BaseEdge
-        id={id}
-        path={path}
-        markerEnd={markerEnd}
-        interactionWidth={24}
-        style={{
-          ...props.style,
-          ...(data?.setupTeardown ? { strokeDasharray: "6 4" } : {}),
-          ...(selected ? { stroke: "var(--chakra-colors-blue-500)", strokeWidth: 2 } : {}),
-        }}
-      />
+      <BaseEdge id={id} path={path} markerEnd={markerEnd} interactionWidth={24} style={style} />
       <EdgeLabelRenderer>
         <Box
           position="absolute"

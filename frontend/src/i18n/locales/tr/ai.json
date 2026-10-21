@@ -70,7 +70,8 @@
     "compact": "Önceki konuşma özetleniyor…",
     "collect": "Çalıştırma ve logları okunuyor…",
     "analyze": "Analiz ediliyor…",
-    "mcp": "Araçlara bağlanılıyor…"
+    "mcp": "Araçlara bağlanılıyor…",
+    "approval": "Onayınız bekleniyor…"
   },
   "threads": {
     "title": "Sohbetler",
@@ -165,7 +166,8 @@
       "no_change": "değişiklik önerilmedi",
       "approved": "onaylandı",
       "rejected": "reddedildi",
-      "applied": "dağıtıldı"
+      "applied": "dağıtıldı",
+      "awaiting_approval": "araç onayı bekleniyor"
     },
     "category": {
       "spec": "DAG",
@@ -285,5 +287,40 @@
     "hint": "Açıklamayı dağıtılmış sürümden bu yana yapılan değişikliklerden yaz",
     "subject": "Konu: {{title}}",
     "failed": "Açıklama oluşturulamadı"
+  },
+  "approval": {
+    "title_one": "Bir araç çağrısını onaylayın",
+    "title_other": "{{count}} araç çağrısını onaylayın",
+    "help": "Asistan bu araçları çalıştırmadan önce durdu. Siz karar verene kadar hiçbir şey çalışmaz.",
+    "expires": "Son geçerlilik: {{time}}.",
+    "status": {
+      "pending": "kararınızı bekliyor",
+      "resuming": "devam ediyor",
+      "resolved": "karar verildi",
+      "expired": "süresi doldu",
+      "cancelled": "iptal edildi",
+      "failed": "başarısız"
+    },
+    "kind": {
+      "write": "değişiklik yapar",
+      "read": "salt okunur"
+    },
+    "approve": "Onayla",
+    "deny": "Reddet",
+    "approveAll": "Tümünü onayla",
+    "denyAll": "Tümünü reddet",
+    "submit": "Kararları gönder",
+    "reason": "Gerekçe (isteğe bağlı, asistana iletilir)",
+    "reasonShown": "Gerekçe: {{reason}}",
+    "approved": "onaylandı",
+    "denied": "reddedildi",
+    "decidedBy": "Karar veren: {{user}}",
+    "truncated": "Argümanlar görüntüleme için kısaltıldı; gizli değerler maskelendi.",
+    "noArguments": "argüman yok",
+    "expiredHelp": "Bu onayın süresi doldu ve araçlar çalışmadı. Devam etmek için yeniden sorun.",
+    "cancelledHelp": "Konuşma devam etti; bu araç çağrıları çalışmadı.",
+    "failedHelp": "Çalışmayı sürdürme başarısız oldu: {{error}}",
+    "failed": "Kararlar gönderilemedi",
+    "newMessageCancels": "Yeni bir mesaj göndermek bekleyen araç onayını iptal eder."
   }
 }

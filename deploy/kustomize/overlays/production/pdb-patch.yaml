@@ -1,0 +1,8 @@
+# Two or more replicas: keep one serving during voluntary disruptions.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: autoair
+spec:
+  maxUnavailable: null
+  minAvailable: 1

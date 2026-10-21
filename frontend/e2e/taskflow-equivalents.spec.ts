@@ -81,7 +81,7 @@ test("a DAG with a custom operator and a Python reference deploys, imports and r
   const headers = { Authorization: `Bearer ${token}` };
   const dagId = `custom_ref_${Date.now().toString(36)}`;
   const spec = {
-    spec_version: 2,
+    spec_version: 3,
     dag_id: dagId,
     nodes: [
       {

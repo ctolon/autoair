@@ -1,0 +1,31 @@
+# Settings of the plugin (docs/configuration-reference.md); the same ones as the env list
+# of deploy/helm/values-autoair.yaml. The name below is ignored: the target selects.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api-server
+spec:
+  template:
+    spec:
+      containers:
+        - name: api-server
+          env:
+            # Deploy target: the repository and credentials of Airflow's GitDagBundle.
+            - { name: AUTOAIR_STORAGE__MODE, value: git }
+            - { name: AUTOAIR_STORAGE__GIT__PROVIDER, value: github }
+            - { name: AUTOAIR_STORAGE__GIT__MODE, value: pr }
+            - { name: AUTOAIR_STORAGE__GIT__USE_AIRFLOW_BUNDLE, value: "true" }
+            - { name: AUTOAIR_STORAGE__GIT__SUBDIR, value: dags/autoair }
+            # AutoAir state for several api-server replicas: PostgreSQL, separate from
+            # Airflow's metadata database, migrated by the api-server on start.
+            - { name: AUTOAIR_DATABASE__BACKEND, value: postgresql }
+            - name: AUTOAIR_DATABASE__URL
+              value: postgresql+psycopg://autoair@autoair-db.example.internal:5432/autoair
+            - { name: AUTOAIR_DATABASE__SSL_MODE, value: require }
+            - name: AUTOAIR_DATABASE__PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: autoair-db
+                  key: password
+            - { name: AUTOAIR_EXPOSE_CONFIG, value: non-sensitive-only }
+            - { name: AUTOAIR_LOGGING__FORMAT, value: json }

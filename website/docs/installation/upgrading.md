@@ -87,14 +87,15 @@ A wheel built from source without `npm run build` contains no UI and `/ui/` answ
 
 ## Specs and generated files
 
-- **Specs** are migrated in memory when read (`spec_version` 1 to 2). They are written in the new format the next time the DAG is deployed. A spec written by a newer AutoAir than the one reading it is rejected (`spec_version N is newer than this AutoAir supports`).
+- **Specs** are migrated in memory when read (`spec_version` 1 to 2 to 3). They are written in the new format the next time the DAG is saved or deployed. AutoAir 0.2.0 writes `spec_version` 3. A spec written by a newer AutoAir than the one reading it is rejected (`spec_version N is newer than this AutoAir supports (M); upgrade AutoAir`); AutoAir 0.1.0 refuses every spec that 0.2.0 has saved.
+- **Upgrade every AutoAir process that reads the same specs together**: the Airflow plugin, `autoair serve` replicas, `autoair mcp-serve`, `autoair ai-serve`, the validator service, and the `autoair` package installed in the Airflow dag-processor and workers. In the loader output mode the stub DAG file parses `<dag_id>.autoair.json` with the AutoAir installed there, so an older AutoAir in Airflow fails to import every loader DAG that 0.2.0 has deployed.
 - **Generated DAG files** are not rewritten by the upgrade. Changes in code generation (formatting, imports for a newer Airflow) appear the next time each DAG is deployed; the version diff shows them. Loader-mode DAGs build from the spec at parse time with the `autoair` installed on the dag-processor, so upgrade it there at the same time.
 
 ## Rollback
 
 1. Reinstall the previous package version (or roll back the image tag / Helm release).
 2. **Database**: migrations only go forward; there is no downgrade command. Restore the backup taken before the upgrade if the new version applied migrations.
-3. **Specs** saved by the newer version keep `spec_version` 2 unless the release notes say otherwise; an older AutoAir that does not know a newer spec version refuses to open such specs.
+3. **Specs** saved by 0.2.0 have `spec_version` 3, which AutoAir 0.1.0 refuses ("upgrade AutoAir"); loader-mode DAGs deployed by 0.2.0 fail to import under 0.1.0. To roll back to 0.1.0, restore the specs (and loader-mode spec files) from before the upgrade, for example from the git history or object-storage versions of the deploy target; otherwise stay on 0.2.0.
 4. **Catalog**: the cache key includes the version, so the previous version rebuilds or reuses its own cache; rebuild a precomputed `AUTOAIR_CATALOG_FILE` with the previous version.
 5. Ask users to reload the UI.
 

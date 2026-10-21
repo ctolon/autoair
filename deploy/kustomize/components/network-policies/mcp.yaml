@@ -1,0 +1,61 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: autoair-mcp
+  labels:
+    app.kubernetes.io/name: autoair-mcp
+    app.kubernetes.io/component: mcp
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: autoair-mcp
+      app.kubernetes.io/component: mcp
+  policyTypes: [Ingress, Egress]
+  ingress:
+    # MCP clients reach it through the ingress controller; add in-cluster callers here.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: gateway-system
+      ports:
+        - port: 8766
+          protocol: TCP
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: airflow
+          podSelector:
+            matchLabels:
+              component: api-server
+      ports:
+        - port: 8080
+          protocol: TCP
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: autoair-validator
+      ports:
+        - port: 8791
+          protocol: TCP
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except: [169.254.169.254/32]
+      ports:
+        - port: 5432
+          protocol: TCP
+        - port: 443
+          protocol: TCP

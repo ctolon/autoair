@@ -102,8 +102,14 @@ export function InsertGroups({ search, onPick, filter = () => true, fragments = 
 
   const all = useMemo(
     () =>
-      [...ins.builtins, ...ins.operatorTemplates, ...(fragments ? ins.fragments : []), ...ins.operators].filter(filter),
-    [ins.builtins, ins.operatorTemplates, ins.fragments, ins.operators, fragments, filter],
+      [
+        ...ins.builtins,
+        ...ins.operatorTemplates,
+        ...ins.blueprints,
+        ...(fragments ? ins.fragments : []),
+        ...ins.operators,
+      ].filter(filter),
+    [ins.builtins, ins.operatorTemplates, ins.blueprints, ins.fragments, ins.operators, fragments, filter],
   );
   const byKey = useMemo(() => new Map(all.map((i) => [i.key, i])), [all]);
   const pinned = useMemo(() => {
@@ -145,6 +151,14 @@ export function InsertGroups({ search, onPick, filter = () => true, fragments = 
       {ins.operatorTemplates.some(filter) ? (
         <Command.Group heading={t("palette.operatorTemplates")}>
           {ins.operatorTemplates
+            .filter(filter)
+            .filter((i) => typing || !pinnedKeys.has(i.key))
+            .map((i) => item(i))}
+        </Command.Group>
+      ) : null}
+      {ins.blueprints.some(filter) ? (
+        <Command.Group heading={t("palette.blueprints")}>
+          {ins.blueprints
             .filter(filter)
             .filter((i) => typing || !pinnedKeys.has(i.key))
             .map((i) => item(i))}

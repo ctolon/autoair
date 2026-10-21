@@ -27,6 +27,7 @@ from pydantic import BaseModel, Field, SecretStr
 
 from autoair.importer.python_dag import ImportedDag, import_python_file
 from autoair.net import tls
+from autoair.preserve.service import mark_hand_written
 
 FileStatus = Literal["imported", "no_dag", "excluded", "error", "not_scanned"]
 _REF = re.compile(r"^[A-Za-z0-9][\w./-]{0,200}$")
@@ -244,6 +245,10 @@ def scan(
     def one(rel: str) -> BulkFileResult:
         res = import_python_file(root / rel, timeout=timeout, pythonpath=[root])
         dags = [BulkDag(**d.model_dump()) for d in res.dags]
+        if len(dags) == 1 and dags[0].spec is not None:
+            # The file is the DAG's hand-written source: deploys preserve it.
+            text = (root / rel).read_text(encoding="utf-8")
+            dags[0].spec = mark_hand_written(dags[0].spec, text, dags[0].warnings)
         if lookup is not None:
             for d in dags:
                 if d.spec is not None:

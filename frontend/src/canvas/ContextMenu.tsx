@@ -243,7 +243,7 @@ export function CanvasContextMenu({ children }: { children: ReactElement }) {
                   icon={<LuFocus />}
                   label={t("actions.fitView")}
                   command="canvas.fitView"
-                  onSelect={act.fitView}
+                  onSelect={() => act.fitView()}
                 />
               </>
             )}

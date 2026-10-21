@@ -1,0 +1,34 @@
+# STAND-IN for your Airflow manifests: a trimmed api-server Deployment with the labels and
+# container name of the official Apache Airflow chart. Not a working Airflow.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: airflow-api-server
+  labels:
+    tier: airflow
+    component: api-server
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      tier: airflow
+      component: api-server
+  template:
+    metadata:
+      labels:
+        tier: airflow
+        component: api-server
+    spec:
+      containers:
+        - name: api-server
+          image: apache/airflow:3.3.2
+          args: [bash, -c, exec airflow api-server]
+          ports:
+            - name: api-server
+              containerPort: 8080
+          env:
+            - { name: AIRFLOW__CORE__EXECUTOR, value: KubernetesExecutor }
+          livenessProbe:
+            httpGet:
+              path: /api/v2/monitor/health
+              port: 8080

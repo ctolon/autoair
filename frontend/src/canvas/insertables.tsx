@@ -11,6 +11,7 @@ import {
   LuGitBranch,
   LuLayers,
   LuMessageSquare,
+  LuPackage,
   LuPackageCheck,
   LuPuzzle,
   LuRadar,
@@ -26,12 +27,20 @@ import {
   listOperatorsOptions,
   listTemplatesOptions,
 } from "../api/gen/@tanstack/react-query.gen";
-import type { OperatorSummary } from "../api/gen/types.gen";
+import type { BlueprintSummary, OperatorSummary } from "../api/gen/types.gen";
 import { type NodeSpec, PYTHON_DECORATORS, type PythonDecorator, isPythonDecorator } from "../lib/types";
 import { useMeta } from "../lifecycle/hooks";
 import { decoratorIcon } from "./icons";
 import { useBuilder } from "../store/builder";
-import { makeCustomSpec, makeGroupSpec, makeNoteSpec, makeOperatorSpec, makePythonSpec } from "./factories";
+import { useBlueprintSummaries } from "./blueprints";
+import {
+  makeBlueprintSpec,
+  makeCustomSpec,
+  makeGroupSpec,
+  makeNoteSpec,
+  makeOperatorSpec,
+  makePythonSpec,
+} from "./factories";
 
 /**
  * What inserting an item produces. Template payloads (fragments and operator templates) are
@@ -39,12 +48,13 @@ import { makeCustomSpec, makeGroupSpec, makeNoteSpec, makeOperatorSpec, makePyth
  */
 export type InsertPayload = { kind: "spec"; spec: NodeSpec } | { kind: "fragment"; templateId: string };
 
-export type InsertCategory = "builtin" | "operator" | "sensor" | "transfer" | "fragment" | "operatorTemplate";
+export type InsertCategory =
+  "builtin" | "operator" | "sensor" | "transfer" | "fragment" | "operatorTemplate" | "blueprint";
 
 export type InsertItem = {
   /**
    * Stable key (favorites / recent): `op:<fqn>`, `py:<decorator>`, `builtin:<x>`, `custom:<name>`,
-   * `fragment:<id>`, `optemplate:<id>`.
+   * `fragment:<id>`, `optemplate:<id>`, `blueprint:<name>`.
    */
   key: string;
   label: string;
@@ -172,6 +182,22 @@ export function operatorItem(
   };
 }
 
+/** Palette item of an Astronomer Blueprint (its newest version; the inspector switches versions). */
+export function blueprintItem(bp: BlueprintSummary, t: Translate): InsertItem {
+  const meta = [`v${bp.version}`, bp.package].filter(Boolean).join(" · ");
+  return {
+    key: `blueprint:${bp.name}`,
+    label: bp.name,
+    hint: [meta, bp.summary || bp.class_path].filter(Boolean).join(" — ") || t("insert.blueprintHint"),
+    category: "blueprint",
+    icon: LuPackage,
+    keywords: [bp.class_path, bp.class_name, bp.package ?? "", "blueprint", "astronomer", "airflow-blueprint"].filter(
+      Boolean,
+    ),
+    payload: () => ({ kind: "spec", spec: makeBlueprintSpec(bp, nodes()) }),
+  };
+}
+
 const DECORATOR_ICONS: Partial<Record<PythonDecorator, IconType>> = {
   branch: LuGitBranch,
   short_circuit: LuGitBranch,
@@ -295,11 +321,18 @@ export function useInsertables() {
     [templates.data, t],
   );
 
+  const blueprintQuery = useBlueprintSummaries();
+  const blueprints = useMemo(
+    () => (blueprintQuery.data ?? []).filter((bp) => bp.latest !== false).map((bp) => blueprintItem(bp, t)),
+    [blueprintQuery.data, t],
+  );
+
   return {
     builtins,
     operators: operatorItems,
     fragments,
     operatorTemplates,
+    blueprints,
     operatorsQuery: operators,
     isPending: operators.isPending,
   };

@@ -369,7 +369,7 @@ The catalog cache is keyed by the installed Airflow distributions, the AutoAir v
 | `AUTOAIR_SERVER__GZIP_MIN_SIZE` / `AUTOAIR_SERVER__GZIP_LEVEL` | `2048` / `6` | Response compression |
 | `AUTOAIR_SERVER__AIRFLOW_FETCH_CONCURRENCY` / `AUTOAIR_SERVER__AIRFLOW_PAGE_SIZE` | `8` / `1000` | Airflow API client |
 | `AUTOAIR_SERVER__OTEL_EXCLUDED_URLS` | `["health","ready","metrics"]` | Not traced |
-| `AUTOAIR_PLUGIN__NAV_NAME`, `AUTOAIR_PLUGIN__NAV_CATEGORY`, `AUTOAIR_PLUGIN__DAG_TAB_NAME`, `AUTOAIR_PLUGIN__DAG_TAB` | `DAG Builder`, `browse`, `AutoAir`, `true` | Airflow UI entries (plugin mode) |
+| `AUTOAIR_PLUGIN__NAV_NAME`, `AUTOAIR_PLUGIN__NAV_CATEGORY`, `AUTOAIR_PLUGIN__DAG_TAB_NAME`, `AUTOAIR_PLUGIN__DAG_TAB`, `AUTOAIR_PLUGIN__DAG_TAB_TAGS` | `DAG Builder`, `browse`, `AutoAir`, `true`, `[]` | Airflow UI entries (plugin mode); the tags limit the DAG tab to tagged DAGs on Airflow 3.4+ |
 
 ### Security notes
 

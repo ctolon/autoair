@@ -1,0 +1,50 @@
+# Production: `autoair serve` with PostgreSQL state and the git deploy target, 2-6 replicas
+# (HorizontalPodAutoscaler), a PodDisruptionBudget, the isolated validator service, a Gateway
+# API HTTPRoute and NetworkPolicies. Copy this overlay into your own configuration repository
+# and edit settings/settings.env (host names, repository, database URL) and the Gateway the
+# route attaches to (../../components/gateway-api/httproute.yaml: parentRefs, hostnames). For
+# an Ingress controller instead, swap components/gateway-api for components/ingress and point
+# the NetworkPolicies at the controller's namespace.
+#
+# Secrets the pods expect (create them first, or with External Secrets / Sealed Secrets;
+# examples in ../../README.md):
+#   autoair-db         password        PostgreSQL password of the autoair role
+#   autoair-collab     secret          HMAC key of collaboration tickets, shared by replicas
+#   autoair-git        connection      Airflow connection git_dags (token for the git host)
+#   autoair-validator  connection      Airflow connection autoair_validator (HMAC key)
+#
+#   kubectl kustomize deploy/kustomize/overlays/production | kubectl apply -f -
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: autoair
+
+resources:
+  - namespace.yaml
+  - ../../base
+
+components:
+  - ../../components/postgresql
+  - ../../components/git-target
+  # Needs an image of AutoAir 0.2.0 or later (`autoair validator-serve`).
+  - ../../components/validator
+  - ../../components/gateway-api
+  # Or, with an Ingress controller: - ../../components/ingress
+  - ../../components/hpa
+  - ../../components/network-policies
+  # Optional:
+  # - ../../components/ai-service
+  # - ../../components/mcp-http
+  # - ../../components/service-monitor
+  # Last, so its values win over the components' defaults.
+  - settings
+
+# Repeated from ../../base: an overlay's images: entry also reaches the containers the
+# components add. Keep the tags equal (CI checks it) and bump them with every release.
+images:
+  - name: ghcr.io/ctolon/autoair
+    newTag: "0.1.0"
+
+patches:
+  - path: deployment-patch.yaml
+  - path: pdb-patch.yaml

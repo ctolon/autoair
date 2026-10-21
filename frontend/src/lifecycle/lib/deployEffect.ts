@@ -20,7 +20,7 @@ export function deployEffect(storage: TargetStatus, rights: Rights, directPush =
 
 type SpecNode = NonNullable<DagSpec["nodes"]>[number];
 const nodeName = (n: SpecNode): string | null =>
-  n.kind === "task_group" ? n.group_id : n.kind === "note" ? null : n.task_id;
+  n.kind === "task_group" ? n.group_id : n.kind === "note" ? null : n.kind === "blueprint" ? n.step_id : n.task_id;
 
 /**
  * Comparable form of a spec part: key order and `null` vs. missing are not changes (a spec

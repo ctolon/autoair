@@ -378,6 +378,136 @@
       "title": "AssetWatcherSpec",
       "type": "object"
     },
+    "BlueprintNode": {
+      "additionalProperties": false,
+      "description": "A step built from an Astronomer Blueprint template (``airflow-blueprint``).\n\nA blueprint is a reusable ``Blueprint[Config]`` class with a Pydantic config model whose\n``render()`` returns a task or a TaskGroup. The generated DAG imports ``class_path``, sets\n``step_id`` on an instance and calls ``render(Config(**config))``, the way the blueprint\nproject documents its use in Python DAGs. Edges to and from the node depend on the whole\nrendered step. The Airflow environment needs ``airflow-blueprint`` and the template.",
+      "properties": {
+        "id": {
+          "maxLength": 100,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_-]+$",
+          "title": "Id",
+          "type": "string"
+        },
+        "label": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Canvas label only.",
+          "title": "Label"
+        },
+        "icon": {
+          "anyOf": [
+            {
+              "pattern": "^(builtin|custom|package):[a-z0-9][a-z0-9-]{0,80}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Canvas icon only (builtin:<logo> or custom:<name>); overrides the default.",
+          "title": "Icon"
+        },
+        "parent_group": {
+          "anyOf": [
+            {
+              "maxLength": 100,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9_-]+$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Id of a task_group node.",
+          "title": "Parent Group"
+        },
+        "position": {
+          "$ref": "#/$defs/Position"
+        },
+        "kind": {
+          "const": "blueprint",
+          "title": "Kind",
+          "type": "string"
+        },
+        "step_id": {
+          "description": "Task or group id the blueprint renders under.",
+          "maxLength": 250,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.-]+$",
+          "title": "Step Id",
+          "type": "string"
+        },
+        "blueprint": {
+          "description": "Registered blueprint name (snake_case), as `blueprint list` shows it.",
+          "maxLength": 100,
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "title": "Blueprint",
+          "type": "string"
+        },
+        "version": {
+          "default": 1,
+          "description": "Blueprint version the step is pinned to.",
+          "minimum": 1,
+          "title": "Version",
+          "type": "integer"
+        },
+        "class_path": {
+          "description": "Importable path of the Blueprint class (module.Class).",
+          "maxLength": 300,
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]*(\\.[A-Za-z_][A-Za-z0-9_]*)+$",
+          "title": "Class Path",
+          "type": "string"
+        },
+        "config_class": {
+          "anyOf": [
+            {
+              "maxLength": 100,
+              "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Name of the config model in the blueprint's module; omitted: the generated code asks the class for it (get_config_type()).",
+          "title": "Config Class"
+        },
+        "config": {
+          "additionalProperties": true,
+          "description": "Config values, validated against the blueprint's config schema. Plain JSON values only (no XCom references or tagged values).",
+          "title": "Config",
+          "type": "object"
+        },
+        "disabled": {
+          "default": false,
+          "description": "Excluded from the generated DAG (kept on the canvas).",
+          "title": "Disabled",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "step_id",
+        "blueprint",
+        "class_path"
+      ],
+      "title": "BlueprintNode",
+      "type": "object"
+    },
     "CallbackRef": {
       "additionalProperties": false,
       "description": "A notifier instance (``BaseNotifier`` subclass from the catalog).",
@@ -1154,6 +1284,64 @@
         }
       },
       "title": "DagParam",
+      "type": "object"
+    },
+    "DagSource": {
+      "additionalProperties": false,
+      "description": "How the DAG file of a spec-backed DAG is written (python output mode only).\n\n``generate`` writes the file AutoAir generates from the spec; ``preserve`` applies each\nchange to the existing (hand-written) file as a minimal patch and keeps its comments,\nformatting and ordering; ``strict-preserve`` is preserve that refuses every change it\ncannot apply exactly. ``auto``: preserve for DAGs that come from hand-written Python\n(imported or applied in the code mode), generate for DAGs built in AutoAir.",
+      "properties": {
+        "policy": {
+          "default": "auto",
+          "description": "auto | generate | preserve | strict-preserve (see the model description).",
+          "enum": [
+            "auto",
+            "generate",
+            "preserve",
+            "strict-preserve"
+          ],
+          "title": "Policy",
+          "type": "string"
+        },
+        "origin": {
+          "default": "autoair",
+          "description": "autoair: built in AutoAir; python: imported from or edited as a hand-written Python file (makes 'auto' preserve).",
+          "enum": [
+            "autoair",
+            "python"
+          ],
+          "title": "Origin",
+          "type": "string"
+        },
+        "code": {
+          "anyOf": [
+            {
+              "maxLength": 2000000,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The hand-written file this spec was last imported from or applied in the code mode. Preserve patches it when the deploy target has no newer version of the file. Writing it needs the 'code:raw' permission (it is arbitrary Python).",
+          "title": "Code"
+        },
+        "base_sha": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "sha256 of the file the editor started from (the imported file). Equal to the hash of `code`: the code is that file unchanged; different: it was edited in the code mode, so a merge with changes made outside AutoAir uses the version deployed last as the common ancestor.",
+          "title": "Base Sha"
+        }
+      },
+      "title": "DagSource",
       "type": "object"
     },
     "DeadlineSpec": {
@@ -3140,8 +3328,8 @@
   "additionalProperties": false,
   "properties": {
     "spec_version": {
-      "const": 2,
-      "default": 2,
+      "const": 3,
+      "default": 3,
       "title": "Spec Version",
       "type": "integer"
     },
@@ -3481,6 +3669,7 @@
       "items": {
         "discriminator": {
           "mapping": {
+            "blueprint": "#/$defs/BlueprintNode",
             "custom": "#/$defs/CustomNode",
             "note": "#/$defs/NoteNode",
             "operator": "#/$defs/OperatorNode",
@@ -3503,6 +3692,9 @@
             "$ref": "#/$defs/CustomNode"
           },
           {
+            "$ref": "#/$defs/BlueprintNode"
+          },
+          {
             "$ref": "#/$defs/NoteNode"
           }
         ]
@@ -3516,6 +3708,18 @@
       },
       "title": "Edges",
       "type": "array"
+    },
+    "source": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/DagSource"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Source policy of the DAG file (generate / preserve / strict-preserve) and the hand-written file it comes from. None: auto policy, built in AutoAir."
     },
     "raw_code": {
       "anyOf": [

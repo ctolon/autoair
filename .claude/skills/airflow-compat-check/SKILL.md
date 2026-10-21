@@ -6,7 +6,7 @@ description: Check that a change works on every supported Airflow (>=3.0,<4; CI 
 # Airflow compatibility check
 
 AutoAir supports Apache Airflow `>=3.0,<4` on Python 3.10-3.14. The dev venv runs Airflow
-3.3; CI tests 3.0.6, 3.1.8, 3.2.2, 3.3.2 and 3.4.0b1 (`noxfile.py`, `.github/workflows/ci.yml`).
+3.3; CI tests 3.0.6, 3.1.8, 3.2.2, 3.3.2 and 3.4.0b2 (`noxfile.py`, `.github/workflows/ci.yml`).
 Code that works on the dev venv can still break 3.0.
 
 ## Rules

@@ -6,13 +6,13 @@ sidebar_label: Introduction
 
 AutoAir is a DAG builder for Apache Airflow 3. You design a DAG on a canvas (or in a code editor, or through an AI assistant or MCP agent), and AutoAir stores it as a versioned **DAG specification**, generates a readable Python DAG file from that specification, validates it with Airflow's own `DagBag`, and deploys it to the place Airflow reads DAGs from: a local folder, object storage, or a Git repository (directly or as a pull request).
 
-AutoAir is one Python package (`autoair`, Apache-2.0) with a React frontend shipped inside the wheel. It supports Airflow 3.0 or later, below 4, on Python 3.10 to 3.14. CI covers Airflow 3.0.6, 3.1.8, 3.2.2 and 3.3.2 plus the 3.4.0b1 pre-release, and generated imports follow the target Airflow version. Releases are published to PyPI as `autoair` and as the container image `ghcr.io/ctolon/autoair` (the official Airflow image with AutoAir installed).
+AutoAir is one Python package (`autoair`, Apache-2.0) with a React frontend shipped inside the wheel. It supports Airflow 3.0 or later, below 4, on Python 3.10 to 3.14. CI covers Airflow 3.0.6, 3.1.8, 3.2.2 and 3.3.2 plus the 3.4.0b2 pre-release, and generated imports follow the target Airflow version. Releases are published to PyPI as `autoair` and as the container image `ghcr.io/ctolon/autoair` (the official Airflow image with AutoAir installed).
 
 <Screenshot name="canvas-dag" alt="The AutoAir builder: operator palette on the left, a DAG of connected tasks on the canvas, the inspector on the right and the Problems and Code tabs in the bottom panel" caption="The builder: palette, canvas, inspector and bottom panel." />
 
 ## The spec-centric model
 
-Every DAG built with AutoAir is a JSON document, the **DagSpec** (`spec_version: 2`), saved as `<dag_id>.autoair.json` next to the generated file. Everything else is derived from it:
+Every DAG built with AutoAir is a JSON document, the **DagSpec** (`spec_version: 3`), saved as `<dag_id>.autoair.json` next to the generated file. Everything else is derived from it:
 
 ```mermaid
 flowchart LR

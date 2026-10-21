@@ -3,7 +3,8 @@
 Apache components are Sphinx sites under ``airflow.apache.org/docs/<package>/<version>/``
 (the same layout in a downloaded copy or an internal mirror) and rst sources under fixed
 folders of the apache/airflow repository. Astronomer components are ``llms.txt`` indexes of
-Markdown pages.
+Markdown pages. ``autoair`` is AutoAir's own documentation, packaged with the wheel
+(:mod:`autoair.docs`).
 """
 
 from __future__ import annotations
@@ -117,6 +118,15 @@ COMPONENTS: dict[str, Component] = {
             "Astro Runtime, Astronomer's Airflow distribution.",
             llms_url="https://www.astronomer.io/docs/runtime/llms.txt",
         ),
+        Component(
+            "autoair",
+            "AutoAir",
+            "autoair",
+            True,
+            "AutoAir's own documentation (installation, builder, deploy, configuration, IAM, "
+            "AI and MCP), packaged with the installed version: read without network.",
+            distribution="autoair",
+        ),
     )
 }
 
@@ -126,7 +136,11 @@ def component_infos() -> list[ComponentInfo]:
         ComponentInfo(
             id=c.id,
             title=c.title,
-            family="astronomer" if c.family == "astronomer" else "apache",
+            family="astronomer"
+            if c.family == "astronomer"
+            else "autoair"
+            if c.family == "autoair"
+            else "apache",
             default=c.default,
             description=c.description,
         )

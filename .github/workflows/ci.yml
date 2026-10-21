@@ -76,17 +76,17 @@ jobs:
         # skip with that reason. Airflow 3.0 brings SQLAlchemy 1.4: the SQL extras run on it.
         include:
           # Oldest supported Airflow on the oldest and newest Python it supports.
-          - { python: "3.10", airflow: "3.0.6", extras: "all,mcp,sqlite,postgres,kb-pgvector" }
-          - { python: "3.12", airflow: "3.0.6", extras: "all,mcp,sqlite,postgres,kb-pgvector" }
+          - { python: "3.10", airflow: "3.0.6", extras: "all,mcp,blueprint,sqlite,postgres,kb-pgvector" }
+          - { python: "3.12", airflow: "3.0.6", extras: "all,mcp,blueprint,sqlite,postgres,kb-pgvector" }
           # Every minor in between (see noxfile.py AIRFLOW_VERSIONS).
-          - { python: "3.12", airflow: "3.1.8", extras: "all,sqlite,postgres,kb-pgvector" }
-          - { python: "3.12", airflow: "3.2.2", extras: "all,mcp,sqlite,postgres,kb-pgvector" }
+          - { python: "3.12", airflow: "3.1.8", extras: "all,blueprint,sqlite,postgres,kb-pgvector" }
+          - { python: "3.12", airflow: "3.2.2", extras: "all,mcp,blueprint,sqlite,postgres,kb-pgvector" }
           # Latest Airflow on every supported Python.
-          - { python: "3.10", airflow: "3.3.2", extras: "all,mcp,sqlite,postgres,kb-pgvector" }
-          - { python: "3.11", airflow: "3.3.2", extras: "all,mcp,sqlite,postgres,kb-pgvector" }
-          - { python: "3.12", airflow: "3.3.2", extras: "all,mcp,sqlite,postgres,kb-pgvector" }
-          - { python: "3.13", airflow: "3.3.2", extras: "all,mcp,sqlite,postgres,kb-pgvector" }
-          - { python: "3.14", airflow: "3.3.2", extras: "all,mcp,sqlite,postgres,kb-pgvector" }
+          - { python: "3.10", airflow: "3.3.2", extras: "all,mcp,blueprint,sqlite,postgres,kb-pgvector" }
+          - { python: "3.11", airflow: "3.3.2", extras: "all,mcp,blueprint,sqlite,postgres,kb-pgvector" }
+          - { python: "3.12", airflow: "3.3.2", extras: "all,mcp,blueprint,sqlite,postgres,kb-pgvector" }
+          - { python: "3.13", airflow: "3.3.2", extras: "all,mcp,blueprint,sqlite,postgres,kb-pgvector" }
+          - { python: "3.14", airflow: "3.3.2", extras: "all,mcp,blueprint,sqlite,postgres,kb-pgvector" }
     env:
       AIRFLOW__CORE__LOAD_EXAMPLES: "False"
     steps:
@@ -214,9 +214,10 @@ jobs:
   visual:
     name: Frontend · visual regression
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 40
     # Baselines are rendered on Linux/Chrome; font or Chrome updates can shift pixels.
     # Tracked here, blocking once the baselines are proven stable on the hosted runners.
+    # Not part of "CI OK" for the same reason.
     continue-on-error: true
     defaults:
       run:
@@ -241,12 +242,22 @@ jobs:
         run: npm run test:visual
         env:
           AUTOAIR_VISUAL_DIR: ${{ runner.temp }}/visual
+      # Inside the Airflow UI: a private Airflow with the plugin on free ports, the browser in
+      # the Playwright Docker image (the image the plugin baselines were rendered with).
+      - name: Visual suite in the Airflow UI (private Airflow + plugin, light and dark)
+        if: ${{ !cancelled() }}
+        run: npm run test:visual:plugin
+        env:
+          AUTOAIR_VISUAL_DIR: ${{ runner.temp }}/visual-plugin
       - uses: actions/upload-artifact@v4
         if: ${{ failure() }}
         with:
           name: visual-diffs
-          path: ${{ runner.temp }}/visual/results/
+          path: |
+            ${{ runner.temp }}/visual/results/
+            ${{ runner.temp }}/visual-plugin/results/
           retention-days: 14
+          if-no-files-found: ignore
 
   e2e:
     name: E2E · Playwright against Airflow + plugin
@@ -419,6 +430,27 @@ jobs:
           "${base[@]}" --env-file env/git.env --profile git config --quiet
           "${base[@]}" --profile tls config --quiet
           "${base[@]}" --env-file env/observability.env --profile observability config --quiet
+          docker compose -f docker-compose.demo.yml -f docker-compose.validator.yml \
+            --env-file .env config --quiet
+      - name: Install kustomize and kubeconform (pinned, checksum-verified)
+        env:
+          KUSTOMIZE_VERSION: v5.7.1
+          KUSTOMIZE_SHA256: ea375e7372f9aa029129d4b2d16c66b7750b7f1213c4f66f910d981c895818d8
+          KUBECONFORM_VERSION: v0.7.0
+          KUBECONFORM_SHA256: c31518ddd122663b3f3aa874cfe8178cb0988de944f29c74a0b9260920d115d3
+        run: |
+          mkdir -p "$RUNNER_TEMP/k8s-tools" && cd "$RUNNER_TEMP/k8s-tools"
+          curl -sSfLo kustomize.tgz \
+            "https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2F${KUSTOMIZE_VERSION}/kustomize_${KUSTOMIZE_VERSION}_linux_amd64.tar.gz"
+          curl -sSfLo kubeconform.tgz \
+            "https://github.com/yannh/kubeconform/releases/download/${KUBECONFORM_VERSION}/kubeconform-linux-amd64.tar.gz"
+          echo "$KUSTOMIZE_SHA256  kustomize.tgz" | sha256sum -c -
+          echo "$KUBECONFORM_SHA256  kubeconform.tgz" | sha256sum -c -
+          tar -xzf kustomize.tgz kustomize
+          tar -xzf kubeconform.tgz kubeconform
+          echo "$RUNNER_TEMP/k8s-tools" >> "$GITHUB_PATH"
+      - name: Kustomize overlays build and pass kubeconform
+        run: deploy/kustomize/validate.sh
 
   # ------------------------------------------------------------------------------ Live
   live-auth:

@@ -19,6 +19,9 @@ The server needs the `mcp` extra (`pip install 'autoair[mcp]'`: FastMCP 4.x on t
 FastMCP 4 cannot be installed next to Airflow 3.1; there, run the server in its own environment
 ([Airflow compatibility](/docs/installation/compatibility#mcp-next-to-airflow-31)).
 
+For coding agents that only need AutoAir's documentation, `autoair docs-mcp` serves just the
+documentation tools, without Airflow or configuration: see [AutoAir docs MCP](/docs/ai/docs-mcp).
+
 ## Where the server runs
 
 The same server can be served in several places. Over HTTP it always uses streamable HTTP and always
@@ -157,7 +160,7 @@ limits (paging with `offset` → `next_offset`, log tails, truncated code).
 | Specs | `validate_dag_spec` (+ `code:execute` with `import_check`), `apply_spec_patch` (JSON-patch edits addressed by node id), `generate_code` | `builder:use` |
 | Specs | `list_dags` (filter `document_type`: `spec` or `raw`), `get_dag_spec`, `get_dag_code` (the DAG file: a raw code DAG's code or a visual DAG's generated file, with `document_type`) | `spec:read` |
 | Specs | `save_dag_spec` (confirm) | `spec:write` + `deploy` (+ `code:raw` for a spec with `raw_code`) |
-| Specs | `save_raw_dag_code` (confirm): save a [raw code DAG](/docs/user-guide/code-mode#raw-code-dags); updates an existing raw code DAG (keeping its team and environments), refuses to replace a visual DAG | `spec:write` + `deploy` + `code:raw` |
+| Specs | `save_raw_dag_code` (confirm): save a [raw code DAG](/docs/user-guide/code-mode#raw-code-dags); updates an existing raw code DAG (keeping its team and environments) without `deploy:overwrite_ejected`, as long as its file is unchanged since AutoAir wrote it (MCP has no overwrite, so a file changed outside AutoAir is refused); refuses to replace a visual DAG | `spec:write` + `deploy` + `code:raw` |
 | Specs | `delete_dag_spec` (confirm) | `spec:delete` |
 | Specs | `import_python_dag` | `spec:write` + `code:execute` |
 | [Operator templates](/docs/user-guide/operator-templates#mcp) | `list_operator_templates`, `get_operator_template` (a version and the history) | `builder:use` (+ `features.templates`) |
@@ -338,3 +341,4 @@ needs to `developer` or `admin`.
 - [Troubleshooting runs](/docs/ai/troubleshooting) and the chat assistants (where external MCP tools are used)
 - [MCP integration for extensions](/docs/extending/mcp-integration)
 - [Separate AI service](/docs/ai/ai-service)
+- [AutoAir docs MCP](/docs/ai/docs-mcp): the documentation tools on their own (`autoair docs-mcp`)

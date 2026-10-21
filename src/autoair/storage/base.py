@@ -156,6 +156,53 @@ class DagState(BaseModel):
     updated_at: datetime.datetime | None = None
     author: str | None = None
     environment: str | None = None
+    source_sha: str | None = Field(
+        default=None,
+        description="sha256 of the spec's source.code (the hand-written file) when it was "
+        "deployed: a later deploy with the same code patches the target's file, a new "
+        "code (an import, an edit in the code mode) patches that code instead.",
+    )
+    hand_written: bool = Field(
+        default=False,
+        description="The DAG file is a hand-written file AutoAir keeps (written by a "
+        "source-preserving deploy or taken over as a raw code DAG), not a generated one: "
+        "regenerating or deleting it needs 'deploy:overwrite_ejected'.",
+    )
+
+
+class ExistingFile(BaseModel):
+    """The DAG file currently in a deploy target, with what AutoAir recorded about it."""
+
+    name: str
+    content: str
+    location: str
+    recorded_sha: str | None = Field(
+        default=None, description="sha256 AutoAir recorded when it last wrote the file."
+    )
+    source_sha: str | None = Field(default=None, description="DagState.source_sha.")
+    hand_written: bool = Field(default=False, description="DagState.hand_written.")
+
+
+def hand_written_refusal(location: str) -> str:
+    return (
+        f"{location} is a hand-written DAG file AutoAir keeps for this DAG; deleting it "
+        "needs the AutoAir permission 'deploy:overwrite_ejected', replacing it also "
+        "preserve.allow_force_overwrite"
+    )
+
+
+class HandWrittenError(StorageError):
+    """A write or delete would replace the hand-written DAG file AutoAir keeps for a DAG
+    without the caller being allowed to (``allow_hand_written``)."""
+
+    def __init__(self, path: str) -> None:
+        self.path = path
+        super().__init__(hand_written_refusal(path))
+
+
+def source_sha(spec: DagSpec) -> str | None:
+    code = spec.source.code if spec.source is not None else None
+    return sha256_text(code) if code is not None else None
 
 
 # --------------------------------------------------------------------------- protocols
@@ -259,20 +306,33 @@ def is_owned(content: str) -> bool:
 
 
 def check_overwrite(
-    location: str, existing: str | None, recorded: str | None, new_sha: str | None, force: bool
+    location: str,
+    existing: str | None,
+    recorded: str | None,
+    new_sha: str | None,
+    force: bool,
+    expected: str | None = None,
 ) -> None:
     """Refuse to clobber foreign files and (unless ``force``) hand-edited generated ones.
 
     ``recorded`` is the sha256 AutoAir stored when it last wrote the file; ``new_sha`` the
-    hash of the content about to be written (``None`` when deleting).
+    hash of the content about to be written (``None`` when deleting). ``expected``: the
+    hash of the file a source-preserving deploy patched -- the write goes ahead (also over a
+    hand-written file) only while the file is still exactly that one.
     """
     if existing is None:
         return
+    if expected is not None:
+        if sha256_text(existing) == expected:
+            return
+        raise EjectedError(location)
+    current_sha = sha256_text(existing)
     if not is_owned(existing):
+        # A hand-written file (also one a source-preserving deploy wrote before) is only
+        # ever replaced through ``expected``: a deliberate, permission-checked write.
         raise StorageError(
             f"{location} exists and was not created by AutoAir; refusing to overwrite it"
         )
-    current_sha = sha256_text(existing)
     if recorded is not None and current_sha not in (recorded, new_sha) and not force:
         raise EjectedError(location)
 

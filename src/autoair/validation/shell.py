@@ -9,11 +9,13 @@ reported. Off with ``AUTOAIR_EDITOR__SHELLCHECK_IN_VALIDATION=false``.
 from __future__ import annotations
 
 import ast
+import hashlib
+import threading
+from collections import OrderedDict
 from collections.abc import Iterator
-from functools import lru_cache
 from typing import TYPE_CHECKING, Any
 
-from autoair.lsp.shell import ShellDiagnostic, ShellLintRequest, lint_shell
+from autoair.lsp.shell import ShellDiagnostic, ShellLintRequest, lint_shell_many
 
 if TYPE_CHECKING:
     from autoair.spec import DagSpec
@@ -23,12 +25,50 @@ _SHELLS = {"bash", "sh", "dash", "ksh"}
 _SCRIPT_SUFFIXES = (".sh", ".bash")
 
 
-@lru_cache(maxsize=256)
-def _lint(code: str, shell: str, settings_key: tuple[Any, ...]) -> tuple[ShellDiagnostic, ...]:
-    # settings_key: the active exclude list, so a configuration change invalidates the cache.
-    del settings_key
-    result = lint_shell(ShellLintRequest(code=code, shell=shell))
-    return tuple(result.diagnostics)
+# Results by (hash of the script, shell, exclude settings). ShellCheck output is a pure
+# function of that key, so the memo never goes stale; it spares re-linting every unchanged
+# Bash task on each live validation of a large DAG. Bounded LRU, per process (derived data).
+_CACHE_SIZE = 4096
+_cache: OrderedDict[tuple[bytes, str, tuple[Any, ...]], tuple[ShellDiagnostic, ...]] = OrderedDict()
+_cache_lock = threading.Lock()
+
+
+def _digest(code: str) -> bytes:
+    # Keys hold a hash, not the script: the memo's memory stays bounded whatever the size.
+    return hashlib.sha256(code.encode()).digest()
+
+
+def _lint_all(
+    scripts: list[tuple[str, str]], settings_key: tuple[Any, ...]
+) -> dict[tuple[str, str], tuple[ShellDiagnostic, ...]]:
+    """Diagnostics per (code, shell): memo hits, the misses in one ShellCheck run."""
+    found: dict[tuple[str, str], tuple[ShellDiagnostic, ...]] = {}
+    with _cache_lock:
+        for code, shell in scripts:
+            key = (_digest(code), shell, settings_key)
+            if key in _cache:
+                _cache.move_to_end(key)
+                found[(code, shell)] = _cache[key]
+    missing = list(dict.fromkeys(s for s in scripts if s not in found))
+    if missing:
+        results = lint_shell_many([ShellLintRequest(code=c, shell=sh) for c, sh in missing])
+        with _cache_lock:
+            for (code, shell), result in zip(missing, results, strict=True):
+                if result is None:  # the run failed: report nothing now, retry next time
+                    continue
+                found[(code, shell)] = tuple(result.diagnostics)
+                key = (_digest(code), shell, settings_key)
+                _cache[key] = found[(code, shell)]
+                _cache.move_to_end(key)
+            while len(_cache) > _CACHE_SIZE:
+                _cache.popitem(last=False)
+    return found
+
+
+def clear_cache() -> None:
+    """Forget memoised ShellCheck results (benchmarks measure a cold validation with it)."""
+    with _cache_lock:
+        _cache.clear()
 
 
 def _is_script_path(text: str) -> bool:
@@ -107,21 +147,26 @@ def shell_problems(spec: DagSpec) -> list[Problem]:
     if not cfg.shellcheck_in_validation or shellcheck_path() is None:
         return []
     key = (tuple(cfg.shellcheck_exclude), tuple(cfg.shellcheck_exclude_extra))
-    problems: list[Problem] = []
+    # (node id, field, code, shell, line offset) of every script, then one batched lint.
+    found: list[tuple[str, str, str, str, int | None]] = []
     for n in spec.task_nodes():
         if isinstance(n, OperatorNode):
             for name, value in n.params.items():
                 if name == "bash_command" and isinstance(value, str) and value.strip():
                     if not _is_script_path(value):
-                        problems += _problems(_lint(value, "bash", key), n.id, name)
+                        found.append((n.id, name, value, "bash", None))
                     continue
                 for field, code, shell in _scripts(value, name):
-                    problems += _problems(_lint(code, shell, key), n.id, field)
+                    found.append((n.id, field, code, shell, None))
         elif isinstance(n, PythonTaskNode) and n.decorator == "bash":
             for line, text in _returned_literals(n.code):
                 if text.strip() and not _is_script_path(text):
-                    problems += _problems(_lint(text, "bash", key), n.id, "code", line - 1)
+                    found.append((n.id, "code", text, "bash", line - 1))
+    diagnostics = _lint_all([(code, shell) for _, _, code, shell, _ in found], key)
+    problems: list[Problem] = []
+    for node_id, field, code, shell, offset in found:
+        problems += _problems(diagnostics.get((code, shell), ()), node_id, field, offset)
     return problems
 
 
-__all__ = ["shell_problems"]
+__all__ = ["clear_cache", "shell_problems"]

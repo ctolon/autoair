@@ -11,6 +11,8 @@ developer / admin assistants and the troubleshooting agent run their real tool l
 
 * developer assistant, prompts containing ``docs:``: search_docs (scope docs, the
   knowledge base), then an answer citing [1];
+* developer assistant, prompts containing ``remember:``: remember (a write tool, so the
+  call waits for approval), then an answer that depends on the approval or denial;
 * developer assistant: get_current_spec + search_catalog, then propose_spec_change
   (retries=3 on the first task), then a Markdown answer with code and follow-ups;
 * admin assistant: explain_user_access + search_audit, then propose_config_snippet, then
@@ -121,6 +123,18 @@ def respond(body: dict[str, Any]) -> tuple[str, list[dict[str, Any]]]:
             "According to the Airflow documentation [1], use the BashOperator to run shell "
             "commands; `bash_command` is templated with Jinja."
         ), []
+    if "developer assistant" in system and "remember:" in user.lower():
+        # Tool approval E2E: remember writes a memory, so its call waits for the user's
+        # decision; the run resumes with the tool result or the denial.
+        stored = next((t for t in tools if t.get("name") == "remember"), None)
+        if stored is None:
+            text = user[user.lower().rindex("remember:") + len("remember:") :].strip()
+            return "I will store that convention for you.", [
+                _call("remember", {"text": text or "a convention", "scope": "user"})
+            ]
+        if "denied" in _text(stored.get("content")).lower():
+            return "Understood: I did not store it.", []
+        return "Stored the convention; I will follow it from now on.", []
     if "developer assistant" in system:
         if not tools:
             return "Let me look at the DAG first.\n\n", [

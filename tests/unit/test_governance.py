@@ -267,3 +267,29 @@ def test_per_user_mode_builds_without_shared_token() -> None:
             StorageSettings(mode="git", git=GitStorageSettings(provider="github", repo="a/b")),
             default_local_path=Path("."),
         )
+
+
+def test_validation_summary_records_a_skipped_import_check() -> None:
+    from autoair.validation import Problem, ValidationReport
+
+    open_skip = ValidationReport(
+        ok=True,
+        problems=[Problem(severity="warning", code="import_service", message="unavailable")],
+    )
+    summary = ValidationSummary.of(open_skip)
+    assert summary.import_check is None
+    assert summary.import_check_skipped == "fail_open"
+    assert "skipped (validator unavailable, fail open)" in summary.text()
+    no_right = ValidationReport(
+        ok=True,
+        problems=[Problem(severity="info", code="import_check_skipped", message="no right")],
+    )
+    assert ValidationSummary.of(no_right).import_check_skipped == "permission"
+    assert ValidationSummary.of(ValidationReport(ok=True, problems=[])).import_check_skipped is None
+    context = DeployContext(
+        action="deploy",
+        dag_id="d",
+        user=UserIdentity(username="alice"),
+        validation=summary,
+    )
+    assert context.audit()["validation"]["import_check_skipped"] == "fail_open"

@@ -113,6 +113,8 @@ The first start without `AUTOAIR_CATALOG_FILE` builds the catalog, which can tak
 
 ## Standalone AutoAir Deployment
 
+Complete, hardened manifests for this layout (Deployment, PodDisruptionBudget, probes, NetworkPolicies, validator, AI service, HorizontalPodAutoscaler) are in [`deploy/kustomize`](https://github.com/ctolon/autoair/tree/main/deploy/kustomize); see [Kubernetes with Kustomize](/docs/deployment/kustomize). The sketch below shows the essentials.
+
 A minimal standalone Deployment next to Airflow. It uses the image built for the plugin (Airflow's image contains uvicorn); see [Plugin with the Airflow Helm chart](/docs/deployment/helm-plugin) for the image.
 
 ```yaml
@@ -190,6 +192,7 @@ See [Upgrading](/docs/installation/upgrading) for version-specific notes.
 
 ## Related pages
 
+- [Kubernetes with Kustomize](/docs/deployment/kustomize)
 - [Plugin with the Airflow Helm chart](/docs/deployment/helm-plugin)
 - [Git bundles and git-sync](/docs/deployment/git-bundles)
 - [PostgreSQL for AutoAir state](/docs/deployment/postgres)

@@ -70,7 +70,8 @@
     "compact": "Summarising the earlier conversation…",
     "collect": "Reading the run and its logs…",
     "analyze": "Analysing…",
-    "mcp": "Connecting tools…"
+    "mcp": "Connecting tools…",
+    "approval": "Waiting for your approval…"
   },
   "threads": {
     "title": "Conversations",
@@ -165,7 +166,8 @@
       "no_change": "no change proposed",
       "approved": "approved",
       "rejected": "rejected",
-      "applied": "deployed"
+      "applied": "deployed",
+      "awaiting_approval": "waiting for tool approval"
     },
     "category": {
       "spec": "DAG",
@@ -285,5 +287,40 @@
     "hint": "Write the description from the changes since the deployed version",
     "subject": "Subject: {{title}}",
     "failed": "Could not generate a description"
+  },
+  "approval": {
+    "title_one": "Approve a tool call",
+    "title_other": "Approve {{count}} tool calls",
+    "help": "The assistant paused before running these tools. Nothing runs until you decide.",
+    "expires": "Expires {{time}}.",
+    "status": {
+      "pending": "waiting for you",
+      "resuming": "resuming",
+      "resolved": "decided",
+      "expired": "expired",
+      "cancelled": "cancelled",
+      "failed": "failed"
+    },
+    "kind": {
+      "write": "changes something",
+      "read": "read-only"
+    },
+    "approve": "Approve",
+    "deny": "Deny",
+    "approveAll": "Approve all",
+    "denyAll": "Deny all",
+    "submit": "Send decisions",
+    "reason": "Reason (optional, sent to the assistant)",
+    "reasonShown": "Reason: {{reason}}",
+    "approved": "approved",
+    "denied": "denied",
+    "decidedBy": "Decided by {{user}}",
+    "truncated": "Arguments shortened for display; secrets are masked.",
+    "noArguments": "no arguments",
+    "expiredHelp": "This approval expired and the tools did not run. Ask again to continue.",
+    "cancelledHelp": "The conversation moved on; these tool calls did not run.",
+    "failedHelp": "Resuming the run failed: {{error}}",
+    "failed": "Could not send the decisions",
+    "newMessageCancels": "Sending a new message cancels the pending tool approval."
   }
 }

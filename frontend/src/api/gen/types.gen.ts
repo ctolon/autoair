@@ -226,7 +226,7 @@ export type AgentResult = {
     /**
      * Stopped
      */
-    stopped?: 'answer' | 'max_steps' | 'budget' | 'timeout';
+    stopped?: 'answer' | 'max_steps' | 'budget' | 'timeout' | 'approval';
     /**
      * Model
      */
@@ -254,6 +254,18 @@ export type AgentResult = {
      * Messages
      */
     messages?: Array<unknown>;
+    /**
+     * Pending
+     *
+     * stopped=approval: the tool calls waiting for the user's decision.
+     */
+    pending?: Array<PendingToolCall>;
+    /**
+     * Requests
+     *
+     * Model requests of this run.
+     */
+    requests?: number;
 };
 
 /**
@@ -496,6 +508,12 @@ export type AirflowCapabilities = {
      * DAG scheduling_state active/draining/paused and drain (>= 3.4).
      */
     scheduling_state: boolean;
+    /**
+     * Retry Try Is Next
+     *
+     * An up_for_retry task instance's try_number is the upcoming try, which has no log yet; the failed try is try_number - 1 (>= 3.4).
+     */
+    retry_try_is_next?: boolean;
 };
 
 /**
@@ -586,7 +604,7 @@ export type AnalysisSummary = {
     /**
      * Status
      */
-    status: 'proposed' | 'no_change' | 'approved' | 'rejected' | 'applied';
+    status: 'proposed' | 'no_change' | 'approved' | 'rejected' | 'applied' | 'awaiting_approval';
     /**
      * Model
      */
@@ -1064,6 +1082,359 @@ export type BackfillRequest = {
      * Airflow >= 3.4: drain the DAG together with the backfill (no new scheduled runs; it pauses once unfinished runs finish). Ignored by the dry run.
      */
     drain_dag?: boolean;
+};
+
+/**
+ * BlueprintCatalogError
+ */
+export type BlueprintCatalogError = {
+    /**
+     * Location
+     */
+    location: string;
+    /**
+     * Error
+     */
+    error: string;
+};
+
+/**
+ * BlueprintCatalogStatus
+ *
+ * What the catalog found and whether schemas can be read in this installation.
+ */
+export type BlueprintCatalogStatus = {
+    /**
+     * Available
+     *
+     * airflow-blueprint is installed in AutoAir's environment (needed to read config schemas; install autoair[blueprint]).
+     */
+    available: boolean;
+    /**
+     * Package Version
+     *
+     * airflow-blueprint version.
+     */
+    package_version?: string | null;
+    /**
+     * Blueprints
+     */
+    blueprints: number;
+    /**
+     * Errors
+     */
+    errors?: Array<BlueprintCatalogError>;
+    /**
+     * Built At
+     */
+    built_at?: number | null;
+};
+
+/**
+ * BlueprintDetail
+ *
+ * A blueprint version with its config schema and a default task preview.
+ */
+export type BlueprintDetail = {
+    /**
+     * Name
+     *
+     * Registered name (snake_case), as `blueprint list` shows it.
+     */
+    name: string;
+    /**
+     * Version
+     */
+    version: number;
+    /**
+     * Class Name
+     */
+    class_name: string;
+    /**
+     * Module
+     *
+     * Module the generated DAG imports the class from.
+     */
+    module: string;
+    /**
+     * Class Path
+     *
+     * module.Class
+     */
+    class_path: string;
+    /**
+     * Config Class
+     *
+     * Name of the config model importable from the same module, if any.
+     */
+    config_class?: string | null;
+    /**
+     * Summary
+     *
+     * First sentence of the docstring.
+     */
+    summary?: string | null;
+    /**
+     * Source
+     */
+    source: 'entry_point' | 'template_dir' | 'module';
+    /**
+     * Package
+     *
+     * Distribution providing it.
+     */
+    package?: string | null;
+    /**
+     * Package Version
+     */
+    package_version?: string | null;
+    /**
+     * Supports Params
+     *
+     * Config fields become DAG params (supports_params=True).
+     */
+    supports_params?: boolean;
+    /**
+     * Latest
+     *
+     * Highest version of this name.
+     */
+    latest?: boolean;
+    /**
+     * Schema Error
+     *
+     * Why the config schema could not be read (e.g. the module failed to import).
+     */
+    schema_error?: string | null;
+    /**
+     * Docstring
+     */
+    docstring?: string | null;
+    /**
+     * Config Schema
+     *
+     * JSON Schema of the config model (Blueprint.get_schema(): references inlined), read in a child process.
+     */
+    config_schema?: {
+        [key: string]: unknown;
+    } | null;
+    /**
+     * Tasks rendered with the config defaults, when they suffice.
+     */
+    preview?: BlueprintPreview | null;
+};
+
+/**
+ * BlueprintNode
+ *
+ * A step built from an Astronomer Blueprint template (``airflow-blueprint``).
+ *
+ * A blueprint is a reusable ``Blueprint[Config]`` class with a Pydantic config model whose
+ * ``render()`` returns a task or a TaskGroup. The generated DAG imports ``class_path``, sets
+ * ``step_id`` on an instance and calls ``render(Config(**config))``, the way the blueprint
+ * project documents its use in Python DAGs. Edges to and from the node depend on the whole
+ * rendered step. The Airflow environment needs ``airflow-blueprint`` and the template.
+ */
+export type BlueprintNode = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Label
+     *
+     * Canvas label only.
+     */
+    label?: string | null;
+    /**
+     * Icon
+     *
+     * Canvas icon only (builtin:<logo> or custom:<name>); overrides the default.
+     */
+    icon?: string | null;
+    /**
+     * Parent Group
+     *
+     * Id of a task_group node.
+     */
+    parent_group?: string | null;
+    position?: Position;
+    /**
+     * Kind
+     */
+    kind: 'blueprint';
+    /**
+     * Step Id
+     *
+     * Task or group id the blueprint renders under.
+     */
+    step_id: string;
+    /**
+     * Blueprint
+     *
+     * Registered blueprint name (snake_case), as `blueprint list` shows it.
+     */
+    blueprint: string;
+    /**
+     * Version
+     *
+     * Blueprint version the step is pinned to.
+     */
+    version?: number;
+    /**
+     * Class Path
+     *
+     * Importable path of the Blueprint class (module.Class).
+     */
+    class_path: string;
+    /**
+     * Config Class
+     *
+     * Name of the config model in the blueprint's module; omitted: the generated code asks the class for it (get_config_type()).
+     */
+    config_class?: string | null;
+    /**
+     * Config
+     *
+     * Config values, validated against the blueprint's config schema. Plain JSON values only (no XCom references or tagged values).
+     */
+    config?: {
+        [key: string]: unknown;
+    };
+    /**
+     * Disabled
+     *
+     * Excluded from the generated DAG (kept on the canvas).
+     */
+    disabled?: boolean;
+};
+
+/**
+ * BlueprintPreview
+ *
+ * The tasks one blueprint step renders, relative to its ``step_id``.
+ */
+export type BlueprintPreview = {
+    /**
+     * Kind
+     *
+     * What render() returned: one task or a TaskGroup.
+     */
+    kind?: 'task' | 'group' | null;
+    /**
+     * Tasks
+     *
+     * Task ids inside the step (without the step prefix); a single-task blueprint lists its own id.
+     */
+    tasks?: Array<string>;
+    /**
+     * Error
+     *
+     * Why the preview could not be built.
+     */
+    error?: string | null;
+};
+
+/**
+ * BlueprintPreviewRequest
+ */
+export type BlueprintPreviewRequest = {
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Version
+     */
+    version: number;
+    /**
+     * Step Id
+     */
+    step_id?: string;
+    /**
+     * Config
+     */
+    config?: {
+        [key: string]: unknown;
+    };
+};
+
+/**
+ * BlueprintSummary
+ *
+ * One version of a blueprint template, for the palette.
+ */
+export type BlueprintSummary = {
+    /**
+     * Name
+     *
+     * Registered name (snake_case), as `blueprint list` shows it.
+     */
+    name: string;
+    /**
+     * Version
+     */
+    version: number;
+    /**
+     * Class Name
+     */
+    class_name: string;
+    /**
+     * Module
+     *
+     * Module the generated DAG imports the class from.
+     */
+    module: string;
+    /**
+     * Class Path
+     *
+     * module.Class
+     */
+    class_path: string;
+    /**
+     * Config Class
+     *
+     * Name of the config model importable from the same module, if any.
+     */
+    config_class?: string | null;
+    /**
+     * Summary
+     *
+     * First sentence of the docstring.
+     */
+    summary?: string | null;
+    /**
+     * Source
+     */
+    source: 'entry_point' | 'template_dir' | 'module';
+    /**
+     * Package
+     *
+     * Distribution providing it.
+     */
+    package?: string | null;
+    /**
+     * Package Version
+     */
+    package_version?: string | null;
+    /**
+     * Supports Params
+     *
+     * Config fields become DAG params (supports_params=True).
+     */
+    supports_params?: boolean;
+    /**
+     * Latest
+     *
+     * Highest version of this name.
+     */
+    latest?: boolean;
+    /**
+     * Schema Error
+     *
+     * Why the config schema could not be read (e.g. the module failed to import).
+     */
+    schema_error?: string | null;
 };
 
 /**
@@ -1600,6 +1971,12 @@ export type ChatMessage = {
      */
     error?: string | null;
     /**
+     * Approvals
+     *
+     * Tool approvals of this turn (the last one is current); a pending one means the turn is paused until the user decides its tool calls.
+     */
+    approvals?: Array<ToolApprovalView>;
+    /**
      * History
      *
      * The turn's pydantic-ai messages (stored with the thread, never returned).
@@ -1920,7 +2297,7 @@ export type ComponentInfo = {
     /**
      * Family
      */
-    family: 'apache' | 'astronomer';
+    family: 'apache' | 'astronomer' | 'autoair';
     /**
      * Default
      */
@@ -2092,6 +2469,18 @@ export type ConflictInfo = {
      * Ejected File
      */
     ejected_file?: string | null;
+    /**
+     * Hand Written
+     *
+     * ejected_file is the hand-written DAG file AutoAir keeps for this DAG (not a generated file changed outside AutoAir).
+     */
+    hand_written?: boolean;
+    /**
+     * Force Allowed
+     *
+     * Deploying again with force=true would overwrite ejected_file for this caller (preserve.allow_force_overwrite and 'deploy:overwrite_ejected').
+     */
+    force_allowed?: boolean;
 };
 
 /**
@@ -2615,13 +3004,51 @@ export type DagRunInfo = {
 };
 
 /**
+ * DagSource
+ *
+ * How the DAG file of a spec-backed DAG is written (python output mode only).
+ *
+ * ``generate`` writes the file AutoAir generates from the spec; ``preserve`` applies each
+ * change to the existing (hand-written) file as a minimal patch and keeps its comments,
+ * formatting and ordering; ``strict-preserve`` is preserve that refuses every change it
+ * cannot apply exactly. ``auto``: preserve for DAGs that come from hand-written Python
+ * (imported or applied in the code mode), generate for DAGs built in AutoAir.
+ */
+export type DagSource = {
+    /**
+     * Policy
+     *
+     * auto | generate | preserve | strict-preserve (see the model description).
+     */
+    policy?: 'auto' | 'generate' | 'preserve' | 'strict-preserve';
+    /**
+     * Origin
+     *
+     * autoair: built in AutoAir; python: imported from or edited as a hand-written Python file (makes 'auto' preserve).
+     */
+    origin?: 'autoair' | 'python';
+    /**
+     * Code
+     *
+     * The hand-written file this spec was last imported from or applied in the code mode. Preserve patches it when the deploy target has no newer version of the file. Writing it needs the 'code:raw' permission (it is arbitrary Python).
+     */
+    code?: string | null;
+    /**
+     * Base Sha
+     *
+     * sha256 of the file the editor started from (the imported file). Equal to the hash of `code`: the code is that file unchanged; different: it was edited in the code mode, so a merge with changes made outside AutoAir uses the version deployed last as the common ancestor.
+     */
+    base_sha?: string | null;
+};
+
+/**
  * DagSpec
  */
 export type DagSpec = {
     /**
      * Spec Version
      */
-    spec_version?: 2;
+    spec_version?: 3;
     /**
      * Dag Id
      */
@@ -2762,11 +3189,15 @@ export type DagSpec = {
     /**
      * Nodes
      */
-    nodes?: Array<OperatorNode | PythonTaskNode | TaskGroupNode | CustomNode | NoteNode>;
+    nodes?: Array<OperatorNode | PythonTaskNode | TaskGroupNode | CustomNode | BlueprintNode | NoteNode>;
     /**
      * Edges
      */
     edges?: Array<Edge>;
+    /**
+     * Source policy of the DAG file (generate / preserve / strict-preserve) and the hand-written file it comes from. None: auto policy, built in AutoAir.
+     */
+    source?: DagSource | null;
     /**
      * Raw Code
      *
@@ -3321,8 +3752,22 @@ export type DeployRequest = {
     git_conn_id?: string | null;
     /**
      * Force
+     *
+     * Overwrite a generated file that was changed outside AutoAir, or the hand-written file AutoAir keeps (output modes other than python and raw code; needs preserve.allow_force_overwrite and 'deploy:overwrite_ejected', otherwise ignored). Python DAG files use source_resolution instead.
      */
     force?: boolean;
+    /**
+     * Source Resolution
+     *
+     * Answer to a deploy that stopped at a DAG file changed outside AutoAir (status 'ejected'): preserve applies the change to that file (LibCST patch); overwrite regenerates it and discards the outside changes (needs preserve.allow_force_overwrite, 'deploy:overwrite_ejected' and, for a file changed outside AutoAir, preserve.ejected_files=overwrite).
+     */
+    source_resolution?: 'preserve' | 'overwrite' | null;
+    /**
+     * Source Target Sha
+     *
+     * The `target_sha` of the source preview the user reviewed: the deploy stops ('source_refused') when the DAG file in the target is no longer that one ('' = there was no file).
+     */
+    source_target_sha?: string | null;
     /**
      * Create Only
      *
@@ -3350,7 +3795,7 @@ export type DeployResult = {
      *
      * 'pending_approval' (HTTP 202): stored as a deploy proposal that needs another user's approval (iam.require_approval); nothing went live.
      */
-    status?: 'deployed' | 'invalid' | 'conflict' | 'ejected' | 'pending_approval';
+    status?: 'deployed' | 'invalid' | 'conflict' | 'ejected' | 'pending_approval' | 'source_refused';
     report: ValidationReport;
     /**
      * Dag File
@@ -3383,6 +3828,14 @@ export type DeployResult = {
      * Etag of the stored deploy proposal (pending_approval).
      */
     proposal_etag?: string | null;
+    /**
+     * Python DAGs: how the DAG file was (or would be) written -- generated or the existing file patched (source policy), with the diff; 'source_refused': why the change cannot be applied to the existing file.
+     */
+    source?: SourcePlan | null;
+    /**
+     * The spec as stored, when it differs from the one sent (a preserve deploy merged changes made to the file outside AutoAir): reload it.
+     */
+    stored_spec?: DagSpec | null;
     /**
      * Message
      */
@@ -4216,7 +4669,7 @@ export type Fragment = {
     /**
      * Nodes
      */
-    nodes: Array<OperatorNode | PythonTaskNode | TaskGroupNode | CustomNode | NoteNode>;
+    nodes: Array<OperatorNode | PythonTaskNode | TaskGroupNode | CustomNode | BlueprintNode | NoteNode>;
     /**
      * Edges
      */
@@ -6087,6 +6540,12 @@ export type MetaInfo = {
      */
     airflow_public_url?: string | null;
     /**
+     * Allow Force Overwrite
+     *
+     * preserve.allow_force_overwrite: the overwrite (force) choice for a DAG file changed outside AutoAir or the hand-written file AutoAir keeps is offered (still with 'deploy:overwrite_ejected'). false: hide it.
+     */
+    allow_force_overwrite?: boolean;
+    /**
      * Secrets Backend
      *
      * airflow_secrets_backend: connections/variables may come from a secrets backend, so ids missing from Airflow's metastore are not flagged.
@@ -7063,6 +7522,46 @@ export type PauseRequest = {
      * Paused
      */
     paused: boolean;
+};
+
+/**
+ * PendingToolCall
+ *
+ * One tool call waiting for a decision, as the approval card shows it.
+ */
+export type PendingToolCall = {
+    /**
+     * Id
+     *
+     * The model's tool call id.
+     */
+    id: string;
+    /**
+     * Tool
+     */
+    tool: string;
+    /**
+     * Kind
+     */
+    kind?: 'read' | 'write';
+    /**
+     * Description
+     *
+     * The tool's description (shortened).
+     */
+    description?: string;
+    /**
+     * Arguments
+     *
+     * Arguments with secrets masked and long values cut (display only).
+     */
+    arguments?: unknown;
+    /**
+     * Truncated
+     *
+     * Arguments were cut for display.
+     */
+    truncated?: boolean;
 };
 
 /**
@@ -8517,6 +9016,26 @@ export type SourceInfo = {
 };
 
 /**
+ * SourceIssue
+ */
+export type SourceIssue = {
+    /**
+     * Code
+     *
+     * unmappable, unsupported, risky, conflict, roundtrip, ...
+     */
+    code: string;
+    /**
+     * Message
+     */
+    message: string;
+    /**
+     * Task Id
+     */
+    task_id?: string | null;
+};
+
+/**
  * SourceOverride
  *
  * Admin-panel changes of one source (``None`` keeps the configured value).
@@ -8534,6 +9053,127 @@ export type SourceOverride = {
      * Versions
      */
     versions?: Array<string> | null;
+};
+
+/**
+ * SourcePlan
+ *
+ * What a deploy writes as the DAG file and why (deploy result, source preview).
+ */
+export type SourcePlan = {
+    /**
+     * Applicable
+     *
+     * False for output modes other than python and for raw code DAGs (the source policy does not apply to them).
+     */
+    applicable?: boolean;
+    /**
+     * Requested
+     *
+     * The spec's source.policy.
+     */
+    requested?: string;
+    /**
+     * Policy
+     */
+    policy?: 'generate' | 'preserve' | 'strict-preserve';
+    /**
+     * Action
+     */
+    action?: 'generate' | 'preserve' | 'unchanged' | 'blocked' | 'refused' | 'not_applicable';
+    /**
+     * Target State
+     */
+    target_state?: 'absent' | 'clean' | 'hand_written' | 'ejected' | 'foreign';
+    /**
+     * Target File
+     */
+    target_file?: string | null;
+    /**
+     * Base
+     *
+     * The file a preserve deploy patched: the target's file or the hand-written source.code of the spec.
+     */
+    base?: 'target' | 'source' | null;
+    /**
+     * Diff
+     *
+     * Unified diff of the file in the target -> new.
+     */
+    diff?: string;
+    /**
+     * Diff Truncated
+     */
+    diff_truncated?: boolean;
+    /**
+     * Operations
+     */
+    operations?: Array<string>;
+    /**
+     * Warnings
+     */
+    warnings?: Array<string>;
+    /**
+     * Refusals
+     */
+    refusals?: Array<SourceIssue>;
+    /**
+     * Options
+     *
+     * What the user can do next: preserve (apply the change to the file in the target), overwrite (needs confirmation, 'deploy:overwrite_ejected' and preserve.allow_force_overwrite), generate (switch the DAG's source policy), raw (keep the file as a raw code DAG).
+     */
+    options?: Array<'preserve' | 'overwrite' | 'generate' | 'raw'>;
+    /**
+     * Message
+     */
+    message?: string;
+    /**
+     * Target Sha
+     *
+     * sha256 of the DAG file in the target the plan was made from (empty: no file). Send it back as source_target_sha to deploy exactly what was previewed.
+     */
+    target_sha?: string | null;
+    /**
+     * Content Hidden
+     *
+     * The file in the target is a hand-written file AutoAir never wrote: its content (diff, file, current code) is not shown.
+     */
+    content_hidden?: boolean;
+    /**
+     * Content
+     *
+     * Source preview only: the complete DAG file the deploy would write (the code mode shows it for DAGs that keep their hand-written file).
+     */
+    content?: string | null;
+    /**
+     * Current Code
+     *
+     * The DAG file the change could not be applied to (the target's file or the spec's hand-written code), when the plan offers to keep it as a raw code DAG.
+     */
+    current_code?: string | null;
+};
+
+/**
+ * SourcePreviewRequest
+ */
+export type SourcePreviewRequest = {
+    spec: DagSpec;
+    /**
+     * Environment
+     */
+    environment?: string | null;
+    /**
+     * Direct Push
+     *
+     * As in the deploy request (decides the git branch read).
+     */
+    direct_push?: boolean | null;
+    /**
+     * Source Resolution
+     *
+     * Preview the answer to an ejected file: preserve (patch it) or overwrite.
+     */
+    source_resolution?: 'preserve' | 'overwrite' | null;
 };
 
 /**
@@ -9654,6 +10294,68 @@ export type ThreadSummary = {
 };
 
 /**
+ * ToolApprovalDecision
+ */
+export type ToolApprovalDecision = {
+    /**
+     * Decisions
+     *
+     * One decision per pending tool call (approve, or deny with an optional reason that is sent to the model).
+     */
+    decisions: Array<ToolDecision>;
+};
+
+/**
+ * ToolApprovalView
+ *
+ * A paused run's approval as chat messages and analyses carry it.
+ */
+export type ToolApprovalView = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Agent
+     */
+    agent: 'developer' | 'admin' | 'troubleshoot';
+    /**
+     * Status
+     */
+    status?: 'pending' | 'resuming' | 'resolved' | 'expired' | 'cancelled' | 'failed';
+    /**
+     * Created At
+     */
+    created_at: string;
+    /**
+     * Expires At
+     */
+    expires_at: string;
+    /**
+     * Calls
+     */
+    calls?: Array<PendingToolCall>;
+    /**
+     * Decisions
+     */
+    decisions?: Array<ToolDecision>;
+    /**
+     * Decided By
+     */
+    decided_by?: string | null;
+    /**
+     * Decided At
+     */
+    decided_at?: string | null;
+    /**
+     * Error
+     *
+     * Why a resumed run failed.
+     */
+    error?: string | null;
+};
+
+/**
  * ToolCallRecord
  */
 export type ToolCallRecord = {
@@ -9683,6 +10385,26 @@ export type ToolCallRecord = {
      * Duration Ms
      */
     duration_ms?: number;
+};
+
+/**
+ * ToolDecision
+ */
+export type ToolDecision = {
+    /**
+     * Id
+     *
+     * Tool call id.
+     */
+    id: string;
+    /**
+     * Approved
+     */
+    approved: boolean;
+    /**
+     * Reason
+     */
+    reason?: string | null;
 };
 
 /**
@@ -9894,7 +10616,7 @@ export type TroubleshootAnalysis = {
     /**
      * Status
      */
-    status?: 'proposed' | 'no_change' | 'approved' | 'rejected' | 'applied';
+    status?: 'proposed' | 'no_change' | 'approved' | 'rejected' | 'applied' | 'awaiting_approval';
     /**
      * Decisions
      */
@@ -9907,6 +10629,12 @@ export type TroubleshootAnalysis = {
      * Guardrails
      */
     guardrails?: Array<string>;
+    /**
+     * Approvals
+     *
+     * Tool approvals of the analysis run (the last one is current); status awaiting_approval while one is pending.
+     */
+    approvals?: Array<ToolApprovalView>;
 };
 
 /**
@@ -11613,6 +12341,115 @@ export type GetCatalogDiagnosticsResponses = {
 };
 
 export type GetCatalogDiagnosticsResponse = GetCatalogDiagnosticsResponses[keyof GetCatalogDiagnosticsResponses];
+
+export type ListBlueprintsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/blueprints';
+};
+
+export type ListBlueprintsResponses = {
+    /**
+     * Response Listblueprints
+     *
+     * Successful Response
+     */
+    200: Array<BlueprintSummary>;
+};
+
+export type ListBlueprintsResponse = ListBlueprintsResponses[keyof ListBlueprintsResponses];
+
+export type GetBlueprintStatusData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/blueprints/status';
+};
+
+export type GetBlueprintStatusResponses = {
+    /**
+     * Successful Response
+     */
+    200: BlueprintCatalogStatus;
+};
+
+export type GetBlueprintStatusResponse = GetBlueprintStatusResponses[keyof GetBlueprintStatusResponses];
+
+export type GetBlueprintData = {
+    body?: never;
+    path: {
+        /**
+         * Name
+         */
+        name: string;
+        /**
+         * Version
+         */
+        version: number;
+    };
+    query?: never;
+    url: '/blueprints/{name}/{version}';
+};
+
+export type GetBlueprintErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetBlueprintError = GetBlueprintErrors[keyof GetBlueprintErrors];
+
+export type GetBlueprintResponses = {
+    /**
+     * Successful Response
+     */
+    200: BlueprintDetail;
+};
+
+export type GetBlueprintResponse = GetBlueprintResponses[keyof GetBlueprintResponses];
+
+export type PreviewBlueprintData = {
+    body: BlueprintPreviewRequest;
+    path?: never;
+    query?: never;
+    url: '/blueprints/preview';
+};
+
+export type PreviewBlueprintErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type PreviewBlueprintError = PreviewBlueprintErrors[keyof PreviewBlueprintErrors];
+
+export type PreviewBlueprintResponses = {
+    /**
+     * Successful Response
+     */
+    200: BlueprintPreview;
+};
+
+export type PreviewBlueprintResponse = PreviewBlueprintResponses[keyof PreviewBlueprintResponses];
+
+export type RefreshBlueprintsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/blueprints/refresh';
+};
+
+export type RefreshBlueprintsResponses = {
+    /**
+     * Successful Response
+     */
+    200: BlueprintCatalogStatus;
+};
+
+export type RefreshBlueprintsResponse = RefreshBlueprintsResponses[keyof RefreshBlueprintsResponses];
 
 export type ListConnectionsData = {
     body?: never;
@@ -13374,6 +14211,82 @@ export type DecideAssistantProposalResponses = {
 
 export type DecideAssistantProposalResponse = DecideAssistantProposalResponses[keyof DecideAssistantProposalResponses];
 
+export type ListToolApprovalsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/ai/approvals';
+};
+
+export type ListToolApprovalsResponses = {
+    /**
+     * Response Listtoolapprovals
+     *
+     * Successful Response
+     */
+    200: Array<ToolApprovalView>;
+};
+
+export type ListToolApprovalsResponse = ListToolApprovalsResponses[keyof ListToolApprovalsResponses];
+
+export type GetToolApprovalData = {
+    body?: never;
+    path: {
+        /**
+         * Approval Id
+         */
+        approval_id: string;
+    };
+    query?: never;
+    url: '/ai/approvals/{approval_id}';
+};
+
+export type GetToolApprovalErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetToolApprovalError = GetToolApprovalErrors[keyof GetToolApprovalErrors];
+
+export type GetToolApprovalResponses = {
+    /**
+     * Successful Response
+     */
+    200: ToolApprovalView;
+};
+
+export type GetToolApprovalResponse = GetToolApprovalResponses[keyof GetToolApprovalResponses];
+
+export type ResumeToolApprovalStreamData = {
+    body: ToolApprovalDecision;
+    path: {
+        /**
+         * Approval Id
+         */
+        approval_id: string;
+    };
+    query?: never;
+    url: '/ai/approvals/{approval_id}/stream';
+};
+
+export type ResumeToolApprovalStreamErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ResumeToolApprovalStreamError = ResumeToolApprovalStreamErrors[keyof ResumeToolApprovalStreamErrors];
+
+export type ResumeToolApprovalStreamResponses = {
+    /**
+     * Successful Response
+     */
+    200: unknown;
+};
+
 export type TroubleshootOptionsData = {
     body?: never;
     path?: never;
@@ -14937,6 +15850,44 @@ export type PreviewDeployResponses = {
 };
 
 export type PreviewDeployResponse = PreviewDeployResponses[keyof PreviewDeployResponses];
+
+export type PreviewSourceData = {
+    body: SourcePreviewRequest;
+    headers?: {
+        /**
+         * X-Autoair-Git-Token
+         *
+         * Git token for this one write (storage.git.request_token): used instead of the configured credentials, never stored or logged. HTTPS only.
+         */
+        'X-AutoAir-Git-Token'?: string | null;
+    };
+    path: {
+        /**
+         * Dag Id
+         */
+        dag_id: string;
+    };
+    query?: never;
+    url: '/specs/{dag_id}/source-preview';
+};
+
+export type PreviewSourceErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type PreviewSourceError = PreviewSourceErrors[keyof PreviewSourceErrors];
+
+export type PreviewSourceResponses = {
+    /**
+     * Successful Response
+     */
+    200: SourcePlan;
+};
+
+export type PreviewSourceResponse = PreviewSourceResponses[keyof PreviewSourceResponses];
 
 export type DeployProposalData = {
     /**

@@ -13,6 +13,7 @@ import {
   useReactFlow,
 } from "@xyflow/react";
 import { type DragEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
 
 import { RemotePresence } from "../collab/RemotePresence";
@@ -33,10 +34,11 @@ import { InsertableEdge } from "./edges/InsertableEdge";
 import { setFlowInstance, setPointer } from "./flowInstance";
 import { type Box as Rect, COLLAPSED_GROUP_SIZE, absBox, absPos, descendantsOf, groupAt, nodeSize } from "./geometry";
 import { ancestors, checkConnection } from "./graph";
-import { collapsedView, displayEdgeEndpoints } from "./grouping";
+import { collapsedView, displayEdgeEndpoints, stableCollapsedView } from "./grouping";
 import { type HelperLine, computeHelperLines } from "./helperLines";
 import { HelperLines } from "./HelperLines";
 import { InsertPopover } from "./InsertPopover";
+import { AUTO_FIT_MIN_ZOOM, LARGE_GRAPH_MIN_ZOOM, LARGE_GRAPH_NODES, VIRTUALIZE_ABOVE } from "./largeGraph";
 import { nodeTypes } from "./nodes";
 import { runStateHex } from "./runState";
 import { SNAP_GRID, useCanvasUi } from "./uiStore";
@@ -44,13 +46,11 @@ import { useCanvasCommands, useClipboardEvents } from "./useCanvasCommands";
 
 const edgeTypes = { default: InsertableEdge };
 
-/** Above this many nodes, only elements inside the viewport are rendered. */
-const VIRTUALIZE_ABOVE = 150;
-
 const KIND_COLORS: Record<BuilderNode["type"], string> = {
   operator: "#017cee",
   python_task: "#3b8c3b",
   custom: "#8b5cf6",
+  blueprint: "#0d9488",
   task_group: "rgba(148,163,184,0.35)",
   note: "#facc15",
 };
@@ -60,6 +60,7 @@ const KIND_COLORS_DARK: Record<BuilderNode["type"], string> = {
   operator: "#2f5f8f",
   python_task: "#3f6b3f",
   custom: "#5b4a8c",
+  blueprint: "#1f5f5a",
   task_group: "rgba(148,163,184,0.16)",
   note: "#8a7424",
 };
@@ -74,29 +75,44 @@ const MINIMAP_DARK = {
  * Display copies of store nodes/edges (collapsed groups, aria labels, setup/teardown edges).
  * Copies are cached per source object so unchanged nodes keep their identity (no re-render).
  */
+function ariaLabelOf(n: BuilderNode, t: TFunction<"canvas">): string {
+  const spec = n.data.spec;
+  const collapsed = n.type === "task_group" && !!n.data.collapsed;
+  return spec.kind === "operator"
+    ? t("aria.operator", { name: nodeKey(n), operator: spec.operator.split(".").pop() })
+    : spec.kind === "python_task"
+      ? t("aria.python", { name: nodeKey(n), decorator: decoratorLabel(spec.decorator ?? "task") })
+      : spec.kind === "custom"
+        ? t("aria.custom", { name: nodeKey(n), handler: spec.handler })
+        : spec.kind === "task_group"
+          ? t(collapsed ? "aria.groupCollapsed" : "aria.group", { name: nodeKey(n) })
+          : spec.kind === "blueprint"
+            ? t("aria.blueprint", { name: nodeKey(n), blueprint: spec.blueprint })
+            : t("aria.note", { text: (spec.text ?? "").slice(0, 60) });
+}
+
+/**
+ * Display copies of store nodes/edges (collapsed groups, aria labels, setup/teardown edges).
+ * Copies are cached per source object so unchanged nodes keep their identity (no re-render).
+ */
 function useDisplayGraph(nodes: BuilderNode[], edges: BuilderEdge[]) {
   const { t } = useTranslation("canvas");
   // Memo caches keyed by source object (state-held so they survive re-renders).
   const [nodeCache] = useState(() => new WeakMap<BuilderNode, { key: string; node: BuilderNode }>());
   const [edgeCache] = useState(() => new WeakMap<BuilderEdge, { key: string; edge: BuilderEdge }>());
+  // Aria labels per node data (the spec): translated once, not for every node on every frame.
+  const [labelCache] = useState(() => new WeakMap<BuilderNode["data"], { t: unknown; label: string }>());
 
-  const view = useMemo(() => collapsedView(nodes), [nodes]);
+  const view = stableCollapsedView(nodes);
   const displayNodes = useMemo(
     () =>
       nodes.map((n) => {
         const hidden = view.hidden.has(n.id);
         const collapsed = n.type === "task_group" && !!n.data.collapsed;
-        const spec = n.data.spec;
-        const ariaLabel =
-          spec.kind === "operator"
-            ? t("aria.operator", { name: nodeKey(n), operator: spec.operator.split(".").pop() })
-            : spec.kind === "python_task"
-              ? t("aria.python", { name: nodeKey(n), decorator: decoratorLabel(spec.decorator ?? "task") })
-              : spec.kind === "custom"
-                ? t("aria.custom", { name: nodeKey(n), handler: spec.handler })
-                : spec.kind === "task_group"
-                  ? t(collapsed ? "aria.groupCollapsed" : "aria.group", { name: nodeKey(n) })
-                  : t("aria.note", { text: (spec.text ?? "").slice(0, 60) });
+        // Translated once per spec (and language), not for every node on every drag frame.
+        const known = labelCache.get(n.data);
+        const ariaLabel = known?.t === t ? known.label : ariaLabelOf(n, t);
+        if (known?.t !== t) labelCache.set(n.data, { t, label: ariaLabel });
         const key = `${hidden}|${collapsed}|${ariaLabel}`;
         const cached = nodeCache.get(n);
         if (cached?.key === key) return cached.node;
@@ -110,7 +126,7 @@ function useDisplayGraph(nodes: BuilderNode[], edges: BuilderEdge[]) {
         nodeCache.set(n, { key, node });
         return node;
       }),
-    [nodes, view, t, nodeCache],
+    [nodes, view, t, nodeCache, labelCache],
   );
 
   // Edges touching a setup/teardown task are drawn dashed.
@@ -121,6 +137,7 @@ function useDisplayGraph(nodes: BuilderNode[], edges: BuilderEdge[]) {
           (n) =>
             n.data.spec.kind !== "task_group" &&
             n.data.spec.kind !== "note" &&
+            n.data.spec.kind !== "blueprint" &&
             (n.data.spec.is_setup || n.data.spec.is_teardown),
         )
         .map((n) => n.id)
@@ -367,8 +384,10 @@ export function FlowCanvas() {
           colorMode={colorMode}
           ariaLabelConfig={ariaLabelConfig}
           fitView
-          fitViewOptions={{ maxZoom: 1, padding: 0.3 }}
+          fitViewOptions={{ maxZoom: 1, minZoom: AUTO_FIT_MIN_ZOOM, padding: 0.3 }}
           maxZoom={1.5}
+          // Large graphs may zoom out to an overview (cards switch to a low-detail look).
+          minZoom={nodes.length > LARGE_GRAPH_NODES ? LARGE_GRAPH_MIN_ZOOM : 0.5}
           proOptions={{ hideAttribution: true }}
         >
           <Background gap={16} variant={snapToGrid ? BackgroundVariant.Cross : BackgroundVariant.Dots} />

@@ -24,6 +24,7 @@ from pydantic import (
     field_serializer,
 )
 
+from autoair.ai.approvals import ToolApprovalView
 from autoair.ai.findings import Finding
 from autoair.ai.problems import SpecProblem
 from autoair.ai.usage import Usage
@@ -108,6 +109,11 @@ class ChatMessage(BaseModel):
     guardrails: list[str] = Field(default_factory=list)
     stopped: str | None = None
     error: str | None = None
+    approvals: list[ToolApprovalView] = Field(
+        default_factory=list,
+        description="Tool approvals of this turn (the last one is current); a pending one "
+        "means the turn is paused until the user decides its tool calls.",
+    )
     history: list[dict[str, Any]] | None = Field(
         default=None,
         description="The turn's pydantic-ai messages (stored with the thread, never returned).",
@@ -116,6 +122,11 @@ class ChatMessage(BaseModel):
     @field_serializer("history")
     def _history(self, value: list[dict[str, Any]] | None, info: SerializationInfo) -> Any:
         return value if (info.context or {}).get("store") else None
+
+    def paused(self) -> bool:
+        """The turn stopped for tool approval and was not completed by a resumed run (its
+        stored history ends with unanswered tool calls)."""
+        return bool(self.approvals) and self.approvals[-1].status != "resolved"
 
 
 class ThreadSummary(BaseModel):

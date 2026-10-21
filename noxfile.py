@@ -13,16 +13,16 @@ nox.options.reuse_existing_virtualenvs = True
 # Latest patch release of every supported Airflow 3 minor.
 AIRFLOW_VERSIONS = ["3.0.6", "3.1.8", "3.2.2", "3.3.2"]
 # Pre-releases are tested but allowed to fail in CI until they are final.
-AIRFLOW_PRERELEASES = ["3.4.0b1"]
+AIRFLOW_PRERELEASES = ["3.4.0b2"]
 
 # Extras installed next to each Airflow: everything that resolves there, so the suite runs
 # what users can install and skips only what is unavailable. Keep in sync with the `extras`
 # of the test matrix in .github/workflows/ci.yml and with
 # website/docs/installation/compatibility.md.
-EXTRAS = "all,mcp,sqlite,postgres,kb-pgvector"
+EXTRAS = "all,mcp,blueprint,sqlite,postgres,kb-pgvector"
 # autoair[mcp] (FastMCP 4) needs Starlette >= 1.0.1; Airflow 3.1 pins FastAPI < 0.118, i.e.
 # Starlette < 0.49. Its MCP tests skip with that reason.
-EXTRAS_BY_MINOR = {"3.1": "all,sqlite,postgres,kb-pgvector"}
+EXTRAS_BY_MINOR = {"3.1": "all,blueprint,sqlite,postgres,kb-pgvector"}
 
 PROVIDERS = (
     "apache-airflow-providers-standard",

@@ -1,0 +1,17 @@
+# AutoAir state in PostgreSQL: required for two or more replicas (no sticky sessions, shared
+# collaboration through LISTEN/NOTIFY). Deploys no database: point it at a managed instance
+# (website/docs/deployment/postgres.md for the database, role and pool sizing).
+#
+# Secret (not part of these manifests):
+#   kubectl -n autoair create secret generic autoair-db --from-literal=password='...'
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+
+configMapGenerator:
+  - name: autoair-config
+    behavior: merge
+    envs:
+      - settings.env
+
+patches:
+  - path: deployment-patch.yaml

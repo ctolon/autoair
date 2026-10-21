@@ -1,0 +1,33 @@
+# The validator service (`autoair validator-serve`, AutoAir >= 0.2.0): DagBag import checks
+# of DAG code written in AutoAir run in these locked-down pods instead of the AutoAir server.
+# Same hardening as the Helm chart deploy/helm/autoair-validator: non-root, read-only root
+# file system, no capabilities, no service account token, and a NetworkPolicy without any
+# egress (DNS included), so DAG code it imports reaches nothing.
+#
+# Both sides share an HMAC key as the Airflow connection autoair_validator (password = key,
+# at least 16 bytes), from the Secret autoair-validator:
+#   kubectl -n autoair create secret generic autoair-validator --from-literal=connection=\
+#     "{\"conn_type\": \"generic\", \"password\": \"$(openssl rand -hex 32)\"}"
+#
+# The validator must import the same providers as your DAGs: run it from the image your
+# Airflow workers use (the overlay's `images:` entry applies to it as well).
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+
+resources:
+  - deployment.yaml
+  - service.yaml
+  - pdb.yaml
+  - networkpolicy.yaml
+
+configMapGenerator:
+  - name: autoair-validator-config
+    envs:
+      - validator.env
+  - name: autoair-config
+    behavior: merge
+    envs:
+      - client.env
+
+patches:
+  - path: client-patch.yaml

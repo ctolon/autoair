@@ -13,7 +13,7 @@ import re
 from collections.abc import Mapping
 from functools import lru_cache
 
-from autoair.sections import SandboxSettings, active
+from autoair.sections import SandboxSettings, ValidatorSettings, active
 
 
 @lru_cache(maxsize=8)
@@ -33,6 +33,8 @@ def is_secret_name(name: str) -> bool:
         frozenset(n.upper() for n in (*cfg.scrub_env, *cfg.scrub_env_extra)),
     )
     upper = name.upper()
+    if upper == f"AIRFLOW_CONN_{active(ValidatorSettings).secret_conn_id.upper()}":
+        return True  # the validator's HMAC key (validator.secret_conn_id)
     return upper in exact or (
         upper.startswith("AUTOAIR_") and any(p.search(upper) for p in patterns)
     )

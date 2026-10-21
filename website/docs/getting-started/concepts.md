@@ -7,7 +7,7 @@ Each section below ends with a link to the detailed page.
 
 ## The DagSpec
 
-A DAG built with AutoAir is a JSON document called the **DagSpec**. It is validated by a Pydantic model on the server (`autoair.spec.DagSpec`) and carries a `spec_version` (currently `2`); older documents are migrated forward when they are read, and a document newer than the running AutoAir is rejected ("spec_version N is newer than this AutoAir supports").
+A DAG built with AutoAir is a JSON document called the **DagSpec**. It is validated by a Pydantic model on the server (`autoair.spec.DagSpec`) and carries a `spec_version` (currently `3`); older documents are migrated forward when they are read, and a document newer than the running AutoAir is rejected ("spec_version N is newer than this AutoAir supports (M); upgrade AutoAir").
 
 The spec holds:
 
@@ -103,6 +103,7 @@ Authentication always goes through Airflow (the Airflow session in plugin mode; 
 | Author | create and edit specs, validate, test runs, use AI; proposes changes (pull requests) |
 | Reviewer | read everything, approve spec versions, AI review |
 | Deployer | deploy live, delete, promote between environments, trigger runs |
+| CodeDeployer | Deployer, plus deploying DAGs that keep their hand-written Python file |
 | Operator | trigger, backfill, clear, pause and unpause runs |
 | TemplateManager | curate templates, marketplace installs and icons |
 | Admin | everything, including the deploy target and configuration |

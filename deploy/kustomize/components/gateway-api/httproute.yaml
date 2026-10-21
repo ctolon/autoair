@@ -1,0 +1,25 @@
+# WebSockets pass through HTTPRoutes unchanged. The request timeout must exceed the longest
+# AI stream (ai.agent.timeout_seconds, 300 s, plus the model's last call).
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: autoair
+  labels:
+    app.kubernetes.io/name: autoair
+    app.kubernetes.io/component: server
+spec:
+  parentRefs:
+    - name: public
+      namespace: gateway-system
+      sectionName: https
+  hostnames: [autoair.example.com]
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        - name: autoair
+          port: 8765
+      timeouts:
+        request: 900s

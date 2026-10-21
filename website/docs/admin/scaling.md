@@ -102,6 +102,7 @@ These stay per process. That is fine, but know the consequences:
 | AI retrieval index, query and embedding caches | memory and `<cache_dir>/ai-embeddings.sqlite3` | Derived data; rebuilt after `ai.retrieval.index_ttl_seconds` ("Rebuild index" per replica). |
 | Signed-identity replay cache of the AI service | per process | A separate AI service with several replicas detects a replayed identity only on the replica that saw it first; identities expire quickly, which bounds the window. |
 | Git provider lookups, DagBag worker pool, module caches | per process | Derived or configuration data. |
+| Validator health state and key cache ([validator service](/docs/deployment/validator-service)) | per process | Each replica decides on its own whether the validator is down (`validator.health_check_interval_seconds`) and re-reads the key after `validator.key_cache_seconds`. |
 
 ## Concurrency rules on SQL
 

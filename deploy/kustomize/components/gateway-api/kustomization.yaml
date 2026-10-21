@@ -1,0 +1,14 @@
+# Public access through the Gateway API: an HTTPRoute attached to an existing Gateway (TLS
+# terminates there). Needs the Gateway API CRDs (gateway.networking.k8s.io/v1). Use it
+# instead of components/ingress, not together with it.
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+
+resources:
+  - httproute.yaml
+
+configMapGenerator:
+  - name: autoair-config
+    behavior: merge
+    envs:
+      - settings.env

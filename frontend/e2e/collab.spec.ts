@@ -43,7 +43,7 @@ test("two editors see each other's changes live", async ({ browser, request }) =
   test.skip(!meta || !info.collab_enabled, "collaboration disabled");
 
   const spec = {
-    spec_version: 2,
+    spec_version: 3,
     dag_id: DAG_ID,
     output_mode: "python",
     nodes: [
@@ -118,7 +118,7 @@ test("co-editing inside the Airflow UI (plugin, ticket-authenticated WebSocket)"
   test.skip(!meta.ok() || !(await meta.json()).collab_enabled, "plugin collaboration not available");
   const dagId = `${DAG_ID}_plugin`;
   const spec = {
-    spec_version: 2,
+    spec_version: 3,
     dag_id: dagId,
     output_mode: "python",
     nodes: [

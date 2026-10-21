@@ -3,12 +3,13 @@ import { Handle, Position } from "@xyflow/react";
 import { type ReactNode, memo } from "react";
 import { useTranslation } from "react-i18next";
 import { LuArrowDownToLine, LuArrowUpFromLine, LuEyeOff, LuFlag, LuLayers } from "react-icons/lu";
-import { useShallow } from "zustand/react/shallow";
 import { problemText } from "../../lib/problemMessages";
 
 import type { TaskSpec } from "../../lib/types";
-import type { DiffOverlay } from "../../store/builder";
 import { useBuilder } from "../../store/builder";
+import { type DiffStatus, diffStatusOf, nodeProblems } from "../../store/indexes";
+import { TASK_SIZE } from "../geometry";
+import { useLowDetail } from "../lowDetail";
 import { runStateStyle } from "../runState";
 import { TaskToolbar } from "./TaskToolbar";
 
@@ -24,19 +25,20 @@ type Props = {
   markers?: ReactNode;
 };
 
-type DiffStatus = "added" | "changed" | null;
-
-function diffStatus(diff: DiffOverlay | null, id: string): DiffStatus {
-  if (!diff) return null;
-  if (diff.added.includes(id)) return "added";
-  if (diff.changed.includes(id)) return "changed";
-  return null;
-}
-
 const DIFF_SHADOW: Record<Exclude<DiffStatus, null>, string> = {
   added: "0 0 0 3px {colors.green.400}, 0 0 14px {colors.green.400}",
   changed: "0 0 0 3px {colors.yellow.400}",
 };
+
+/** CSS variable of a Chakra colour token ("bg.panel" -> var(--chakra-colors-bg-panel)). */
+function tokenVar(token: string): string {
+  return `var(--chakra-colors-${token.replace(/\./g, "-")})`;
+}
+
+/** A CSS colour: literal colours as they are, Chakra tokens ("purple.500") as variables. */
+function cssColor(value: string): string {
+  return /^(#|rgb|hsl|var\(|color-mix\(|oklch|[a-z]+$)/i.test(value) ? value : tokenVar(value);
+}
 
 /** Run-state chip (state + try number) shown on a node's top edge. */
 export function RunChip({ state, tryNumber, mapped }: { state: string | null; tryNumber?: number; mapped?: number }) {
@@ -117,12 +119,14 @@ function SpecBadges({ spec }: { spec: TaskSpec }) {
 /** Shared visual shell for every task-like node. */
 export const TaskCard = memo(function TaskCard({ id, selected, title, subtitle, icon, accent, spec, markers }: Props) {
   const { t } = useTranslation("canvas");
-  const problems = useBuilder(useShallow((s) => s.problems.filter((p) => p.node_id === id)));
+  // Shared per-store-value indexes: no scan of all problems / diff ids per node and update.
+  const problems = useBuilder((s) => nodeProblems(s.problems, id));
   const run = useBuilder((s) => s.runOverlay?.states[id]);
   const hasRun = useBuilder((s) => s.runOverlay !== null);
-  const diff = useBuilder((s) => diffStatus(s.diffOverlay, id));
+  const diff = useBuilder((s) => diffStatusOf(s.diffOverlay, id));
   const errors = problems.filter((p) => p.severity === "error").length;
   const warnings = problems.length - errors;
+  const lowDetail = useLowDetail();
   const runStyle = hasRun ? runStateStyle(run?.state) : null;
   const border = errors
     ? "red.500"
@@ -133,6 +137,45 @@ export const TaskCard = memo(function TaskCard({ id, selected, title, subtitle, 
         : runStyle
           ? runStyle.color
           : "border.emphasized";
+
+  if (lowDetail) {
+    // Zoomed far out on a large graph: a plain box with the title (problems, run state, diff
+    // and selection stay visible as colours). A plain element with token variables, not a
+    // styled component: hundreds of these mount at once when zooming out.
+    const line = spec.is_setup || spec.is_teardown ? "dashed" : "solid";
+    const color = cssColor(spec.disabled ? "gray.400" : accent);
+    return (
+      <div
+        style={{
+          position: "relative",
+          boxSizing: "border-box",
+          width: TASK_SIZE.width,
+          height: TASK_SIZE.height,
+          padding: "8px 12px",
+          borderRadius: 6,
+          // Tinted with the kind's accent: in the overview the colour is what tells tasks apart.
+          background: runStyle ? tokenVar(runStyle.bg) : `color-mix(in srgb, ${color} 22%, ${tokenVar("bg.panel")})`,
+          border: `2px ${line} ${tokenVar(border)}`,
+          borderLeft: `8px solid ${color}`,
+          // The diff is a ring around the box, so problem and selection colours stay visible.
+          ...(diff ? { boxShadow: `0 0 0 4px ${tokenVar(diff === "added" ? "green.400" : "yellow.400")}` } : {}),
+          opacity: spec.disabled ? 0.55 : 1,
+          color: tokenVar("fg"),
+          fontSize: 20,
+          fontWeight: 700,
+          lineHeight: 1.2,
+          whiteSpace: "nowrap",
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+        }}
+        title={problems.map((p) => problemText(p)).join("\n") || undefined}
+      >
+        <Handle type="target" position={Position.Left} />
+        {title}
+        <Handle type="source" position={Position.Right} />
+      </div>
+    );
+  }
 
   return (
     <Box

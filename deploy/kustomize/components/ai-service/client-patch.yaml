@@ -1,0 +1,15 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: autoair
+spec:
+  template:
+    spec:
+      containers:
+        - name: autoair
+          env:
+            - name: AUTOAIR_AI__SERVICE__SHARED_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: autoair-ai
+                  key: shared-secret

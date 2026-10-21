@@ -26,7 +26,7 @@ from autoair.ai.llm import LLM, ChatMessage, LLMError
 from autoair.ai.problems import SpecProblem, check_spec, format_problems
 from autoair.catalog import OperatorCatalog, OperatorSummary
 from autoair.registry import HandlerRegistry, default_registry
-from autoair.spec import DagSpec, OperatorNode
+from autoair.spec import SPEC_VERSION, DagSpec, OperatorNode
 from autoair.validation import DEFAULT_POLICY, Policy, Problem
 
 CORE_OPERATORS = (
@@ -185,7 +185,7 @@ _SPEC_RULES = """You are AutoAir's DAG author. AutoAir stores Apache Airflow 3 D
 documents ("DagSpec", schema below) which it turns into Python DAG files.
 
 Rules:
-- Return the COMPLETE DagSpec document (spec_version 2) - never a diff.
+- Return the COMPLETE DagSpec document (spec_version 3) - never a diff.
 - Every node needs a unique `id` (letters, digits, `_`, `-`). Task nodes also need a
   `task_id`; use the same value as `id` unless there is a reason not to.
 - Use `kind: "operator"` nodes with an `operator` FQN taken from the operator list in the
@@ -251,7 +251,7 @@ def _operator_context(catalog: OperatorCatalog, fqns: Sequence[str]) -> str:
 
 def _normalize(data: dict[str, Any], existing: DagSpec | None) -> dict[str, Any]:
     """Cheap fix-ups for common omissions so repairs focus on real problems."""
-    data.setdefault("spec_version", 2)
+    data.setdefault("spec_version", SPEC_VERSION)
     positions = (
         {n.id: n.position.model_dump(exclude_none=True) for n in existing.nodes} if existing else {}
     )

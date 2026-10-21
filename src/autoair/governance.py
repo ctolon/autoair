@@ -87,6 +87,10 @@ class ValidationSummary:
     warnings: int = 0
     infos: int = 0
     import_check: bool | None = None
+    # Why the import check did not run although it was asked for: "fail_open" (the
+    # validator service was unavailable and validator.fail_mode=open) or "permission"
+    # (the user lacks code:execute). Recorded so a deploy that skipped it stays visible.
+    import_check_skipped: str | None = None
 
     @classmethod
     def of(cls, report: Any) -> ValidationSummary:
@@ -95,13 +99,20 @@ class ValidationSummary:
         def count(severity: str) -> int:
             return sum(1 for p in problems if getattr(p, "severity", None) == severity)
 
+        codes = {getattr(p, "code", None) for p in problems}
         check = getattr(report, "import_check", None)
+        skipped: str | None = None
+        if check is None and "import_service" in codes:
+            skipped = "fail_open"
+        elif check is None and "import_check_skipped" in codes:
+            skipped = "permission"
         return cls(
             ok=bool(getattr(report, "ok", False)),
             errors=count("error"),
             warnings=count("warning"),
             infos=count("info"),
             import_check=None if check is None else bool(getattr(check, "ok", False)),
+            import_check_skipped=skipped,
         )
 
     def text(self) -> str:
@@ -109,6 +120,8 @@ class ValidationSummary:
         parts = [f"{self.errors} errors", f"{self.warnings} warnings", f"{self.infos} infos"]
         if self.import_check is not None:
             parts.append("import check " + ("ok" if self.import_check else "failed"))
+        elif self.import_check_skipped == "fail_open":
+            parts.append("import check skipped (validator unavailable, fail open)")
         else:
             parts.append("no import check")
         return f"{state} ({', '.join(parts)})"
@@ -231,6 +244,7 @@ class DeployContext:
                     "warnings": self.validation.warnings,
                     "infos": self.validation.infos,
                     "import_check": self.validation.import_check,
+                    "import_check_skipped": self.validation.import_check_skipped,
                 }
             ),
             "approved_by": list(self.approvals),

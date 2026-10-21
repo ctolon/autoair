@@ -1,7 +1,7 @@
 import { create } from "zustand";
 
 import { getAssistantThread } from "../api/gen/sdk.gen";
-import type { ChatMessage, ChatThread, ThreadSummary } from "../api/gen/types.gen";
+import type { ChatMessage, ChatThread, ThreadSummary, ToolDecision } from "../api/gen/types.gen";
 import { errorMessage } from "../api/setup";
 import { type AiStreamState, applyEvent, streamEnded } from "../lifecycle/components/AiStream";
 import { AiStreamError, streamAi } from "../lifecycle/lib/aiStream";
@@ -15,6 +15,8 @@ type PendingTurn = {
   userText: string;
   regenerate: boolean;
   stream: AiStreamState;
+  /** Resuming the paused answer with this id (tool approval): no new user message. */
+  resumeOf?: string;
 };
 
 const EMPTY_STREAM: AiStreamState = {
@@ -72,6 +74,8 @@ type ChatState = {
   regenerate: (ctx: SendContext) => Promise<void>;
   stop: () => void;
   replaceMessage: (message: ChatMessage) => void;
+  /** Decide the pending tool calls of a paused answer and resume it. */
+  decideApproval: (messageId: string, approvalId: string, decisions: ToolDecision[]) => Promise<void>;
   threadsChanged: () => void;
   openTroubleshoot: (target: TroubleshootTarget) => void;
   closeTroubleshoot: () => void;
@@ -86,8 +90,26 @@ export type SendContext = {
 
 let controller: AbortController | null = null;
 
+/** The newest answer of the thread is paused for tool approval. */
+export function awaitingApproval(messages: ChatMessage[]): boolean {
+  const last = [...messages].reverse().find((m) => m.role === "assistant");
+  const approvals = Array.isArray(last?.approvals) ? last.approvals : [];
+  return (approvals[approvals.length - 1]?.status ?? null) === "pending";
+}
+
 /** Messages after a finished turn: the stored user + assistant message replace the pending ones. */
-export function mergeTurn(messages: ChatMessage[], result: ChatTurnResult, regenerate: boolean): ChatMessage[] {
+export function mergeTurn(
+  messages: ChatMessage[],
+  result: ChatTurnResult,
+  regenerate: boolean,
+  resumeOf?: string,
+): ChatMessage[] {
+  if (resumeOf) {
+    // A resumed run completes the paused answer in place.
+    return messages.some((m) => m.id === resumeOf)
+      ? messages.map((m) => (m.id === resumeOf ? result.message : m))
+      : [...messages, result.message];
+  }
   const base = [...messages];
   if (regenerate) {
     while (base.length && base[base.length - 1]?.role === "assistant") base.pop();
@@ -97,15 +119,22 @@ export function mergeTurn(messages: ChatMessage[], result: ChatTurnResult, regen
 }
 
 export const useAiChat = create<ChatState>()((set, get) => {
-  async function run(body: Record<string, unknown>, userText: string, regenerate: boolean) {
+  async function run(
+    body: Record<string, unknown>,
+    userText: string,
+    regenerate: boolean,
+    resume?: { messageId: string; approvalId: string },
+  ) {
     controller?.abort();
     const ctrl = new AbortController();
     controller = ctrl;
-    set({ pending: { userText, regenerate, stream: { ...EMPTY_STREAM } }, error: null });
+    const resumeOf = resume?.messageId;
+    set({ pending: { userText, regenerate, stream: { ...EMPTY_STREAM }, resumeOf }, error: null });
     let sawDone = false;
     let turn: ChatTurnResult | null = null;
+    const path = resume ? `/ai/approvals/${encodeURIComponent(resume.approvalId)}/stream` : "/ai/assistant/chat/stream";
     try {
-      await streamAi("/ai/assistant/chat/stream", body, {
+      await streamAi(path, body, {
         signal: ctrl.signal,
         onEvent: (event) => {
           if (controller !== ctrl) return;
@@ -123,7 +152,7 @@ export const useAiChat = create<ChatState>()((set, get) => {
       const ended = pending ? streamEnded(pending.stream, sawDone) : null;
       if (finished) {
         set((s) => ({
-          messages: mergeTurn(s.messages, finished, regenerate),
+          messages: mergeTurn(s.messages, finished, regenerate, resumeOf),
           threadId: finished.thread.id,
           title: finished.thread.title,
           pending: null,
@@ -136,7 +165,9 @@ export const useAiChat = create<ChatState>()((set, get) => {
     } catch (err) {
       if (ctrl.signal.aborted) return;
       const message = err instanceof AiStreamError ? err.message : errorMessage(err);
-      set({ pending: null, error: message, draft: regenerate ? get().draft : userText });
+      set({ pending: null, error: message, draft: regenerate || resumeOf ? get().draft : userText });
+      // A refused decision leaves the stored state as it was (or marks it): show it.
+      if (resumeOf) await get().reload();
     } finally {
       if (controller === ctrl) controller = null;
     }
@@ -250,6 +281,10 @@ export const useAiChat = create<ChatState>()((set, get) => {
         // The server stores the cancelled turn; show it once it is written.
         setTimeout(() => void get().reload(), 400);
       }
+    },
+    decideApproval: async (messageId, approvalId, decisions) => {
+      if (get().pending) return;
+      await run({ decisions }, "", false, { messageId, approvalId });
     },
     replaceMessage: (message) => set((s) => ({ messages: s.messages.map((m) => (m.id === message.id ? message : m)) })),
     threadsChanged: () => set((s) => ({ threadsVersion: s.threadsVersion + 1 })),

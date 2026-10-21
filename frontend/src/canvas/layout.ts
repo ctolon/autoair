@@ -3,7 +3,9 @@ import type { ElkNode } from "elkjs/lib/elk-api";
 import type { BuilderEdge, BuilderNode } from "../lib/types";
 import { ELK_FALLBACK_GLOBAL } from "./elkFallback";
 import { COLLAPSED_GROUP_SIZE, TASK_SIZE } from "./geometry";
+import { getFlow } from "./flowInstance";
 import { collapsedView } from "./grouping";
+import { LOW_DETAIL_ZOOM } from "./largeGraph";
 import LAYOUT_WORKER_URL from "./layout.worker.ts?worker&url";
 
 type Elk = { layout: (g: ElkNode) => Promise<ElkNode> };
@@ -120,6 +122,10 @@ export async function autoLayout(
 ): Promise<Map<string, { x: number; y: number; width?: number; height?: number }>> {
   // Collapsed task groups are laid out as plain boxes; their (hidden) members keep their place.
   const view = collapsedView(nodes);
+  // Zoomed out, task cards are low-detail boxes and their measured size is not the size
+  // of the full card: lay out with the default card size instead.
+  const zoom = getFlow()?.getZoom() ?? 1;
+  const measured = (n: BuilderNode) => (zoom < LOW_DETAIL_ZOOM && n.type !== "note" ? undefined : n.measured);
   const visible = nodes.filter((n) => !view.hidden.has(n.id));
   const elkNodes = new Map<string, ElkNode>();
   for (const n of visible) {
@@ -131,8 +137,8 @@ export async function autoLayout(
         : collapsed
           ? { ...COLLAPSED_GROUP_SIZE }
           : {
-              width: n.measured?.width ?? Number(n.style?.width ?? TASK_SIZE.width),
-              height: n.measured?.height ?? Number(n.style?.height ?? TASK_SIZE.height),
+              width: measured(n)?.width ?? Number(n.style?.width ?? TASK_SIZE.width),
+              height: measured(n)?.height ?? Number(n.style?.height ?? TASK_SIZE.height),
             }),
     });
   }

@@ -195,7 +195,7 @@ export function Palette() {
   const sections = useMemo((): Section[] => {
     const terms = searchTerms(deferredQuery);
     const matches = (i: InsertItem) => matchesQuery(i, terms);
-    const all = [...ins.builtins, ...ins.operatorTemplates, ...ins.fragments, ...ins.operators];
+    const all = [...ins.builtins, ...ins.operatorTemplates, ...ins.blueprints, ...ins.fragments, ...ins.operators];
     const byKey = new Map(all.map((i) => [i.key, i]));
     const pick = (keys: string[]) => keys.map((k) => byKey.get(k)).filter((i): i is InsertItem => !!i && matches(i));
     if (tab === "favorites")
@@ -218,6 +218,12 @@ export function Palette() {
         collapsible: true,
       });
       out.push({
+        id: "blueprints",
+        title: t("palette.blueprints"),
+        items: ins.blueprints.filter(matches),
+        collapsible: true,
+      });
+      out.push({
         id: "fragments",
         title: t("palette.fragments"),
         items: ins.fragments.filter(matches),
@@ -235,7 +241,18 @@ export function Palette() {
       }
     }
     return out.filter((s) => s.items.length);
-  }, [ins.builtins, ins.operatorTemplates, ins.fragments, ins.operators, tab, deferredQuery, favorites, recent, t]);
+  }, [
+    ins.builtins,
+    ins.operatorTemplates,
+    ins.blueprints,
+    ins.fragments,
+    ins.operators,
+    tab,
+    deferredQuery,
+    favorites,
+    recent,
+    t,
+  ]);
 
   // Searching expands everything; otherwise collapsed sections hide their rows.
   const searching = query.trim().length > 0;

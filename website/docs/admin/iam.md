@@ -60,6 +60,7 @@ Each permission has an Airflow custom-view equivalent used by the `custom_view` 
 | `review` | Approve, request changes on, or comment a spec version | `can_create` on `AutoAir Reviews` |
 | `deploy` | Saves that go live: local and object targets, git push mode, direct pushes | `can_create` on `AutoAir Deploy` |
 | `deploy:direct_push` | Git PR mode: `direct_push: true` pushes straight to the branch | `can_create` on `AutoAir Direct Push` |
+| `deploy:overwrite_ejected` | Overwrite a DAG file AutoAir would otherwise not replace, after an explicit confirmation: a generated file changed outside AutoAir (also needs `preserve.ejected_files=overwrite`), the hand-written file AutoAir keeps for a DAG (switch to generate), or the file of a `force=true` deploy of another output mode or raw code. Every overwrite also needs `preserve.allow_force_overwrite=true` (default `false`; without it nobody can overwrite, administrators included). Deleting a DAG whose hand-written file AutoAir keeps needs only this permission. Files without AutoAir's marker are never overwritten by `force`. See [Editing existing Python DAGs](/docs/user-guide/editing-python-dags#overwriting-is-off-by-default). Never granted by a wildcard | `can_create` on `AutoAir Overwrite Ejected Files` |
 | `promote` | Promote a DAG between environments | `can_create` on `AutoAir Promote` |
 | `run:trigger` | Trigger runs, create asset events | `can_create` on `AutoAir DAG Runs` |
 | `run:manage` | Pause/unpause, clear, backfill | `can_edit` on `AutoAir DAG Runs` |
@@ -78,10 +79,13 @@ Each permission has an Airflow custom-view equivalent used by the `custom_view` 
 | **Author** | Viewer + `spec:write`, `code:execute`, `code:raw`, `run:test`, `ai:use`, `connection:write`, `catalog:refresh`. Authors *propose*: in git PR mode their saves open pull requests. On local and object targets, and in push mode, they cannot go live without `deploy`. |
 | **Reviewer** | Viewer + `review`, `ai:use` |
 | **Deployer** | Viewer + `spec:write`, `spec:delete`, `deploy`, `promote`, `run:trigger` |
+| **CodeDeployer** | Deployer + `code:execute`, `code:raw`: deploys DAGs that keep their hand-written Python file (imported or edited in the code mode) |
 | **Operator** | Viewer + `run:trigger`, `run:manage` |
 | **TemplateManager** | Viewer + `template:write`, `icon:write` |
-| **Admin** | Every permission except `deploy:direct_push` |
+| **Admin** | Every permission except `deploy:direct_push` (`deploy:overwrite_ejected` included) |
 | *Authenticated* | Baseline of the `airflow_permissions` strategy: `builder:use`, `airflow:read`, `ai:use`, `connection:write`, `run:trigger`, `run:manage`. Airflow still enforces its own RBAC on every proxied call. |
+
+Deploying a DAG that keeps its hand-written Python file (imported, or applied in the code mode; source policy preserve) runs a round-trip import of the file, which needs `code:execute`, and writing the imported file itself needs `code:raw`. **Deployer** has neither, deliberately (the kept file is arbitrary Python): such a deploy is refused with a message naming the missing permission. Give those users the **CodeDeployer** role (Deployer + `code:execute` + `code:raw`), or deploy the DAG with the source policy *Generate*.
 
 `autoair iam roles` prints the effective table (built-in roles plus `iam.roles`), and `--json` prints it as JSON:
 
@@ -97,6 +101,8 @@ Reviewer: Read everything, approve spec versions, AI review.
   ai:use, airflow:read, audit:read, builder:use, review, spec:read
 Deployer: Deploy live, delete, promote between environments, trigger runs.
   airflow:read, audit:read, builder:use, deploy, promote, run:trigger, spec:delete, spec:read, spec:write
+CodeDeployer: Deployer, plus deploying DAGs that keep their hand-written Python file (imported or edited in the code mode): code:execute and code:raw.
+  airflow:read, audit:read, builder:use, code:execute, code:raw, deploy, promote, run:trigger, spec:delete, spec:read, spec:write
 Operator: Trigger, backfill, clear, pause/unpause runs.
   airflow:read, audit:read, builder:use, run:manage, run:trigger, spec:read
 TemplateManager: Curate templates, marketplace installs and icons.
@@ -169,7 +175,7 @@ Each AutoAir permission is checked with the auth manager's `is_authorized_custom
 |---|---|---|---|
 | **FAB** (`apache-airflow-providers-fab`) | Real check: `(can_<action>, resource)` in the user's permissions. The permissions must exist in FAB's database: run `autoair iam sync-fab` once. | `user.roles` | `custom_view` (fine-grained in the Airflow UI) or `role_mapping` |
 | **SimpleAuthManager** (Airflow default) | **Grants every custom view to every user with any role**, whatever the method. AutoAir therefore ignores `custom_view` with it and logs a warning. | `user.role`, also in the JWT | `role_mapping` |
-| **Keycloak** (`apache-airflow-providers-keycloak`) | Real check: resource type `Custom`, resource id `<custom_view_prefix> <resource>` (`AutoAir Builder`, `AutoAir Specs`, `AutoAir Audit Log`, `AutoAir Airflow Resources`, `AutoAir Code Execution`, `AutoAir Test Runs`, `AutoAir Catalog`, `AutoAir AI`, `AutoAir Reviews`, `AutoAir Deploy`, `AutoAir Direct Push`, `AutoAir Promote`, `AutoAir DAG Runs`, `AutoAir Templates`, `AutoAir Icons`, `AutoAir Deploy Target`, `AutoAir Configuration`, `AutoAir Admin Panel`, `AutoAir AI Settings`), scope = method. Define them in Keycloak authorization. | not exposed | `custom_view` |
+| **Keycloak** (`apache-airflow-providers-keycloak`) | Real check: resource type `Custom`, resource id `<custom_view_prefix> <resource>` (`AutoAir Builder`, `AutoAir Specs`, `AutoAir Audit Log`, `AutoAir Airflow Resources`, `AutoAir Code Execution`, `AutoAir Test Runs`, `AutoAir Catalog`, `AutoAir AI`, `AutoAir Reviews`, `AutoAir Deploy`, `AutoAir Direct Push`, `AutoAir Overwrite Ejected Files`, `AutoAir Promote`, `AutoAir DAG Runs`, `AutoAir Templates`, `AutoAir Icons`, `AutoAir Deploy Target`, `AutoAir Configuration`, `AutoAir Admin Panel`, `AutoAir AI Settings`), scope = method. Define them in Keycloak authorization. | not exposed | `custom_view` |
 | **AWS** (`apache-airflow-providers-amazon`) | Real check: Verified Permissions entity `Custom::<custom_view_prefix> <resource>` (the resources listed for Keycloak, such as `Custom::AutoAir Deploy`), action = method | not exposed | `custom_view` |
 | Custom auth managers | Whatever they implement | `user.roles` / `user.role` when present | either |
 
@@ -183,7 +189,7 @@ Strategies combine as a union. In plugin mode, `["airflow_permissions", "role_ma
 
 ## FAB: registering permissions with `autoair iam sync-fab`
 
-FAB only lets admins grant permissions that exist in its database. `autoair iam sync-fab` creates every AutoAir permission as a FAB permission, named as in the [Permissions](#permissions) table (for example `can_create on AutoAir Deploy`). With `--create-roles` it also creates one Airflow role per AutoAir role (`AutoAir Viewer`, `AutoAir Author`, `AutoAir Reviewer`, `AutoAir Deployer`, `AutoAir Operator`, `AutoAir TemplateManager` and `AutoAir Admin`, named with `iam.role_prefix`) holding the matching permissions.
+FAB only lets admins grant permissions that exist in its database. `autoair iam sync-fab` creates every AutoAir permission as a FAB permission, named as in the [Permissions](#permissions) table (for example `can_create on AutoAir Deploy`). With `--create-roles` it also creates one Airflow role per AutoAir role (`AutoAir Viewer`, `AutoAir Author`, `AutoAir Reviewer`, `AutoAir Deployer`, `AutoAir CodeDeployer`, `AutoAir Operator`, `AutoAir TemplateManager` and `AutoAir Admin`, named with `iam.role_prefix`) holding the matching permissions.
 
 Run it where Airflow runs (it uses Airflow's FAB application and metadata database):
 

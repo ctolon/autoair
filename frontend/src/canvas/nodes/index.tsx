@@ -21,9 +21,10 @@ import { useShallow } from "zustand/react/shallow";
 import { nodeKindExtension } from "../../extensions/registry";
 import type { CustomFlowNode, OperatorFlowNode, PythonTaskFlowNode, TaskGroupFlowNode } from "../../lib/types";
 import { useBuilder } from "../../store/builder";
-import { descendantsOf } from "../geometry";
+import { groupTaskMembers, nodeProblems } from "../../store/indexes";
 import { isHitlClass, useOperatorSummary } from "../insertables";
 import { aggregateState } from "../runState";
+import { BlueprintNodeView } from "./BlueprintNode";
 import { NoteNodeView } from "./NoteNode";
 import { IconImage, decoratorIcon } from "../icons";
 import { RunChip, TaskCard } from "./TaskCard";
@@ -138,20 +139,21 @@ const CustomNodeView = memo(function CustomNodeView({ id, data, selected }: Node
 });
 
 const NO_SUMMARY: [number, string | null] = [0, null];
+const NO_MEMBERS: readonly string[] = [];
 
 const TaskGroupNodeView = memo(function TaskGroupNodeView({ id, data, selected }: NodeProps<TaskGroupFlowNode>) {
   const { t } = useTranslation("canvas");
   const collapsed = !!data.collapsed;
-  const errors = useBuilder((s) => s.problems.some((p) => p.node_id === id && p.severity === "error"));
+  const errors = useBuilder((s) => nodeProblems(s.problems, id).some((p) => p.severity === "error"));
   const hasRun = useBuilder((s) => s.runOverlay !== null);
-  // Member count + aggregated run state are only needed (and computed) while collapsed.
+  // Member count + aggregated run state are only needed (and computed) while collapsed; the
+  // member index is built once per node array for all groups.
   const [members, state] = useBuilder(
     useShallow((s): [number, string | null] => {
       if (!collapsed) return NO_SUMMARY;
-      const inside = descendantsOf(s.nodes, [id]);
-      const tasks = s.nodes.filter((n) => inside.has(n.id) && n.type !== "task_group" && n.type !== "note");
-      const states = s.runOverlay ? tasks.map((n) => s.runOverlay?.states[n.id]?.state) : [];
-      return [tasks.length, aggregateState(states)];
+      const tasks = groupTaskMembers(s.nodes).get(id) ?? NO_MEMBERS;
+      const overlay = s.runOverlay;
+      return [tasks.length, overlay ? aggregateState(tasks.map((m) => overlay.states[m]?.state)) : null];
     }),
   );
   const name = data.spec.label || data.spec.group_id;
@@ -216,5 +218,6 @@ export const nodeTypes = {
   python_task: PythonTaskNodeView,
   task_group: TaskGroupNodeView,
   custom: CustomNodeView,
+  blueprint: BlueprintNodeView,
   note: NoteNodeView,
 } satisfies NodeTypes;

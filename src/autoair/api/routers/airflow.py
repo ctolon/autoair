@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import asyncio
 import datetime
-import re
 from collections.abc import Awaitable, Callable
 from typing import Annotated, Any, Literal, TypeVar
 
@@ -34,6 +33,7 @@ from autoair.gateway import (
     VariableInfo,
     XComInfo,
     for_team,
+    parse_version,
 )
 from autoair.iam import model as P
 from autoair.iam.deps import require
@@ -144,15 +144,11 @@ class AirflowCapabilities(BaseModel):
     scheduling_state: bool = Field(
         description="DAG scheduling_state active/draining/paused and drain (>= 3.4)."
     )
-
-
-def _version_tuple(version: str | None) -> tuple[int, int, int] | None:
-    if not version:
-        return None
-    m = re.match(r"^(\d+)(?:\.(\d+))?(?:\.(\d+))?", version.strip())
-    if not m:
-        return None
-    return int(m.group(1)), int(m.group(2) or 0), int(m.group(3) or 0)
+    retry_try_is_next: bool = Field(
+        default=False,
+        description="An up_for_retry task instance's try_number is the upcoming try, which "
+        "has no log yet; the failed try is try_number - 1 (>= 3.4).",
+    )
 
 
 def capabilities_for(
@@ -160,7 +156,7 @@ def capabilities_for(
 ) -> AirflowCapabilities:
     """Unknown versions get no optional features (sending an unknown field to Airflow's
     strict request bodies fails the whole call)."""
-    v = _version_tuple(version)
+    v = parse_version(version)
 
     def at_least(*minimum: int) -> bool:
         return v is not None and v >= minimum
@@ -174,6 +170,7 @@ def capabilities_for(
         keep_task_state=at_least(3, 4),
         backfill_run_on_latest_version=at_least(3, 1),
         scheduling_state=at_least(3, 4),
+        retry_try_is_next=at_least(3, 4),
     )
 
 

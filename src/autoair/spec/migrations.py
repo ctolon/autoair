@@ -18,7 +18,15 @@ def _v1_to_v2(doc: Document) -> Document:
     return {**doc, "spec_version": 2}
 
 
-MIGRATIONS: dict[int, Callable[[Document], Document]] = {1: _v1_to_v2}
+def _v2_to_v3(doc: Document) -> Document:
+    # v3 (AutoAir 0.2.0) only added optional parts: ``source`` (source policy, hand-written
+    # code, ``base_sha``) and the ``blueprint`` node kind. The bump exists so an older AutoAir
+    # refuses a v3 document with "upgrade AutoAir" instead of a discriminator error on a node
+    # kind or an unknown field it does not know.
+    return {**doc, "spec_version": 3}
+
+
+MIGRATIONS: dict[int, Callable[[Document], Document]] = {1: _v1_to_v2, 2: _v2_to_v3}
 LATEST = max(MIGRATIONS) + 1
 
 

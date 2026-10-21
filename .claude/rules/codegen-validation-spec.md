@@ -33,8 +33,9 @@ Related skills: `airflow-compat-check`, `add-node-kind`, `add-operator-widget`.
   them; results are cached on disk and images ship a precomputed catalog (`autoair catalog
   build`, `AUTOAIR_CATALOG_FILE`). Never import operator modules on a request path.
 - DagBag import checks use the warm pool (`validation/pool.py`, `DagBagPool`); never spawn an
-  interpreter per request. Task and DAG test runs (`runner/`) use a child process with a
-  scrubbed environment.
+  interpreter per request. The one deliberate exception is the isolated validator service
+  (`validation/service.py`, `validator.max_tasks_per_child=1`, a pre-warmed spare per check).
+  Task and DAG test runs (`runner/`) use a child process with a scrubbed environment.
 - Jinja is evaluated in `jinja2.sandbox.SandboxedEnvironment` (`validation/jinja.py`,
   `scaffold/`). Constants of `validation/jinja.py` are mirrored into the frontend: run
   `uv run python scripts/gen_shared_constants.py` after changing them.

@@ -75,7 +75,7 @@ Install `autoair[otel]`. Spans are exported only when `OTEL_EXPORTER_OTLP_ENDPOI
 
 ### The **AutoAir** tab is missing on DAG pages
 
-It needs Airflow 3.1 or newer and `AUTOAIR_PLUGIN__DAG_TAB=true` (default).
+It needs Airflow 3.1 or newer and `AUTOAIR_PLUGIN__DAG_TAB=true` (default). On Airflow 3.4 and newer, `AUTOAIR_PLUGIN__DAG_TAB_TAGS` shows it only on DAGs carrying one of the listed tags. If the tab is missing everywhere with tags set, run `airflow plugins --verbose` on the API server: Airflow logs there why it changed or dropped a plugin view.
 
 ### `/autoair/api/...` returns 401 or 403
 

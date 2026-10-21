@@ -28,6 +28,7 @@ AI_USE: Final = "ai:use"
 REVIEW: Final = "review"
 DEPLOY: Final = "deploy"
 DEPLOY_DIRECT_PUSH: Final = "deploy:direct_push"
+DEPLOY_OVERWRITE_EJECTED: Final = "deploy:overwrite_ejected"
 PROMOTE: Final = "promote"
 RUN_TRIGGER: Final = "run:trigger"
 RUN_MANAGE: Final = "run:manage"
@@ -109,6 +110,14 @@ PERMISSIONS: Final[tuple[PermissionInfo, ...]] = (
         "POST",
         "Direct Push",
     ),
+    PermissionInfo(
+        DEPLOY_OVERWRITE_EJECTED,
+        "Overwrite a generated DAG file that was changed outside AutoAir (ejected) with a "
+        "regenerated one, discarding those changes (preserve.ejected_files=overwrite; needs "
+        "an explicit confirmation per deploy).",
+        "POST",
+        "Overwrite Ejected Files",
+    ),
     PermissionInfo(PROMOTE, "Promote a DAG from one environment to another.", "POST", "Promote"),
     PermissionInfo(RUN_TRIGGER, "Trigger DAG runs and create asset events.", "POST", "DAG Runs"),
     PermissionInfo(RUN_MANAGE, "Pause/unpause, clear and backfill DAG runs.", "PUT", "DAG Runs"),
@@ -135,6 +144,8 @@ PERMISSIONS: Final[tuple[PermissionInfo, ...]] = (
 )
 
 ALL_PERMISSIONS: Final[frozenset[str]] = frozenset(p.name for p in PERMISSIONS)
+#: Permissions a wildcard (``*``, ``deploy:*``) never grants.
+EXPLICIT_ONLY: Final[frozenset[str]] = frozenset({DEPLOY_DIRECT_PUSH, DEPLOY_OVERWRITE_EJECTED})
 PERMISSION_INFO: Final[Mapping[str, PermissionInfo]] = {p.name: p for p in PERMISSIONS}
 
 # --------------------------------------------------------------------------- roles
@@ -143,6 +154,7 @@ VIEWER: Final = "Viewer"
 AUTHOR: Final = "Author"
 REVIEWER: Final = "Reviewer"
 DEPLOYER: Final = "Deployer"
+CODE_DEPLOYER: Final = "CodeDeployer"
 OPERATOR: Final = "Operator"
 TEMPLATE_MANAGER: Final = "TemplateManager"
 ADMIN: Final = "Admin"
@@ -168,6 +180,18 @@ BUILTIN_ROLES: Final[Mapping[str, tuple[str, ...]]] = {
     ),
     REVIEWER: (*_VIEW, REVIEW, AI_USE),
     DEPLOYER: (*_VIEW, SPEC_WRITE, SPEC_DELETE, DEPLOY, PROMOTE, RUN_TRIGGER),
+    # Deploying DAGs that keep their hand-written Python file: the round trip runs the
+    # file (code:execute) and the first deploy writes the imported file (code:raw).
+    CODE_DEPLOYER: (
+        *_VIEW,
+        SPEC_WRITE,
+        SPEC_DELETE,
+        DEPLOY,
+        PROMOTE,
+        RUN_TRIGGER,
+        CODE_EXECUTE,
+        CODE_RAW,
+    ),
     OPERATOR: (*_VIEW, RUN_TRIGGER, RUN_MANAGE),
     TEMPLATE_MANAGER: (*_VIEW, TEMPLATE_WRITE, ICON_WRITE),
     ADMIN: tuple(sorted(ALL_PERMISSIONS - {DEPLOY_DIRECT_PUSH})),
@@ -180,6 +204,8 @@ ROLE_DESCRIPTIONS: Final[Mapping[str, str]] = {
     "proposes changes (PRs).",
     REVIEWER: "Read everything, approve spec versions, AI review.",
     DEPLOYER: "Deploy live, delete, promote between environments, trigger runs.",
+    CODE_DEPLOYER: "Deployer, plus deploying DAGs that keep their hand-written Python "
+    "file (imported or edited in the code mode): code:execute and code:raw.",
     OPERATOR: "Trigger, backfill, clear, pause/unpause runs.",
     TEMPLATE_MANAGER: "Curate templates, marketplace installs and icons.",
     ADMIN: "Everything, including the deploy target and configuration.",
@@ -194,14 +220,15 @@ def expand(patterns: Iterable[str]) -> set[str]:
     """Permission names matching ``patterns`` (exact names or fnmatch wildcards such as
     ``spec:*`` or ``*``). Unknown exact names are kept (forward compatible).
 
-    ``deploy:direct_push`` never comes from a wildcard: it must be named explicitly."""
+    ``deploy:direct_push`` and ``deploy:overwrite_ejected`` never come from a wildcard: they
+    must be named explicitly (they bypass a review / discard hand-made changes)."""
     out: set[str] = set()
     for pattern in patterns:
         if is_pattern(pattern):
             out.update(
                 p
                 for p in ALL_PERMISSIONS
-                if p != DEPLOY_DIRECT_PUSH and fnmatch.fnmatchcase(p, pattern)
+                if p not in EXPLICIT_ONLY and fnmatch.fnmatchcase(p, pattern)
             )
         else:
             out.add(pattern)

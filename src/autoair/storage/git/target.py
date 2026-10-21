@@ -35,6 +35,8 @@ from autoair.storage.base import (
     AuthError,
     ConflictError,
     DagState,
+    ExistingFile,
+    HandWrittenError,
     NotFoundError,
     SaveResult,
     SpecSummary,
@@ -50,6 +52,7 @@ from autoair.storage.base import (
     main_file,
     serialize_spec,
     sha256_text,
+    source_sha,
     spec_etag,
     spec_filename,
     summary_of,
@@ -303,6 +306,37 @@ class GitTarget:
         return self._read_spec(base_head, dag_id) if base_head else None
 
     @_fresh_credentials
+    def current_file(
+        self, dag_id: str, *, environment: str | None = None, mode: GitMode | None = None
+    ) -> ExistingFile | None:
+        """The main DAG file a save would commit on top of: on the pending branch when a
+        pull request for the DAG is open (PR mode), else on the target branch."""
+        check_dag_id(dag_id)
+        mode = mode or self.mode
+        target = self._branch_for(environment)
+        branch, head = target, self.provider.head(target)
+        if mode == "pr":
+            pending, pending_head, _pr = self._pending(dag_id, environment)
+            if pending:
+                branch, head = pending, pending_head
+        if not head:
+            return None
+        name = f"{dag_id}.py"
+        path = self._path(name)
+        content = self._read(head, path)
+        if content is None:
+            return None
+        state = self._read_state(head, dag_id)
+        return ExistingFile(
+            name=name,
+            content=content,
+            location=self._describe(branch, path),
+            recorded_sha=state.files.get(name) if state else None,
+            source_sha=state.source_sha if state else None,
+            hand_written=state.hand_written if state else False,
+        )
+
+    @_fresh_credentials
     def list(self, *, environment: str | None = None) -> list[SpecSummary]:
         branch = self._branch_for(environment)
         head = self.provider.head(branch)
@@ -421,11 +455,17 @@ class GitTarget:
         message: str,
         environment: str | None,
         as_service: bool = False,
+        expected: dict[str, str] | None = None,
+        hand_written: bool | None = None,
+        allow_hand_written: bool = False,
     ) -> tuple[str | None, bool]:
         """Commit a save (``spec``) or a delete (``spec is None``) on ``branch``.
 
-        Returns ``(commit sha, changed)``.
+        ``expected``: file name -> sha256 of the file a source-preserving deploy patched
+        (overwritten only while it is unchanged on the branch). Returns ``(commit sha,
+        changed)``.
         """
+        expected = expected or {}
         current = self._read_spec(head, dag_id) if head else None
         if base_etag is not None and (current is None or current.etag != base_etag):
             raise ConflictError(current)
@@ -433,11 +473,21 @@ class GitTarget:
         recorded = state.files if state else {}
         hashes = {name: sha256_text(content) for name, content in files.items()}
         changes: dict[str, str | None] = {}
+        kept = state.hand_written if state is not None else False
         for name, content in files.items():
             path = self._path(name)
             existing = self._read(head, path) if head else None
+            # Every write (loader/YAML output modes, raw code, promotion, MCP) commits here,
+            # so the kept hand-written file is protected here and not only by the plan.
+            if kept and existing is not None and name not in expected and not allow_hand_written:
+                raise HandWrittenError(self._describe(branch, path))
             check_overwrite(
-                self._describe(branch, path), existing, recorded.get(name), hashes[name], force
+                self._describe(branch, path),
+                existing,
+                recorded.get(name),
+                hashes[name],
+                force,
+                expected.get(name),
             )
             changes[path] = content
         olds = list(recorded) or ([f"{dag_id}.py"] if spec is None else [])
@@ -448,11 +498,21 @@ class GitTarget:
             existing = self._read(head, path) if head else None
             if existing is None:
                 continue
+            if kept and not allow_hand_written:
+                raise HandWrittenError(self._describe(branch, path))
+            if kept:
+                check_overwrite(
+                    self._describe(branch, path), existing, None, None, False, recorded.get(name)
+                )
+                changes[path] = None
+                continue
             if not is_owned(existing):
                 log.warning("leaving %s in place: it is not owned by AutoAir", path)
                 continue
             check_overwrite(self._describe(branch, path), existing, recorded.get(name), None, force)
             changes[path] = None
+        if hand_written is not None:
+            kept = hand_written
         if spec is None:
             if current is None:
                 return head, False
@@ -465,6 +525,8 @@ class GitTarget:
                 and state is not None
                 and current.etag == etag
                 and state.files == hashes
+                and state.source_sha == source_sha(spec)
+                and state.hand_written == kept
                 and all(v is not None for v in changes.values())
             ):
                 return head, False
@@ -477,6 +539,8 @@ class GitTarget:
                     updated_at=utcnow(),
                     author=author,
                     environment=environment,
+                    source_sha=source_sha(spec),
+                    hand_written=kept,
                 ).model_dump_json(indent=2)
                 + "\n"
             )
@@ -503,9 +567,14 @@ class GitTarget:
         mode: GitMode | None = None,
         context: DeployContext | None = None,
         co_author: bool = False,
+        expected: dict[str, str] | None = None,
+        hand_written: bool | None = None,
+        allow_hand_written: bool = False,
     ) -> SaveResult:
         """Commit ``spec`` + ``files``; ``mode`` overrides the configured mode for this save
         (the deploy route decides it from the caller's ``deploy:direct_push`` right).
+        ``allow_hand_written``: the caller may replace a hand-written file AutoAir keeps
+        without ``expected`` covering it (``deploy:overwrite_ejected``).
 
         ``context`` (:mod:`autoair.governance`) adds the mandatory context block and git
         trailers to the commit message and the pull request description; ``co_author``
@@ -538,6 +607,9 @@ class GitTarget:
                 message=commit_message,
                 environment=environment,
                 as_service=co_author,
+                expected=expected,
+                hand_written=hand_written,
+                allow_hand_written=allow_hand_written,
             ),
             dag_id=dag_id,
             environment=environment,
@@ -567,6 +639,7 @@ class GitTarget:
         mode: GitMode | None = None,
         context: DeployContext | None = None,
         co_author: bool = False,
+        allow_hand_written: bool = False,
     ) -> bool:
         check_dag_id(dag_id)
         target = self._branch_for(environment)
@@ -596,6 +669,7 @@ class GitTarget:
                 message=message,
                 environment=environment,
                 as_service=co_author,
+                allow_hand_written=allow_hand_written,
             ),
             dag_id=dag_id,
             environment=environment,

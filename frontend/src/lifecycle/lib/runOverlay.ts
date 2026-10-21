@@ -11,6 +11,7 @@ function effectiveId(node: SpecNode, byId: Map<string, SpecNode>): string | null
   let own: string;
   if (node.kind === "task_group") own = node.group_id;
   else if (node.kind === "note") return null;
+  else if (node.kind === "blueprint") own = node.step_id;
   else own = node.task_id;
   const parts = [own];
   const seen = new Set<string>();
@@ -55,6 +56,19 @@ const ACTIVE = new Set([
 ]);
 
 /** True while the run (or any of its task instances) is still progressing. */
+/**
+ * Newest try of a task instance that can have a log. From Airflow 3.4 (`retryTryIsNext`, see
+ * `AirflowCapabilities.retry_try_is_next`) an `up_for_retry` instance already carries the
+ * upcoming try; the failed one is `try_number - 1`.
+ */
+export function latestLogTry(
+  ti: Pick<TaskInstanceInfo, "state" | "try_number"> | undefined,
+  retryTryIsNext: boolean,
+): number {
+  const latest = Math.max(1, ti?.try_number ?? 1);
+  return retryTryIsNext && ti?.state === "up_for_retry" ? Math.max(1, latest - 1) : latest;
+}
+
 export function isRunActive(overlay: RunsOverlay | undefined): boolean {
   if (!overlay) return false;
   const state = overlay.run?.state ?? null;
@@ -78,9 +92,17 @@ export function buildRunOverlay(
   overlay: RunsOverlay,
 ): RunOverlay {
   const ids = effectiveTaskIds(nodes);
+  // A blueprint step's tasks are `<step>` or `<step>.<task>`: their states aggregate on the step.
+  const byId = new Map(nodes.map((n) => [n.id, n]));
+  const steps = nodes
+    .filter((n) => n.kind === "blueprint")
+    .map((n) => [effectiveId(n, byId), n.id] as const)
+    .filter((s): s is readonly [string, string] => s[0] !== null);
+  const stepOf = (taskId: string) =>
+    steps.find(([eff]) => taskId === eff || taskId.startsWith(`${eff}.`))?.[1] ?? undefined;
   const grouped = new Map<string, TaskInstanceInfo[]>();
   for (const ti of overlay.task_instances) {
-    const nodeId = ids.get(ti.task_id);
+    const nodeId = ids.get(ti.task_id) ?? stepOf(ti.task_id);
     if (!nodeId) continue;
     grouped.set(nodeId, [...(grouped.get(nodeId) ?? []), ti]);
   }

@@ -26,13 +26,15 @@ ComponentId = Literal[
     "astro_cli",
     "astro",
     "astro_runtime",
+    "autoair",
 ]
-SourceKind = Literal["official", "site", "llms_txt", "git", "path", "bundle"]
+SourceKind = Literal["official", "site", "llms_txt", "git", "path", "bundle", "autoair"]
 SourceLayout = Literal["auto", "airflow_repo", "sphinx_site", "files"]
 StoreKind = Literal["local", "pgvector", "elasticsearch"]
 
 #: Components indexed by default: everything about running Airflow itself, plus
-#: Astronomer's vendor-neutral Airflow guides. Astro product docs are opt-in.
+#: Astronomer's vendor-neutral Airflow guides and AutoAir's own documentation (packaged,
+#: no network). Astro product docs are opt-in.
 DEFAULT_COMPONENTS: list[ComponentId] = [
     "core",
     "task_sdk",
@@ -40,6 +42,7 @@ DEFAULT_COMPONENTS: list[ComponentId] = [
     "helm_chart",
     "airflowctl",
     "astronomer_airflow",
+    "autoair",
 ]
 DEFAULT_DOMAINS = ["airflow.apache.org", "astronomer.io"]
 SOURCE_ID = r"^[a-z0-9][a-z0-9_-]{0,40}$"
@@ -73,7 +76,8 @@ class KbSourceConfig(_Section):
         "a mirror of the Airflow docs site (Sphinx layout) over HTTP; llms_txt: an llms.txt "
         "index of Markdown pages (Astronomer layout); git: a repository (e.g. a corporate "
         "mirror of apache/airflow); path: a local folder or an object-storage URL (s3://, "
-        "gs://, abfs://); bundle: a KB bundle file made with `autoair kb build`.",
+        "gs://, abfs://); bundle: a KB bundle file made with `autoair kb build`; autoair: "
+        "AutoAir's own documentation packaged with this version (no url, no network).",
     )
     enabled: bool = Field(
         default=True, description="Index this source (the admin panel can switch it at runtime)."
@@ -154,7 +158,10 @@ class KbSourceConfig(_Section):
 
 
 def _default_sources() -> list[KbSourceConfig]:
-    return [KbSourceConfig(id="official", kind="official")]
+    return [
+        KbSourceConfig(id="official", kind="official"),
+        KbSourceConfig(id="autoair", kind="autoair", title="AutoAir documentation"),
+    ]
 
 
 class KbFetchSettings(_Section):
@@ -381,7 +388,8 @@ class KbSettings(_Section):
         default_factory=lambda: list(DEFAULT_COMPONENTS),
         description="Components to index: core, task_sdk, providers, helm_chart, airflowctl "
         "(Apache), astronomer_airflow (Astronomer's Airflow guides), astro_cli, astro, "
-        "astro_runtime (Astronomer products; off by default). JSON list.",
+        "astro_runtime (Astronomer products; off by default), autoair (AutoAir's own "
+        "documentation, read by the autoair source). JSON list.",
     )
     providers: Literal["installed", "all"] = Field(
         default="installed",
@@ -406,8 +414,11 @@ class KbSettings(_Section):
     sources: list[KbSourceConfig] = Field(
         default_factory=_default_sources,
         description='Documentation sources (JSON list), e.g. [{"id": "official", "kind": '
-        '"official"}, {"id": "mirror", "kind": "git", "url": "https://git.corp/airflow.git", '
-        '"conn_id": "kb_git", "ref": "3.1.0", "layout": "airflow_repo"}].',
+        '"official"}, {"id": "autoair", "kind": "autoair"}, {"id": "mirror", "kind": "git", '
+        '"url": "https://git.corp/airflow.git", "conn_id": "kb_git", "ref": "3.1.0", '
+        '"layout": "airflow_repo"}]. Default: official and autoair (AutoAir\'s packaged '
+        "documentation); a list set here replaces the default, so keep the autoair entry "
+        "to keep AutoAir's documentation searchable.",
     )
     store: StoreKind = Field(
         default="local",

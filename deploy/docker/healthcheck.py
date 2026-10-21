@@ -4,6 +4,7 @@
 * ``autoair serve`` / ``autoair local``: ``/api/health`` on AUTOAIR_SERVER__PORT (8765),
   over HTTPS when AUTOAIR_SERVER__SSL_CERTFILE is set;
 * ``autoair ai-serve``: ``/health`` on 8790;
+* ``autoair validator-serve``: ``/health`` on its ``--port`` (8791);
 * ``airflow api-server``: ``/api/v2/monitor/health`` on 8080;
 * ``airflow scheduler``: the scheduler health server on 8974 when enabled;
 * anything else (dag-processor, triggerer, one-shot jobs): healthy, use the orchestrator's
@@ -32,6 +33,10 @@ def _url() -> str | None:
     cmd = _cmdline()
     if "ai-serve" in cmd:
         return "http://127.0.0.1:8790/health"
+    if "validator-serve" in cmd:
+        args = cmd.split()
+        port = args[args.index("--port") + 1] if "--port" in args[:-1] else "8791"
+        return f"http://127.0.0.1:{port}/health"
     if "autoair serve" in cmd or "autoair local" in cmd:
         scheme = "https" if os.environ.get("AUTOAIR_SERVER__SSL_CERTFILE") else "http"
         port = os.environ.get("AUTOAIR_SERVER__PORT", "8765")

@@ -1,0 +1,96 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "autoair-validator.name" . }}
+  labels:
+    {{- include "autoair-validator.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicas }}
+  selector:
+    matchLabels:
+      {{- include "autoair-validator.selector" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "autoair-validator.labels" . | nindent 8 }}
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      # The validator talks to nothing in the cluster: no API token in the pod.
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: validator
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          # dumb-init as PID 1 reaps any process the DAG code manages to leave behind.
+          command: [/usr/bin/dumb-init, --, autoair]
+          args: [validator-serve, --host, 0.0.0.0, --port, {{ .Values.port | quote }}]
+          ports:
+            - name: http
+              containerPort: {{ .Values.port }}
+              protocol: TCP
+          env:
+            - name: AIRFLOW_HOME
+              value: /tmp/airflow
+            - name: HOME
+              value: /tmp
+            - name: AUTOAIR_CACHE_DIR
+              value: /tmp/autoair-cache
+            - name: AUTOAIR_VALIDATOR__SECRET_CONN_ID
+              value: {{ .Values.keySecret.connId | quote }}
+            - name: {{ printf "AIRFLOW_CONN_%s" (upper .Values.keySecret.connId) }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.keySecret.name }}
+                  key: {{ .Values.keySecret.key }}
+            {{- range $name, $value := .Values.settings }}
+            - name: {{ $name }}
+              value: {{ $value | quote }}
+            {{- end }}
+            {{- with .Values.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          startupProbe:
+            httpGet: { path: /ready, port: http }
+            periodSeconds: 5
+            failureThreshold: 36
+          readinessProbe:
+            httpGet: { path: /ready, port: http }
+            periodSeconds: 10
+            timeoutSeconds: 5
+          livenessProbe:
+            httpGet: { path: /health, port: http }
+            periodSeconds: 20
+            timeoutSeconds: 5
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: {{ .Values.tmpSizeLimit }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

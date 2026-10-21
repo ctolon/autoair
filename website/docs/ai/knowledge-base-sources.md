@@ -23,6 +23,7 @@ it is read from). Every field is in the [`kb` settings reference](/docs/referenc
 | `astro_cli` | Astronomer's Astro CLI | off | `astronomer.io/docs/cli/llms.txt` | - |
 | `astro` | Astro, Astronomer's managed platform | off | `astronomer.io/docs/astro/llms.txt` | - |
 | `astro_runtime` | Astro Runtime | off | `astronomer.io/docs/runtime/llms.txt` | - |
+| `autoair` | AutoAir's own documentation (this site), packaged with the installed AutoAir version | on | read by the `autoair` source, no network | - |
 
 The default covers running and authoring Airflow itself plus Astronomer's vendor-neutral guides;
 Astronomer's product documentation is opt-in. Astronomer's pages are published under
@@ -68,7 +69,9 @@ whose label contains it.
 
 ## Source kinds
 
-`kb.sources` is a JSON list; the default is `[{"id": "official", "kind": "official"}]`.
+`kb.sources` is a JSON list; the default is
+`[{"id": "official", "kind": "official"}, {"id": "autoair", "kind": "autoair"}]`. A list you set
+replaces the default: keep the `autoair` entry to keep AutoAir's own documentation searchable.
 
 | Kind | Reads | Needs |
 |---|---|---|
@@ -78,8 +81,9 @@ whose label contains it.
 | `git` | A shallow checkout of a repository | `url` or `conn_id`; optional `ref` |
 | `path` | A local folder or an object-storage URL (`s3://`, `gs://`, `abfs://`) | `url`; optional `conn_id` |
 | `bundle` | A KB bundle made with `autoair kb build` (pages already parsed) | `url` (file path or fsspec URL); optional `conn_id` |
+| `autoair` | AutoAir's own documentation, packaged in the wheel at the installed AutoAir version; hits cite `https://ctolon.github.io/autoair/docs/...` | nothing (no `url`); takes the `autoair` component, `include` / `exclude` match page paths such as `ai/*` |
 
-Only `official` depends on `kb.online`: the other kinds are explicitly configured by an admin and
+Only `official` depends on `kb.online` (`autoair` never touches the network): the other kinds are explicitly configured by an admin and
 are read whether or not the server may reach the internet. Every kind keeps its pages under its
 `id`, so renaming a source re-indexes it. Common fields:
 

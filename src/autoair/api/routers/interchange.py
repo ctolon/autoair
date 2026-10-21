@@ -28,6 +28,7 @@ from autoair.importer.bulk import (
 )
 from autoair.importer.code_sync import CodeSyncResult, sync_code
 from autoair.importer.python_dag import PythonImportResult, import_python_source
+from autoair.preserve.service import mark_hand_written
 from autoair.spec import DagSpec
 
 router = APIRouter(prefix="/interchange", tags=["interchange"])
@@ -114,12 +115,23 @@ async def import_python(
             detail="importing Python DAGs executes their code "
             "and is disabled by policy (allow_python_code)",
         )
-    return await run_in_threadpool(
+    result = await run_in_threadpool(
         import_python_source,
         body.source,
         body.filename,
         timeout=services.settings.python_import_timeout,
     )
+    return _hand_written(result, body.source)
+
+
+def _hand_written(result: PythonImportResult, source: str) -> PythonImportResult:
+    """The imported DAG comes from a hand-written file: its deploys preserve that file
+    (source policy auto). A file defining several DAGs cannot be the file of one of them."""
+    if len(result.dags) == 1 and result.dags[0].spec is not None:
+        dag = result.dags[0]
+        if dag.spec is not None:
+            dag.spec = mark_hand_written(dag.spec, source, dag.warnings)
+    return result
 
 
 class CodeSyncBody(BaseModel):
@@ -186,9 +198,10 @@ async def import_from_airflow(
         f"{dag_id}.py",
         timeout=services.settings.python_import_timeout,
     )
+    several = len(result.dags) > 1
     result.dags = [d for d in result.dags if d.dag_id == dag_id] or result.dags
     result.source = source
-    return result
+    return result if several else _hand_written(result, source)
 
 
 class BulkImportRequest(BaseModel):

@@ -24,6 +24,8 @@ from autoair.storage.base import (
     STATE_DIR,
     ConflictError,
     DagState,
+    ExistingFile,
+    HandWrittenError,
     HistoryEntry,
     NotFoundError,
     SaveResult,
@@ -42,6 +44,7 @@ from autoair.storage.base import (
     main_file,
     serialize_spec,
     sha256_text,
+    source_sha,
     spec_etag,
     spec_filename,
     summary_of,
@@ -107,8 +110,25 @@ class FileTarget:
         recorded: str | None,
         new_sha: str | None,
         force: bool,
+        expected: str | None = None,
     ) -> None:
-        check_overwrite(self.store.location(name), existing, recorded, new_sha, force)
+        check_overwrite(self.store.location(name), existing, recorded, new_sha, force, expected)
+
+    def current_file(self, dag_id: str, *, environment: str | None = None) -> ExistingFile | None:
+        """The main DAG file now in the target (``<dag_id>.py``) and its recorded hash."""
+        name = f"{check_dag_id(dag_id)}.py"
+        content = self.store.read(name)
+        if content is None:
+            return None
+        state = self._read_state(dag_id)
+        return ExistingFile(
+            name=name,
+            content=content,
+            location=self.store.location(name),
+            recorded_sha=state.files.get(name) if state else None,
+            source_sha=state.source_sha if state else None,
+            hand_written=state.hand_written if state else False,
+        )
 
     # ----------------------------------------------------------------- reads
     def list(self) -> list[SpecSummary]:
@@ -201,9 +221,19 @@ class FileTarget:
         message: str | None = None,
         environment: str | None = None,
         force: bool = False,
+        expected: dict[str, str] | None = None,
+        hand_written: bool | None = None,
+        allow_hand_written: bool = False,
     ) -> SaveResult:
+        """``expected``: file name -> sha256 of the file a source-preserving deploy patched
+        (written only while the file is unchanged, also when AutoAir did not create it).
+        ``hand_written``: the written file is a hand-written one AutoAir keeps (``None``:
+        unchanged from the last save). ``allow_hand_written``: the caller may replace or
+        remove a hand-written file AutoAir keeps without ``expected`` covering it (granted
+        only with ``deploy:overwrite_ejected``); the usual ownership checks still apply."""
         dag_id = check_dag_id(spec.dag_id)
         check_files(dag_id, files)
+        expected = expected or {}
         with self.store.lock():
             current = self.get(dag_id)
             if base_etag is not None and (current is None or current.etag != base_etag):
@@ -211,9 +241,20 @@ class FileTarget:
             state = self._read_state(dag_id)
             recorded = state.files if state else {}
             hashes = {name: sha256_text(content) for name, content in files.items()}
+            # Every write path (loader/YAML output modes, raw code, promotion, MCP) ends
+            # here, so the kept hand-written file is protected here and not only by the plan.
+            guarded = state is not None and state.hand_written and not allow_hand_written
             for name in files:
+                existing = self.store.read(name)
+                if guarded and existing is not None and name not in expected:
+                    raise HandWrittenError(self.store.location(name))
                 self._check_overwrite(
-                    name, self.store.read(name), recorded.get(name), hashes[name], force
+                    name,
+                    existing,
+                    recorded.get(name),
+                    hashes[name],
+                    force,
+                    expected.get(name),
                 )
             stale: list[str] = []
             for name in recorded:
@@ -222,6 +263,8 @@ class FileTarget:
                 existing = self.store.read(name)
                 if existing is None:
                     continue
+                if guarded:
+                    raise HandWrittenError(self.store.location(name))
                 if not is_owned(existing):
                     log.warning("leaving %s in place: it is not owned by AutoAir", name)
                     continue
@@ -230,11 +273,15 @@ class FileTarget:
 
             etag = spec_etag(spec)
             main = main_file(dag_id, files)
+            keep = state.hand_written if state is not None else False
+            kept = keep if hand_written is None else hand_written
             if (
                 current is not None
                 and state is not None
                 and current.etag == etag
                 and state.files == hashes
+                and state.source_sha == source_sha(spec)
+                and state.hand_written == kept
                 and not stale
             ):
                 return SaveResult(
@@ -273,6 +320,8 @@ class FileTarget:
                     updated_at=now,
                     author=author,
                     environment=environment,
+                    source_sha=source_sha(spec),
+                    hand_written=kept,
                 ).model_dump_json(indent=2),
             )
         location = self.store.location(main)
@@ -295,7 +344,10 @@ class FileTarget:
         base_etag: str | None = None,
         author: str | None = None,
         force: bool = False,
+        allow_hand_written: bool = False,
     ) -> bool:
+        """``allow_hand_written``: the caller may delete a hand-written file AutoAir keeps
+        (``deploy:overwrite_ejected``); it is still deleted only while unchanged."""
         check_dag_id(dag_id)
         with self.store.lock():
             current = self.get(dag_id)
@@ -310,7 +362,12 @@ class FileTarget:
                 existing = self.store.read(name)
                 if existing is None:
                     continue
-                self._check_overwrite(name, existing, recorded.get(name), None, force)
+                expected = None
+                if state is not None and state.hand_written:
+                    if not allow_hand_written:
+                        raise HandWrittenError(self.store.location(name))
+                    expected = recorded.get(name)
+                self._check_overwrite(name, existing, recorded.get(name), None, force, expected)
                 doomed.append(name)
             # DAG files first so Airflow never parses a stub without its spec.
             for name in doomed:

@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -28,6 +28,9 @@ class AgentTool:
     #: A JSON schema given to the model instead of ``input_model``'s (external MCP tools,
     #: whose ``input_model`` accepts any object).
     schema: dict[str, Any] | None = None
+    #: ``write`` when a call changes something outside the run (``ai.approvals`` decides
+    #: whether such calls wait for the user's approval); ``read`` otherwise.
+    kind: Literal["read", "write"] = "read"
 
     def json_schema(self) -> dict[str, Any]:
         schema = dict(self.schema) if self.schema else self.input_model.model_json_schema()

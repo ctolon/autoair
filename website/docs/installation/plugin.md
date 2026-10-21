@@ -88,7 +88,15 @@ Airflow 3.1 added `react_apps` to plugins. AutoAir uses it to render its UI nati
 | Entry | Default | Setting |
 | --- | --- | --- |
 | Navigation entry | **DAG Builder** under **Browse**, at `/plugin/dag-builder` | `plugin.nav_name` (`AUTOAIR_PLUGIN__NAV_NAME`), `plugin.nav_category` (`AUTOAIR_PLUGIN__NAV_CATEGORY`: `browse`, `admin`, `docs` or `user`; any other value puts the entry in Airflow's top-level navigation) |
-| DAG page tab | **AutoAir** on every DAG page; opens that DAG, or offers to import it when it was not built with AutoAir | `plugin.dag_tab_name` (`AUTOAIR_PLUGIN__DAG_TAB_NAME`), `plugin.dag_tab` (`AUTOAIR_PLUGIN__DAG_TAB=false` hides it) |
+| DAG page tab | **AutoAir** on every DAG page; opens that DAG, or offers to import it when it was not built with AutoAir | `plugin.dag_tab_name` (`AUTOAIR_PLUGIN__DAG_TAB_NAME`), `plugin.dag_tab` (`AUTOAIR_PLUGIN__DAG_TAB=false` hides it), `plugin.dag_tab_tags` (Airflow 3.4 and newer: only on DAGs with one of these tags) |
+
+On Airflow 3.4 and newer the tab can be limited to the DAGs you manage with AutoAir. New DAGs created in the builder carry the tag `autoair` (**DAG settings → Tags**); give imported or older DAGs the same tag and set:
+
+```bash
+AUTOAIR_PLUGIN__DAG_TAB_TAGS='["autoair"]'
+```
+
+Airflow's UI then offers the tab only on DAGs that carry at least one of the tags. Other DAGs no longer show it, so they cannot be imported from their DAG page; open **DAG Builder** and import them from there. The scoping only hides the tab: the builder route stays reachable, and AutoAir's own permission checks still apply. Before Airflow 3.4 the setting is ignored (the API server logs that) and the tab is on every DAG page.
 
 The bundle is served from `/autoair/static/main.js`. The full-page UI at `/autoair/ui/` is also available.
 
@@ -120,7 +128,7 @@ The health, ready and metrics routes are unauthenticated so that probes and Prom
 
 ## Authentication and permissions
 
-In plugin mode Airflow's auth manager authenticates every request; AutoAir reads the user from the Airflow session and calls Airflow's REST API with the caller's token, so per-DAG permissions are Airflow's. AutoAir's own roles (Viewer, Author, Reviewer, Deployer, Operator, TemplateManager, Admin) are derived according to `iam.strategies`:
+In plugin mode Airflow's auth manager authenticates every request; AutoAir reads the user from the Airflow session and calls Airflow's REST API with the caller's token, so per-DAG permissions are Airflow's. AutoAir's own roles (Viewer, Author, Reviewer, Deployer, CodeDeployer, Operator, TemplateManager, Admin) are derived according to `iam.strategies`:
 
 - `airflow_permissions` (default): from the user's Airflow DAG and configuration permissions.
 - `role_mapping`: from Airflow role names, for example an Airflow role `AutoAir Deployer`.

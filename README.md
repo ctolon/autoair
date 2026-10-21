@@ -6,7 +6,7 @@ dag-factory YAML). It validates with Airflow's own `DagBag`, deploys to a **loca
 storage or Git (direct push or pull requests)**, and lets you trigger, debug and version DAGs
 from the Airflow UI. AI agents can use the same operations through AutoAir's **MCP server**.
 
-* **Airflow 3.0 or later, below 4.** CI covers 3.0.6, 3.1.8, 3.2.2 and 3.3.2, plus the 3.4.0b1
+* **Airflow 3.0 or later, below 4.** CI covers 3.0.6, 3.1.8, 3.2.2 and 3.3.2, plus the 3.4.0b2
   pre-release, on Python 3.10–3.14. Generated imports follow the target Airflow version (for
   example, timetables come from `airflow.timetables.*` on 3.0/3.1 and from `airflow.sdk` on 3.2+).
   The `mcp` extra cannot be installed next to Airflow 3.1 (FastMCP 4 needs Starlette 1.x); see

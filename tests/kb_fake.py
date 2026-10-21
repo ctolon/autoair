@@ -281,6 +281,9 @@ def kb_settings(tmp: Path, **kb: Any) -> Any:
 
     config: dict[str, Any] = {
         "online": True,
+        # Only the fake official sites: the packaged AutoAir documentation (the default
+        # autoair source) has its own tests in test_kb_autoair_source.py.
+        "sources": [{"id": "official", "kind": "official"}],
         "provider_include": ["standard"],
         "refresh_interval_hours": 0,
         "refresh_on_start": False,

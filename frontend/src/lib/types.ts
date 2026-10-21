@@ -1,6 +1,7 @@
 import type { Edge, Node } from "@xyflow/react";
 
 import type {
+  BlueprintNode,
   CustomNode,
   DagSpec,
   Edge as SpecEdge,
@@ -18,7 +19,9 @@ export type PythonTaskSpec = Omit<PythonTaskNode, FlowOwned>;
 export type TaskGroupSpec = Omit<TaskGroupNode, FlowOwned>;
 export type CustomSpec = Omit<CustomNode, FlowOwned>;
 export type NoteSpec = Omit<NoteNode, FlowOwned>;
-export type NodeSpec = OperatorSpec | PythonTaskSpec | TaskGroupSpec | CustomSpec | NoteSpec;
+/** An Astronomer Blueprint step (airflow-blueprint): one node standing for the tasks it renders. */
+export type BlueprintSpec = Omit<BlueprintNode, FlowOwned>;
+export type NodeSpec = OperatorSpec | PythonTaskSpec | TaskGroupSpec | CustomSpec | BlueprintSpec | NoteSpec;
 export type TaskSpec = OperatorSpec | PythonTaskSpec | CustomSpec;
 export type NodeKind = NodeSpec["kind"];
 
@@ -29,7 +32,10 @@ export type PythonTaskFlowNode = Node<{ spec: PythonTaskSpec }, "python_task">;
 export type TaskGroupFlowNode = Node<{ spec: TaskGroupSpec; collapsed?: boolean }, "task_group">;
 export type CustomFlowNode = Node<{ spec: CustomSpec }, "custom">;
 export type NoteFlowNode = Node<{ spec: NoteSpec }, "note">;
-export type BuilderNode = OperatorFlowNode | PythonTaskFlowNode | TaskGroupFlowNode | CustomFlowNode | NoteFlowNode;
+/** `collapsed` is UI-only (hides the task preview); never written into the spec. */
+export type BlueprintFlowNode = Node<{ spec: BlueprintSpec; collapsed?: boolean }, "blueprint">;
+export type BuilderNode =
+  OperatorFlowNode | PythonTaskFlowNode | TaskGroupFlowNode | CustomFlowNode | BlueprintFlowNode | NoteFlowNode;
 export type TaskFlowNode = OperatorFlowNode | PythonTaskFlowNode | CustomFlowNode;
 
 export type BuilderEdge = Edge;
@@ -46,6 +52,7 @@ export const nodeKey = (n: BuilderNode): string => {
   const spec = n.data.spec;
   if (spec.kind === "task_group") return spec.group_id;
   if (spec.kind === "note") return spec.label || "note";
+  if (spec.kind === "blueprint") return spec.step_id;
   return spec.task_id;
 };
 

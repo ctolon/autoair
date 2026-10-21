@@ -431,7 +431,13 @@ def _wrap(client: Any, server: McpServerConfig, tool: Any, limit: int) -> AgentT
     schema = dict(getattr(tool, "input_schema", None) or {"type": "object", "properties": {}})
     description = f"[MCP {server.name}] {(tool.description or remote)[:900]}"
     return AgentTool(
-        agent_tool_name(server.name, remote), description, _AnyArgs, handler, schema=schema
+        agent_tool_name(server.name, remote),
+        description,
+        _AnyArgs,
+        handler,
+        schema=schema,
+        # Unannotated tools count as writes: the server, not the model, vouches for reads.
+        kind="read" if read_only_tool(tool) else "write",
     )
 
 

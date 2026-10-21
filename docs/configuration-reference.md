@@ -14,7 +14,7 @@ and INI files.
 **Secret** values are masked as `***` by `GET /api/config` (`expose_config=true`) and
 left out with `expose_config=non-sensitive-only`.
 
-616 options.
+670 options.
 
 ## Top level
 
@@ -110,7 +110,11 @@ Feature switches (AUTOAIR_FEATURES__<NAME>).
 | `AUTOAIR_FEATURES__CODE_EDITOR` | `features.code_editor` | `bool` | `true` | Direct code editing: the full-screen code mode of visual DAGs (edit the generated file; applying it re-imports the code into the spec; needs spec:write, code:execute and python_code, since the importer executes the code) and raw code DAGs (hand-written files deployed as written; need code:raw and python_code). Off: visual editor only. |  |
 | `AUTOAIR_FEATURES__CODE_EDIT_INLINE` | `features.code_edit_inline` | `bool` | `false` | Make the bottom panel's Code tab editable (same import-on-apply as the code mode). |  |
 | `AUTOAIR_FEATURES__KB` | `features.kb` | `bool` | `true` | Documentation knowledge base: search over the Airflow and Astronomer docs for agents, MCP (kb_search, kb_sources, kb_status) and the admin panel (see the kb section). Works without autoair[ai] (keyword search). |  |
+| `AUTOAIR_FEATURES__AUTOAIR_DOCS` | `features.autoair_docs` | `bool` | `true` | AutoAir's own documentation for agents: the MCP tools search_autoair_docs, read_autoair_doc and list_autoair_docs, which read the documentation packaged with this version (offline, no knowledge-base store). The knowledge base's autoair source is switched separately (kb.sources). |  |
+| `AUTOAIR_FEATURES__SOURCE_PRESERVE` | `features.source_preserve` | `bool` | `true` | Source-preserving deploys: DAGs whose source policy is preserve or strict-preserve (by default those imported from or edited as hand-written Python) get each change applied to their existing file as a minimal patch (LibCST) instead of a regenerated file. Off: every DAG file is generated; hand-written files are then protected by preserve.ejected_files. |  |
+| `AUTOAIR_FEATURES__STRICT_SOURCE_PRESERVE` | `features.strict_source_preserve` | `bool` | `false` | Run every preserve deploy as strict-preserve: refuse each change that cannot be applied exactly (no replaced variable references, operator class changes or group moves through task_group=). |  |
 | `AUTOAIR_FEATURES__IDE_LANGUAGE_SERVER` | `features.ide_language_server` | `bool` | `false` | IDE-grade IntelliSense in code editors through a per-session language server (basedpyright or pylsp, bash-language-server; see the lsp section). Off: the built-in jedi completions. |  |
+| `AUTOAIR_FEATURES__BLUEPRINTS` | `features.blueprints` | `bool` | `true` | Astronomer Blueprint templates (airflow-blueprint) as canvas nodes: the palette's Blueprints section, config forms and task previews (see the blueprints section). Reading config schemas needs autoair[blueprint]. |  |
 
 ## `iam`
 
@@ -188,6 +192,20 @@ Catalog presentation: connection-parameter detection, palette groups, parameter 
 | `AUTOAIR_CATALOG__METADATA_MAX_BYTES` | `catalog.metadata_max_bytes` | `int` | `524288` | Largest package metadata file read. |  |
 | `AUTOAIR_CATALOG__PACKAGE_ICON_MAX_BYTES` | `catalog.package_icon_max_bytes` | `int` | `65536` | Largest SVG icon a package may ship (sanitised before it is served). |  |
 
+## `blueprints`
+
+Where the blueprint catalog finds Astronomer Blueprint templates (AUTOAIR_BLUEPRINTS__<FIELD>).
+
+| Environment variable | Config key | Type | Default | Description | Secret |
+|---|---|---|---|---|---|
+| `AUTOAIR_BLUEPRINTS__ENTRY_POINTS` | `blueprints.entry_points` | `bool` | `true` | Discover installed packages that advertise blueprint modules under the `airflow_blueprint.blueprints` entry-point group (the blueprint project's own sharing mechanism). false: only template_dirs and modules. |  |
+| `AUTOAIR_BLUEPRINTS__TEMPLATE_DIRS` | `blueprints.template_dirs` | `list[str]` | `[]` | Folders scanned for blueprint templates (*.py files defining Blueprint[Config] subclasses), like the blueprint registry scans the dags folder. A file's module name is its path relative to the folder, so generated DAGs import it the way Airflow does when the folder is the dags folder (on sys.path). The files are imported (in a child process) to read schemas: list only folders that admins control, never one DAG authors deploy to. JSON list in the environment. Empty: no folders. |  |
+| `AUTOAIR_BLUEPRINTS__MODULES` | `blueprints.modules` | `list[str]` | `[]` | Additional importable modules holding blueprint templates (dotted names). JSON list in the environment. |  |
+| `AUTOAIR_BLUEPRINTS__MAX_FILES` | `blueprints.max_files` | `int` | `2000` | Most Python files read per catalog build across template_dirs, modules and entry-point packages; files beyond it are reported as catalog errors. |  |
+| `AUTOAIR_BLUEPRINTS__SCHEMA_TIMEOUT` | `blueprints.schema_timeout` | `float` | `120.0` | Seconds the child process may take to import the blueprint modules and read their config schemas (one process per catalog build). |  |
+| `AUTOAIR_BLUEPRINTS__RESCAN_INTERVAL` | `blueprints.rescan_interval` | `float` | `30.0` | Seconds between checks whether template files or packages changed (a cheap stat of the sources); a change rebuilds the catalog. 0: check on every request. |  |
+| `AUTOAIR_BLUEPRINTS__PREVIEW_TIMEOUT` | `blueprints.preview_timeout` | `float` | `60.0` | Seconds a task preview of one blueprint step may take (rendered in the warm DagBag worker pool). |  |
+
 ## `policy`
 
 Validation rules: privileged operators, dag_id/task_id patterns, secret detection, known template names (AUTOAIR_POLICY__<FIELD>).
@@ -244,7 +262,7 @@ Code editor services (completion, lint).
 | `AUTOAIR_EDITOR__MAX_SOURCE_CHARS` | `editor.max_source_chars` | `int` | `200000` | Largest code accepted by completion and lint. |  |
 | `AUTOAIR_EDITOR__MAX_COMPLETIONS` | `editor.max_completions` | `int` | `100` | Completion items returned per request. |  |
 | `AUTOAIR_EDITOR__MAX_DOC_CHARS` | `editor.max_doc_chars` | `int` | `4000` | Characters of a docstring shown in hover/completion. |  |
-| `AUTOAIR_EDITOR__SHELLCHECK_TIMEOUT` | `editor.shellcheck_timeout` | `float` | `5` | Seconds per ShellCheck run. |  |
+| `AUTOAIR_EDITOR__SHELLCHECK_TIMEOUT` | `editor.shellcheck_timeout` | `float` | `5` | Seconds per ShellCheck run (DAG validation checks the scripts that changed since the last validation in runs of up to 50 scripts). |  |
 | `AUTOAIR_EDITOR__SHELLCHECK_EXCLUDE` | `editor.shellcheck_exclude` | `list[str]` | `["SC1091", "SC2034", "SC2154"]` | ShellCheck codes never reported (noise for Airflow commands: masked Jinja, sourced env files). Overrides the built-in list. |  |
 | `AUTOAIR_EDITOR__SHELLCHECK_EXCLUDE_EXTRA` | `editor.shellcheck_exclude_extra` | `list[str]` | `[]` | More ShellCheck codes never reported. |  |
 | `AUTOAIR_EDITOR__SHELLCHECK_IN_VALIDATION` | `editor.shellcheck_in_validation` | `bool` | `true` | Report ShellCheck findings of bash_command, @task.bash and .sh file assets as warnings in DAG validation (Problems tab). Needs ShellCheck. |  |
@@ -252,7 +270,7 @@ Code editor services (completion, lint).
 | `AUTOAIR_EDITOR__PYTHON_LINT_SELECT_EXTRA` | `editor.python_lint_select_extra` | `list[str]` | `[]` | More ruff rules checked (e.g. 'S' for bandit). |  |
 | `AUTOAIR_EDITOR__PYTHON_LINT_IGNORE` | `editor.python_lint_ignore` | `list[str]` | `["F401"]` | ruff rules never reported in task code. Overrides the built-in list. |  |
 | `AUTOAIR_EDITOR__PYTHON_LINT_IGNORE_EXTRA` | `editor.python_lint_ignore_extra` | `list[str]` | `[]` | More ruff rules never reported. |  |
-| `AUTOAIR_EDITOR__PYTHON_LINT_TIMEOUT` | `editor.python_lint_timeout` | `float` | `15` | Seconds per ruff lint of task code. |  |
+| `AUTOAIR_EDITOR__PYTHON_LINT_TIMEOUT` | `editor.python_lint_timeout` | `float` | `15` | Seconds per ruff lint run of task code (DAG validation lints all Python tasks that changed since the last validation in one run). |  |
 | `AUTOAIR_EDITOR__VALIDATE_TIMEOUT` | `editor.validate_timeout` | `float` | `15` | Seconds each external checker (bash -n, gofmt, javac, tsc…) may run when a code field is validated (POST /api/lsp/validate). |  |
 | `AUTOAIR_EDITOR__VALIDATE_COMMANDS` | `editor.validate_commands` | `dict[str, list[str]]` | `{}` | Checker commands overriding the PATH lookup, by tool name, e.g. {"tsc": ["/opt/node/bin/tsc"], "javac": ["/usr/lib/jvm/java-21/bin/javac"]}. |  |
 
@@ -297,6 +315,19 @@ DAG imports (Python, YAML, JSON).
 | `AUTOAIR_INTERCHANGE__BULK_GIT_ALLOWED_HOSTS` | `interchange.bulk_git_allowed_hosts` | `list[str]` | `["*"]` | Bulk import from git: fnmatch patterns of the hosts that may be cloned (https only), e.g. ['github.com', 'gitlab.acme.internal']. Empty: git sources are disabled. |  |
 | `AUTOAIR_INTERCHANGE__BULK_GIT_TIMEOUT` | `interchange.bulk_git_timeout` | `float` | `120` | Bulk import: seconds a shallow git clone may take. |  |
 
+## `preserve`
+
+Editing existing Python DAG files: source policies and ejected-file protection (AUTOAIR_PRESERVE__<FIELD>).
+
+| Environment variable | Config key | Type | Default | Description | Secret |
+|---|---|---|---|---|---|
+| `AUTOAIR_PRESERVE__ALLOWED_POLICIES` | `preserve.allowed_policies` | `list['generate' \| 'preserve' \| 'strict-preserve']` | `["generate", "preserve", "strict-preserve"]` | Source policies DAGs may use (JSON list in the environment). A DAG whose policy is not listed is refused at deploy; 'auto' resolves to the closest allowed one (preserve -> strict-preserve -> generate). Removing 'generate' means a hand-written file is never regenerated from its spec. |  |
+| `AUTOAIR_PRESERVE__EJECTED_FILES` | `preserve.ejected_files` | `'block' \| 'warn' \| 'overwrite'` | `block` | A deploy that would regenerate a DAG file changed outside AutoAir (ejected: its fingerprint or recorded hash no longer matches, or a hand-written file without AutoAir's marker): block = stop and offer to apply the change to the file with preserve; warn = apply it with preserve automatically and report a warning (stop when that is not possible); overwrite = stop and offer preserve or an overwrite, which needs an explicit confirmation, the 'deploy:overwrite_ejected' permission and preserve.allow_force_overwrite=true (without it overwrite acts like block). Files without the marker are never overwritten. |  |
+| `AUTOAIR_PRESERVE__ALLOW_FORCE_OVERWRITE` | `preserve.allow_force_overwrite` | `bool` | `false` | Offer and accept the 'Overwrite (force)' choice for a DAG file AutoAir would otherwise not replace: the hand-written file it keeps for a DAG (source-preserving deploys, raw code takeovers), a file changed outside AutoAir (ejected; for Python files also preserve.ejected_files=overwrite) and forced deploys of the other output modes. The caller still needs 'deploy:overwrite_ejected' and an explicit confirmation. false (default): the choice is hidden and refused; such files are changed only with preserve or kept as raw code. |  |
+| `AUTOAIR_PRESERVE__IMPORT_TIMEOUT` | `preserve.import_timeout` | `float` | `90` | Seconds each import of the round-trip check may take (the existing file, the generated and the patched file are imported in a sandboxed subprocess). |  |
+| `AUTOAIR_PRESERVE__CACHE_TTL` | `preserve.cache_ttl` | `float` | `300` | Seconds a replica keeps the import of an unchanged file (keyed by its content hash) between a deploy preview and the deploy. 0: no cache. |  |
+| `AUTOAIR_PRESERVE__MAX_DIFF_CHARS` | `preserve.max_diff_chars` | `int` | `200000` | Largest unified diff returned by the source preview (longer diffs are cut and marked truncated). |  |
+
 ## `icons`
 
 Custom node icons.
@@ -338,6 +369,7 @@ HTTP server and Airflow API client.
 | `AUTOAIR_SERVER__KEEP_ALIVE_TIMEOUT` | `server.keep_alive_timeout` | `float` | `5` | `autoair serve`: idle seconds before a keep-alive closes. |  |
 | `AUTOAIR_SERVER__LIMIT_CONCURRENCY` | `server.limit_concurrency` | `int \| None` | `None` | `autoair serve`: most concurrent connections before answering 503. |  |
 | `AUTOAIR_SERVER__ACCESS_LOG` | `server.access_log` | `bool` | `true` | `autoair serve`: log every request. |  |
+| `AUTOAIR_SERVER__HARDEN_PROCESS` | `server.harden_process` | `bool` | `true` | Make AutoAir's own server processes (`autoair serve`, `autoair local`, their uvicorn workers, `mcp-serve --http`, `ai-serve`) non-dumpable at start-up (Linux prctl PR_SET_DUMPABLE=0), so child processes running user DAG code as the same user cannot read the server's environment or memory through /proc. Turn it off only for debugging with py-spy, gdb or core dumps. Never applied inside the Airflow plugin. |  |
 | `AUTOAIR_SERVER__SSL_CERTFILE` | `server.ssl_certfile` | `path \| None` | `None` | `autoair serve`: TLS certificate chain (PEM); enables HTTPS. |  |
 | `AUTOAIR_SERVER__SSL_KEYFILE` | `server.ssl_keyfile` | `path \| None` | `None` | `autoair serve`: TLS private key (PEM). |  |
 | `AUTOAIR_SERVER__SSL_KEYFILE_PASSWORD` | `server.ssl_keyfile_password` | `secret str \| None` | `None` | `autoair serve`: password of an encrypted ssl_keyfile. | yes |
@@ -373,6 +405,7 @@ Airflow UI integration (plugin mode).
 | `AUTOAIR_PLUGIN__NAV_CATEGORY` | `plugin.nav_category` | `str` | `browse` | Airflow navigation menu holding the entry (browse, admin, docs, user…). |  |
 | `AUTOAIR_PLUGIN__DAG_TAB_NAME` | `plugin.dag_tab_name` | `str` | `AutoAir` | Name of the tab on every DAG page. |  |
 | `AUTOAIR_PLUGIN__DAG_TAB` | `plugin.dag_tab` | `bool` | `true` | Show the tab on DAG pages. |  |
+| `AUTOAIR_PLUGIN__DAG_TAB_TAGS` | `plugin.dag_tab_tags` | `list[str]` | `[]` | Airflow >= 3.4: show the DAG tab only on DAGs carrying at least one of these tags (the plugin's applies_to scoping, evaluated by Airflow's UI). Empty: the tab is on every DAG page, so a hand-written DAG can be imported from it. Ignored before Airflow 3.4, which cannot scope plugin tabs. JSON list in environment variables, e.g. '["autoair"]'. |  |
 
 ## `outbound`
 
@@ -389,7 +422,7 @@ TLS (CA bundle, client certificates, verification) and proxies of every outgoing
 | `AUTOAIR_OUTBOUND__HTTPS_PROXY` | `outbound.https_proxy` | `str \| None` | `None` | Proxy for https:// URLs (e.g. http://proxy:3128). |  |
 | `AUTOAIR_OUTBOUND__NO_PROXY` | `outbound.no_proxy` | `list[str]` | `[]` | Hosts reached without the proxy: names (sub-domains match), IPs, 'host:port'; e.g. ['localhost', '127.0.0.1', '.internal']. |  |
 | `AUTOAIR_OUTBOUND__TRUST_ENV` | `outbound.trust_env` | `bool` | `true` | Also honour the standard environment variables (HTTP(S)_PROXY, NO_PROXY, SSL_CERT_FILE…) when the settings above leave them unset. |  |
-| `AUTOAIR_OUTBOUND__CLIENTS` | `outbound.clients` | `dict['airflow' \| 'git' \| 'marketplace' \| 'ai' \| 'research' \| 'login' \| 'mcp' \| 'opa' \| 'kb', OutboundOverride]` | `{}` | Per-client overrides, e.g. `{'git': {'ca_bundle': '/etc/ssl/gitlab.pem'}, 'ai': {'proxy': 'http://egress:3128'}}`. Clients: airflow, git, marketplace, ai, research, login, mcp (external MCP servers of the agents), opa (policy.opa_url), kb (documentation fetches and the Elasticsearch store of the knowledge base). |  |
+| `AUTOAIR_OUTBOUND__CLIENTS` | `outbound.clients` | `dict['airflow' \| 'git' \| 'marketplace' \| 'ai' \| 'research' \| 'login' \| 'mcp' \| 'opa' \| 'kb' \| 'validator', OutboundOverride]` | `{}` | Per-client overrides, e.g. `{'git': {'ca_bundle': '/etc/ssl/gitlab.pem'}, 'ai': {'proxy': 'http://egress:3128'}}`. Clients: airflow, git, marketplace, ai, research, login, mcp (external MCP servers of the agents), opa (policy.opa_url), kb (documentation fetches and the Elasticsearch store of the knowledge base), validator (validator.url). |  |
 
 ## `logging`
 
@@ -462,6 +495,36 @@ Admin panel export and scan limits.
 | `AUTOAIR_LOCAL__TOKEN` | `local.token` | `secret str \| None` | `None` | Optional access token for `autoair local` (Bearer header or pasted in the UI); unset: no authentication (only bind to 127.0.0.1 then). | yes |
 | `AUTOAIR_LOCAL__OPEN_BROWSER` | `local.open_browser` | `bool` | `false` | Open the UI in the default browser once started. |  |
 
+## `validator`
+
+Import checks in a separate validator service (autoair validator-serve) and the limits it applies to the processes importing user code (AUTOAIR_VALIDATOR__<FIELD>).
+
+| Environment variable | Config key | Type | Default | Description | Secret |
+|---|---|---|---|---|---|
+| `AUTOAIR_VALIDATOR__URL` | `validator.url` | `str` | `""` | Base URL of the validator service, e.g. http://autoair-validator:8791. Empty: import checks run in this process's own warm DagBag pool (dagbag_pool*). |  |
+| `AUTOAIR_VALIDATOR__SECRET_CONN_ID` | `validator.secret_conn_id` | `str` | `autoair_validator` | Airflow connection whose password (at least 16 bytes) is the HMAC key shared by the main server and the validator; it is removed from the environment of processes running DAG code on both sides. The main server reads it like any Airflow connection; the validator reads only the environment variable AIRFLOW_CONN_<CONN_ID> (JSON or URI form) and never passes it to its workers. |  |
+| `AUTOAIR_VALIDATOR__KEY_CACHE_SECONDS` | `validator.key_cache_seconds` | `float` | `60` | Seconds the HMAC key read from the connection is reused before it is read again (rotation delay); 0 reads it for every check. |  |
+| `AUTOAIR_VALIDATOR__REQUEST_OVERHEAD_SECONDS` | `validator.request_overhead_seconds` | `float` | `30` | Seconds added to the import check timeout for the HTTP request to the validator (queueing, worker start-up, transfer). |  |
+| `AUTOAIR_VALIDATOR__RETRIES` | `validator.retries` | `int` | `2` | Extra attempts after a connection error or HTTP 429/502/503/504 from the validator. A request that timed out is not retried. |  |
+| `AUTOAIR_VALIDATOR__RETRY_BACKOFF_SECONDS` | `validator.retry_backoff_seconds` | `float` | `0.5` | Wait before the first retry (s); doubled for every further retry. |  |
+| `AUTOAIR_VALIDATOR__HEALTH_CHECK_INTERVAL_SECONDS` | `validator.health_check_interval_seconds` | `float` | `10` | After an outage (connection error, HTTP 401/403/502/504, invalid answer) the validator counts as down: checks fail at once and /ready is probed at most this often (s) until it answers again. A busy validator (429/503) or a timed-out check fails only that check. |  |
+| `AUTOAIR_VALIDATOR__HEALTH_TIMEOUT_SECONDS` | `validator.health_timeout_seconds` | `float` | `3` | Timeout (s) of a /ready probe of the validator. |  |
+| `AUTOAIR_VALIDATOR__FAIL_MODE` | `validator.fail_mode` | `'closed' \| 'open' \| 'local'` | `open` | When the validator cannot be asked: open (default) reports a warning and skips the import check, so deploys go ahead without it; closed reports an error (deploys are blocked until the validator answers); local runs the check in this process's warm DagBag pool instead (user code then runs here again). |  |
+| `AUTOAIR_VALIDATOR__POOL_SIZE` | `validator.pool_size` | `int` | `2` | Validator: warm DagBag worker processes. |  |
+| `AUTOAIR_VALIDATOR__MAX_TASKS_PER_CHILD` | `validator.max_tasks_per_child` | `int` | `1` | Validator: checks per worker before it is replaced. 1 (default) gives every check a fresh interpreter, so code of one check cannot observe or alter the next one; a spare worker is started in advance. |  |
+| `AUTOAIR_VALIDATOR__START_TIMEOUT_SECONDS` | `validator.start_timeout_seconds` | `float` | `120` | Validator: seconds a worker may take to start (import Airflow). |  |
+| `AUTOAIR_VALIDATOR__MAX_CHECK_SECONDS` | `validator.max_check_seconds` | `float` | `120` | Validator: largest import check timeout (s) a request may ask for. |  |
+| `AUTOAIR_VALIDATOR__MAX_REQUEST_BYTES` | `validator.max_request_bytes` | `int` | `4194304` | Validator: largest request body (bytes, the JSON-encoded DAG source); larger requests get HTTP 413. |  |
+| `AUTOAIR_VALIDATOR__MAX_QUEUE` | `validator.max_queue` | `int` | `8` | Validator: checks that may wait for a worker on top of pool_size; more concurrent requests get HTTP 503 (the main server retries). |  |
+| `AUTOAIR_VALIDATOR__MEMORY_LIMIT_MB` | `validator.memory_limit_mb` | `int` | `1024` | Validator: address-space limit of a worker process (MiB, RLIMIT_AS); an import that allocates more fails with MemoryError. 0: no limit. |  |
+| `AUTOAIR_VALIDATOR__CPU_LIMIT_SECONDS` | `validator.cpu_limit_seconds` | `int` | `120` | Validator: CPU seconds a worker process may use over its lifetime (RLIMIT_CPU, includes about 2 s for importing Airflow); the worker is then killed. 0: no limit. |  |
+| `AUTOAIR_VALIDATOR__FILE_SIZE_LIMIT_MB` | `validator.file_size_limit_mb` | `int` | `16` | Validator: largest file a worker may write (MiB, RLIMIT_FSIZE). 0: no limit. |  |
+| `AUTOAIR_VALIDATOR__OPEN_FILES_LIMIT` | `validator.open_files_limit` | `int` | `1024` | Validator: open file descriptors per worker (RLIMIT_NOFILE). 0: inherited. |  |
+| `AUTOAIR_VALIDATOR__PROCESS_LIMIT` | `validator.process_limit` | `int` | `0` | Validator: RLIMIT_NPROC of a worker. It counts every process of the user, so set it only when the validator runs as its own user. 0: inherited. |  |
+| `AUTOAIR_VALIDATOR__AUDIT_HOOK` | `validator.audit_hook` | `bool` | `true` | Validator: a Python audit hook in each worker denies subprocesses, fork/exec, signals, ctypes, network connections and DNS, writes outside the worker's scratch folder, and reads of other processes' /proc entries. Defence in depth: the container (no egress, read-only root, non-root) is the boundary. |  |
+| `AUTOAIR_VALIDATOR__NETWORK_ISOLATION` | `validator.network_isolation` | `'auto' \| 'required' \| 'off'` | `auto` | Validator: move each worker into its own empty network namespace (Linux unprivileged user namespaces). auto: when the kernel allows it, required: workers fail to start otherwise, off: never. |  |
+| `AUTOAIR_VALIDATOR__METRICS_ENABLED` | `validator.metrics_enabled` | `bool` | `true` | Validator: serve Prometheus metrics at /metrics. |  |
+
 ## `kb`
 
 Documentation knowledge base: sources (online, git, folders, object storage, bundles), store (local, pgvector, Elasticsearch), refresh and retrieval (AUTOAIR_KB__<FIELD>).
@@ -469,12 +532,12 @@ Documentation knowledge base: sources (online, git, folders, object storage, bun
 | Environment variable | Config key | Type | Default | Description | Secret |
 |---|---|---|---|---|---|
 | `AUTOAIR_KB__ONLINE` | `kb.online` | `bool` | `false` | Let the official source fetch from airflow.apache.org and astronomer.io. Off (air-gapped): only the git, path, mirror and bundle sources you configure. |  |
-| `AUTOAIR_KB__COMPONENTS` | `kb.components` | `list['core' \| 'task_sdk' \| 'providers' \| 'helm_chart' \| 'airflowctl' \| 'astronomer_airflow' \| 'astro_cli' \| 'astro' \| 'astro_runtime']` | `["core", "task_sdk", "providers", "helm_chart", "airflowctl", "astronomer_airflow"]` | Components to index: core, task_sdk, providers, helm_chart, airflowctl (Apache), astronomer_airflow (Astronomer's Airflow guides), astro_cli, astro, astro_runtime (Astronomer products; off by default). JSON list. |  |
+| `AUTOAIR_KB__COMPONENTS` | `kb.components` | `list['core' \| 'task_sdk' \| 'providers' \| 'helm_chart' \| 'airflowctl' \| 'astronomer_airflow' \| 'astro_cli' \| 'astro' \| 'astro_runtime' \| 'autoair']` | `["core", "task_sdk", "providers", "helm_chart", "airflowctl", "astronomer_airflow", "autoair"]` | Components to index: core, task_sdk, providers, helm_chart, airflowctl (Apache), astronomer_airflow (Astronomer's Airflow guides), astro_cli, astro, astro_runtime (Astronomer products; off by default), autoair (AutoAir's own documentation, read by the autoair source). JSON list. |  |
 | `AUTOAIR_KB__PROVIDERS` | `kb.providers` | `'installed' \| 'all'` | `installed` | Provider packages to index: installed (the providers installed here, at their installed versions: matches the code agents may write and keeps the index small) or all (every provider the docs list, latest stable docs for the ones not installed). |  |
 | `AUTOAIR_KB__PROVIDER_INCLUDE` | `kb.provider_include` | `list[str]` | `["*"]` | Provider name patterns to index (fnmatch on e.g. amazon, common-sql). |  |
 | `AUTOAIR_KB__PROVIDER_EXCLUDE` | `kb.provider_exclude` | `list[str]` | `[]` | Provider name patterns never indexed. |  |
 | `AUTOAIR_KB__VERSIONS` | `kb.versions` | `list[str]` | `["installed"]` | Versions per component: installed (the installed package version; stable when not installed or not published), stable, or explicit versions (several are indexed side by side and can be filtered). JSON list. |  |
-| `AUTOAIR_KB__SOURCES` | `kb.sources` | `list[KbSourceConfig]` | `[{"id": "official", "kind": "official", "enabled": true, "title": null, "url": null, "conn_id": null, "ref": null, "layout": "auto", "format": "auto", "components": null, "versions": null, "component": "custom", "public_base_url": null, "include": [], "exclude": [], "allow_private": false, "storage_options": {}}]` | Documentation sources (JSON list), e.g. [{"id": "official", "kind": "official"}, {"id": "mirror", "kind": "git", "url": "https://git.corp/airflow.git", "conn_id": "kb_git", "ref": "3.1.0", "layout": "airflow_repo"}]. |  |
+| `AUTOAIR_KB__SOURCES` | `kb.sources` | `list[KbSourceConfig]` | `[{"id": "official", "kind": "official", "enabled": true, "title": null, "url": null, "conn_id": null, "ref": null, "layout": "auto", "format": "auto", "components": null, "versions": null, "component": "custom", "public_base_url": null, "include": [], "exclude": [], "allow_private": false, "storage_options": {}}, {"id": "autoair", "kind": "autoair", "enabled": true, "title": "AutoAir documentation", "url": null, "conn_id": null, "ref": null, "layout": "auto", "format": "auto", "components": null, "versions": null, "component": "custom", "public_base_url": null, "include": [], "exclude": [], "allow_private": false, "storage_options": {}}]` | Documentation sources (JSON list), e.g. [{"id": "official", "kind": "official"}, {"id": "autoair", "kind": "autoair"}, {"id": "mirror", "kind": "git", "url": "https://git.corp/airflow.git", "conn_id": "kb_git", "ref": "3.1.0", "layout": "airflow_repo"}]. Default: official and autoair (AutoAir's packaged documentation); a list set here replaces the default, so keep the autoair entry to keep AutoAir's documentation searchable. |  |
 | `AUTOAIR_KB__STORE` | `kb.store` | `'local' \| 'pgvector' \| 'elasticsearch'` | `local` | Where the index lives: local (SQLite with FTS5 BM25 and vectors, no dependencies), pgvector (PostgreSQL, autoair[kb-pgvector]) or elasticsearch (autoair[kb-elasticsearch]). |  |
 | `AUTOAIR_KB__REFRESH_INTERVAL_HOURS` | `kb.refresh_interval_hours` | `float` | `24` | Incremental refresh interval of the server (hours); 0 disables scheduled refreshes (manual: admin panel or `autoair kb refresh`). |  |
 | `AUTOAIR_KB__REFRESH_ON_START` | `kb.refresh_on_start` | `bool` | `true` | Build the index soon after start-up when it is empty and a source is usable. |  |
@@ -920,6 +983,32 @@ Project AI rules.
 | `AUTOAIR_AI__RULES__MAX_CHARS` | `ai.rules.max_chars` | `int` | `8000` | Characters of rules injected into one prompt. |  |
 | `AUTOAIR_AI__RULES__STORE_URL` | `ai.rules.store_url` | `str \| None` | `None` | Where rules live; default <state>/ai-rules (SQL: rows). |  |
 | `AUTOAIR_AI__RULES__CACHE_SECONDS` | `ai.rules.cache_seconds` | `float` | `10` | Seconds the rules are cached per process. |  |
+
+## `ai.approvals`
+
+Human approval of individual agent tool calls.
+
+| Environment variable | Config key | Type | Default | Description | Secret |
+|---|---|---|---|---|---|
+| `AUTOAIR_AI__APPROVALS__ENABLED` | `ai.approvals.enabled` | `bool` | `true` | Pause a run when the agent calls a tool that needs approval and ask the user who started it. False: such tools are not offered to the agent at all (it never runs them unapproved). |  |
+| `AUTOAIR_AI__APPROVALS__AGENTS` | `ai.approvals.agents` | `dict['developer' \| 'admin' \| 'troubleshoot', ToolApprovalRule]` | `{}` | Rule per agent (developer, admin, troubleshoot), replacing default for that agent, e.g. {"developer": {"classes": ["write"], "exempt": ["remember"]}} (JSON in the environment). |  |
+| `AUTOAIR_AI__APPROVALS__TTL_SECONDS` | `ai.approvals.ttl_seconds` | `float` | `3600` | Seconds a pending approval can be decided; afterwards it expires and the paused run cannot be resumed (the user asks again). |  |
+| `AUTOAIR_AI__APPROVALS__MAX_PENDING_PER_USER` | `ai.approvals.max_pending_per_user` | `int` | `20` | Pending approvals per user; a new one beyond this cancels the oldest. |  |
+| `AUTOAIR_AI__APPROVALS__RETENTION_HOURS` | `ai.approvals.retention_hours` | `float` | `168` | Hours decided, expired and cancelled approvals are kept (their outcome stays in the AI audit log). |  |
+| `AUTOAIR_AI__APPROVALS__CLAIM_TIMEOUT_SECONDS` | `ai.approvals.claim_timeout_seconds` | `float` | `900` | Seconds a resumed approval may stay claimed by the replica running it; a claim older than this (the replica died) is shown as failed. It is never taken over, so an approved tool runs at most once. |  |
+| `AUTOAIR_AI__APPROVALS__MAX_ARGUMENT_CHARS` | `ai.approvals.max_argument_chars` | `int` | `4000` | Characters of a tool call's arguments shown on the approval card (longer values are cut; secrets are always masked). |  |
+| `AUTOAIR_AI__APPROVALS__MAX_REASON_CHARS` | `ai.approvals.max_reason_chars` | `int` | `1000` | Longest reason a user may give with a decision (it is sent to the model with a denial). 0 = no reasons. |  |
+| `AUTOAIR_AI__APPROVALS__STORE_URL` | `ai.approvals.store_url` | `str \| None` | `None` | Where pending approvals live (fsspec URL); default <state>/ai-approvals (rows of the SQL database when database.backend is sqlite/postgresql). |  |
+
+## `ai.approvals.default`
+
+Rule of every agent without its own entry in agents.
+
+| Environment variable | Config key | Type | Default | Description | Secret |
+|---|---|---|---|---|---|
+| `AUTOAIR_AI__APPROVALS__DEFAULT__CLASSES` | `ai.approvals.default.classes` | `list['read' \| 'write']` | `["write"]` | Tool classes whose calls need approval (JSON list in the environment): write = tools that change something (stored memories, external MCP tools not marked read-only); read = every read-only tool too. [] = none by class. |  |
+| `AUTOAIR_AI__APPROVALS__DEFAULT__TOOLS` | `ai.approvals.default.tools` | `list[str]` | `[]` | Tool names (fnmatch, e.g. mcp__jira__*) that always need approval, whatever their class; takes precedence over exempt. |  |
+| `AUTOAIR_AI__APPROVALS__DEFAULT__EXEMPT` | `ai.approvals.default.exempt` | `list[str]` | `[]` | Tool names (fnmatch) that never need approval although their class does, e.g. remember. Ignored for write tools of a troubleshooting analysis in hitl mode. |  |
 
 ## `ai.upgrade`
 

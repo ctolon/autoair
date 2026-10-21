@@ -1,0 +1,12 @@
+# A separate MCP server (`autoair mcp-serve --http`) at http://autoair-mcp:8766/mcp/, for
+# scaling MCP clients and automation apart from the editor. Optional: `autoair serve`
+# already serves MCP at /mcp, and so does components/ai-service. Callers authenticate with
+# their Airflow bearer token, verified against Airflow, exactly like `autoair serve`.
+# Like the AI service it shares no volume with the server: use it with
+# components/postgresql and components/git-target.
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+
+resources:
+  - deployment.yaml
+  - service.yaml

@@ -77,7 +77,7 @@ Click **Deploy**. While the deploy runs, the toast reads "Deploying &lt;dag_id&g
 
 | Toast | Meaning |
 |---|---|
-| **Deployed** | Written live. The message says how Airflow picks it up: "reparse requested" (local), or "Airflow will pick it up on the next bundle refresh" (object, git push). |
+| **Deployed** | Written live. The message says how Airflow picks it up: "reparse requested" (local), or "Airflow will pick it up on the next bundle refresh" (object, git push, or a local deploy whose reparse request Airflow refused; the message then quotes Airflow's answer, for example a `403` when the user may not edit the DAG or, on Airflow 3.4, may not reparse a file that has no registered DAG). |
 | **Pull request opened** | The message contains the pull request URL ("review and merge … to release it"). |
 | **Not deployed** | Nothing was written. The server message explains why: validation failed (status `invalid`); the version was stored as a deploy proposal, or is already proposed, and awaits approval (`pending_approval`, see [Reviews and approvals](/docs/user-guide/reviews-and-approvals)); or a conflict that the merge dialog cannot show, such as a create-only deploy of a DAG id that already exists (`conflict`). |
 | **Deploy failed** | A storage or network error, for example the git host refused the push. |
@@ -179,7 +179,7 @@ To run the import check without deploying, use **Run → Validate in Airflow**. 
 
 ## Conflicts and hand-edited files
 
-A deploy carries the version you started from. If someone else deployed in between, nothing is written, and the **Someone else changed this DAG** dialog offers a three-way merge, **Overwrite with mine**, or loading the merge without deploying. If the generated file was edited by hand ("ejected"), the dialog **The DAG file was edited by hand** offers **Overwrite (force)**. AutoAir never overwrites a file it did not create. All three cases are covered in [Versions and diff](/docs/user-guide/versions-and-diff#concurrent-changes-and-the-merge-dialog).
+A deploy carries the version you started from. If someone else deployed in between, nothing is written, and the **Someone else changed this DAG** dialog offers a three-way merge, **Overwrite with mine**, or loading the merge without deploying. If the DAG file was changed outside AutoAir ("ejected"), the deploy stops with **The DAG file was changed outside AutoAir** and offers to apply your change to that file; see [Editing existing Python DAGs](/docs/user-guide/editing-python-dags#files-changed-outside-autoair). AutoAir never overwrites a file it did not create. All three cases are covered in [Versions and diff](/docs/user-guide/versions-and-diff#concurrent-changes-and-the-merge-dialog).
 
 ## Deploy status in Airflow
 
@@ -224,7 +224,8 @@ See [AI assistance](/docs/ai/assist) for models and guardrails.
 
 | Method and path | Purpose |
 |---|---|
-| `PUT /api/specs/{dag_id}` | Deploy. Body: `spec`, `base_etag`, `environment`, `message`, `pr_description`, `direct_push`, `force`, `git_conn_id`. |
+| `PUT /api/specs/{dag_id}` | Deploy. Body: `spec`, `base_etag`, `environment`, `message`, `pr_description`, `direct_push`, `force`, `git_conn_id`, `source_resolution`. |
+| `POST /api/specs/{dag_id}/source-preview` | What the deploy writes as the DAG file (source policy, diff); see [Editing existing Python DAGs](/docs/user-guide/editing-python-dags#api-and-mcp). |
 | `POST /api/specs/{dag_id}/deploy-preview` | Commit and PR preview |
 | `DELETE /api/specs/{dag_id}` | Delete |
 | `GET /api/deploy-target`, `PUT`, `DELETE`, `POST /api/deploy-target/test` | Deploy target |

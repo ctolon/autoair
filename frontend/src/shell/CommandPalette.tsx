@@ -31,7 +31,9 @@ function GoToGroup({ onDone }: { onDone: () => void }) {
               ? t("group.badge")
               : n.data.spec.kind === "custom"
                 ? n.data.spec.handler
-                : "",
+                : n.data.spec.kind === "blueprint"
+                  ? `${n.data.spec.blueprint} v${n.data.spec.version ?? 1}`
+                  : "",
       label: n.data.spec.label ?? "",
     }));
   if (!tasks.length) return null;

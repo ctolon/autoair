@@ -166,6 +166,7 @@ def test_dag_status_reports_scheduling_state():
                 "clear_only_new",
                 "keep_task_state",
                 "scheduling_state",
+                "retry_try_is_next",
             },
         ),
     ],

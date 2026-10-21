@@ -91,5 +91,6 @@ export function upstreamTasks(nodes: BuilderNode[], edges: BuilderEdge[], id: st
       }
     }
   }
-  return nodes.filter((n) => seen.has(n.id) && n.type !== "task_group");
+  // Blueprint steps render whole groups: they have no single XCom output.
+  return nodes.filter((n) => seen.has(n.id) && n.type !== "task_group" && n.type !== "blueprint");
 }

@@ -11,7 +11,7 @@ import re
 from collections import defaultdict, deque
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 from pydantic import BaseModel, Field, ValidationError
 
@@ -37,6 +37,7 @@ from autoair.spec import (
     AssetLeaf,
     AssetOrTimeScheduleSpec,
     AssetSchedule,
+    BlueprintNode,
     CallbackRef,
     CustomNode,
     DagSpec,
@@ -54,11 +55,19 @@ from autoair.spec import (
 )
 from autoair.spec.models import AssetRef
 from autoair.telemetry import span
-from autoair.validation.dagbag_check import ImportCheckResult, check_source
+from autoair.validation.blueprints import blueprint_problems
+from autoair.validation.dagbag_check import (
+    ImportCheckResult,
+    ImportCheckUnavailable,
+    check_source,
+)
 from autoair.validation.jinja import check_template, looks_like_template
 from autoair.validation.llm import llm_problems
-from autoair.validation.pylint import lint_python_task
+from autoair.validation.pylint import lint_python_tasks
 from autoair.validation.shell import shell_problems
+
+if TYPE_CHECKING:
+    from autoair.blueprints.catalog import BlueprintCatalog
 
 Severity = Literal["error", "warning", "info"]
 
@@ -211,13 +220,19 @@ def validate_spec(
     templates: TemplateLookup | None = None,
     environment: str | None = None,
     context: Mapping[str, Any] | None = None,
+    blueprints: BlueprintCatalog | None = None,
+    source: str | None = None,
 ) -> ValidationReport:
     """``templates`` resolves the operator templates tasks were created from
     (``template_ref``); without it, locked template fields are not checked.
 
     ``environment`` is the deployment environment the spec is validated for (policy rules
     with ``match.environments`` apply only when it is known); ``context`` adds facts (user,
-    action…) to the OPA input."""
+    action…) to the OPA input. ``blueprints`` is the blueprint catalog (the allowlist and
+    config schemas of blueprint steps); without it, blueprint steps are checked structurally
+    only. ``source``: the DAG file a source-preserving deploy writes
+    instead of the generated one -- it is import-checked and scanned (secrets, operators)
+    in place of the generated file."""
     with span("validate", dag_id=spec.dag_id, import_check=import_check):
         return _validate(
             spec,
@@ -230,6 +245,8 @@ def validate_spec(
             templates,
             environment,
             context,
+            blueprints,
+            source,
         )
 
 
@@ -244,6 +261,8 @@ def _validate(
     templates: TemplateLookup | None = None,
     environment: str | None = None,
     context: Mapping[str, Any] | None = None,
+    blueprints: BlueprintCatalog | None = None,
+    preserved: str | None = None,
 ) -> ValidationReport:
     if spec.raw_code is not None:
         from autoair.validation.raw import validate_raw
@@ -265,6 +284,9 @@ def _validate(
     problems += _behaviours(spec, catalog)
     problems += _templates(spec, catalog, policy)
     problems += _loops(spec, policy)
+    problems += blueprint_problems(
+        spec, blueprints if blueprints is not None else getattr(catalog, "blueprints", None)
+    )
     problems += _policy(spec, policy)
     problems += _python_refs(spec, policy)
     problems += _inline_code(spec, policy)
@@ -275,18 +297,33 @@ def _validate(
     if templates is not None:
         problems += template_problems(spec, templates)
     problems += _organisation_rules(spec, policy, environment, target_version, context)
+    if preserved is not None:
+        from autoair.validation.raw import preserved_file_problems
+
+        problems += preserved_file_problems(preserved, policy)
 
     result: ImportCheckResult | None = None
     if not any(p.severity == "error" for p in problems):
         try:
-            source = render(spec, registry, fmt=False, airflow_version=target_version)
+            source = preserved
+            if source is None:
+                source = render(spec, registry, fmt=False, airflow_version=target_version)
         except CodegenError as exc:
             problems.append(
                 Problem(severity="error", code="codegen", message=str(exc), node_id=exc.node_id)
             )
         else:
             if import_check:
-                result = check_source(source, filename=f"{spec.dag_id}.py", timeout=import_timeout)
+                try:
+                    result = check_source(
+                        source, filename=f"{spec.dag_id}.py", timeout=import_timeout
+                    )
+                except ImportCheckUnavailable as exc:
+                    problems.append(
+                        Problem(severity=exc.severity, code="import_service", message=str(exc))
+                    )
+                    result = None
+            if result is not None:
                 for err in result.import_errors:
                     problems.append(Problem(severity="error", code="import", message=err))
                 if result.ok and spec.dag_id not in result.dag_ids:
@@ -407,9 +444,16 @@ def _err(
     return Problem(severity=severity, code=code, message=message, node_id=node_id, field=field)
 
 
-def effective_task_id(node: TaskNode | TaskGroupNode, nodes: dict[str, object]) -> str:
+def effective_task_id(
+    node: TaskNode | TaskGroupNode | BlueprintNode, nodes: dict[str, object]
+) -> str:
     """Task/group id including parent group prefixes, as Airflow computes it."""
-    own = node.group_id if isinstance(node, TaskGroupNode) else node.task_id
+    if isinstance(node, TaskGroupNode):
+        own = node.group_id
+    elif isinstance(node, BlueprintNode):
+        own = node.step_id
+    else:
+        own = node.task_id
     parts = [own]
     parent_id = node.parent_group
     seen: set[str] = set()
@@ -542,6 +586,10 @@ def _graph(spec: DagSpec) -> list[Problem]:
                 )
             elif isinstance(target, TaskGroupNode):
                 problems.append(_err("xcom_group", "XCom must reference a task, not a group", t.id))
+            elif isinstance(target, BlueprintNode):
+                problems.append(
+                    _err("xcom_blueprint", "XCom must reference a task, not a blueprint step", t.id)
+                )
             elif isinstance(target, NoteNode):
                 problems.append(_err("xcom_note", "XCom must reference a task", t.id))
             elif ref == t.id:
@@ -559,7 +607,128 @@ def _graph(spec: DagSpec) -> list[Problem]:
     cycle = _find_cycle(_expand_groups(spec, adj))
     if cycle:
         problems.append(_err("cycle", "dependency cycle: " + " → ".join(cycle), cycle[0]))
+    elif spec.group_nodes() and not any(p.severity == "error" for p in problems):
+        problems += _task_group_cycles(spec)
     return problems
+
+
+# At most this many cycles are named; Airflow's own warning lists the first few as well.
+_MAX_LISTED_GROUP_CYCLES = 5
+
+
+def _task_group_cycles(spec: DagSpec) -> list[Problem]:
+    """Task groups that depend on each other in a cycle when each group is one unit.
+
+    Airflow 3.4 warns about these (``TaskGroupCycleDeprecationWarning``, a DAG warning in the
+    UI) and 3.5 plans to reject them at parse time, although the task graph is acyclic: a
+    dependency into or out of any task of a group counts for the whole group, so a path that
+    leaves a group and comes back into it is a cycle (``a >> bridge >> b`` with ``a`` and ``b``
+    in one group). Same projection as Airflow's ``TaskGroup._find_dependency_cycles``: each
+    edge counts in the deepest group holding both ends, between the children of that group
+    that contain them. Edges are the generated ones (disabled tasks bridged) plus XComs.
+    """
+    nodes = spec.node_map()
+
+    def chain(node_id: str) -> list[str | None]:
+        """``[root, outermost group, ..., node]``: the node and every group above it."""
+        out: list[str | None] = [node_id]
+        cur = getattr(nodes.get(node_id), "parent_group", None)
+        seen: set[str] = set()
+        while cur and cur not in seen and isinstance(nodes.get(cur), TaskGroupNode):
+            seen.add(cur)
+            out.append(cur)
+            cur = nodes[cur].parent_group
+        out.append(None)
+        return out[::-1]
+
+    pairs = {(e.source, e.target) for e in effective_edges(spec)}
+    for t in spec.task_nodes(include_disabled=False):
+        for ref in _xcom_refs(t):
+            if isinstance(nodes.get(ref), TaskNode) and not getattr(nodes[ref], "disabled", False):
+                pairs.add((ref, t.id))
+    # Projected graph per group (None = the DAG's root group): child unit -> child units.
+    projected: dict[str | None, dict[str, set[str]]] = defaultdict(lambda: defaultdict(set))
+    for src, dst in pairs:
+        a, b = chain(src), chain(dst)
+        depth = 0
+        while depth < min(len(a), len(b)) and a[depth] == b[depth]:
+            depth += 1
+        if depth >= len(a) or depth >= len(b):
+            continue  # one end contains the other (reported as group_edge)
+        ua, ub = a[depth], b[depth]
+        if ua is not None and ub is not None:
+            projected[a[depth - 1]][ua].add(ub)
+    cycles: list[list[str]] = []
+    for graph in projected.values():
+        cycles += [c for c in _strong_components(graph) if len(c) > 1]
+    if not cycles:
+        return []
+
+    def name(node_id: str) -> str:
+        n = nodes[node_id]
+        kind = "group" if isinstance(n, TaskGroupNode) else "task"
+        return f"{kind} {effective_task_id(n, nodes)!r}"  # type: ignore[arg-type]
+
+    order = {n.id: i for i, n in enumerate(spec.nodes)}
+    cycles = [sorted(c, key=order.__getitem__) for c in cycles]
+    cycles.sort(key=lambda c: order[c[0]])
+    listed = "; ".join(", ".join(name(m) for m in c) for c in cycles[:_MAX_LISTED_GROUP_CYCLES])
+    more = len(cycles) - _MAX_LISTED_GROUP_CYCLES
+    first_group = next((m for m in cycles[0] if isinstance(nodes[m], TaskGroupNode)), cycles[0][0])
+    return [
+        _err(
+            "task_group_cycle",
+            f"task groups depend on each other in a cycle: {listed}"
+            + (f" ({more} more)" if more > 0 else "")
+            + ". A dependency into or out of any task of a group counts for the whole group; "
+            "Airflow 3.4 deprecates this and Airflow 3.5 is planned to reject it. Move tasks "
+            "between groups so that each group depends on the others in one direction only",
+            first_group,
+            severity="warning",
+        )
+    ]
+
+
+def _strong_components(graph: Mapping[str, set[str]]) -> list[list[str]]:
+    """Strongly connected components (iterative Kosaraju, so large graphs do not recurse)."""
+    vertices = set(graph) | {v for targets in graph.values() for v in targets}
+    reverse: dict[str, set[str]] = defaultdict(set)
+    for src, targets in graph.items():
+        for dst in targets:
+            reverse[dst].add(src)
+    finished: list[str] = []
+    seen: set[str] = set()
+    for start in sorted(vertices):
+        if start in seen:
+            continue
+        seen.add(start)
+        stack: list[tuple[str, list[str]]] = [(start, sorted(graph.get(start, ())))]
+        while stack:
+            vertex, pending = stack[-1]
+            if pending:
+                nxt = pending.pop()
+                if nxt not in seen:
+                    seen.add(nxt)
+                    stack.append((nxt, sorted(graph.get(nxt, ()))))
+            else:
+                finished.append(vertex)
+                stack.pop()
+    components: list[list[str]] = []
+    assigned: set[str] = set()
+    for start in reversed(finished):
+        if start in assigned:
+            continue
+        component, todo = [], [start]
+        assigned.add(start)
+        while todo:
+            vertex = todo.pop()
+            component.append(vertex)
+            for prev in reverse.get(vertex, ()):
+                if prev not in assigned:
+                    assigned.add(prev)
+                    todo.append(prev)
+        components.append(component)
+    return components
 
 
 def _is_ancestor_group(nodes: Mapping[str, object], group_id: str, node_id: str) -> bool:
@@ -672,6 +841,19 @@ def _nodes(
     spec: DagSpec, catalog: OperatorCatalog | None, registry: HandlerRegistry, policy: Policy
 ) -> list[Problem]:
     problems: list[Problem] = []
+    # Parse every Python body first so all of them are linted by ONE ruff run.
+    # Keyed by object identity: duplicate node ids are reported, not merged.
+    syntax: dict[int, SyntaxError] = {}
+    parsed: list[PythonTaskNode] = []
+    for n in spec.task_nodes():
+        if isinstance(n, PythonTaskNode):
+            try:
+                ast.parse(normalize_task_body(n.code) or "pass")
+            except SyntaxError as exc:
+                syntax[id(n)] = exc
+            else:
+                parsed.append(n)
+    lint = {id(n): issues for n, issues in zip(parsed, lint_python_tasks(parsed), strict=True)}
     for n in spec.task_nodes():
         if n.mapping and n.mapping.expand_kwargs is not None:
             ek = n.mapping.expand_kwargs
@@ -738,12 +920,11 @@ def _nodes(
                 problems.append(
                     _err("policy", "Python code tasks are disabled by policy", n.id, "code")
                 )
-            try:
-                ast.parse(normalize_task_body(n.code) or "pass")
-            except SyntaxError as exc:
-                problems.append(_err("syntax", f"line {exc.lineno}: {exc.msg}", n.id, "code"))
+            bad = syntax.get(id(n))
+            if bad is not None:
+                problems.append(_err("syntax", f"line {bad.lineno}: {bad.msg}", n.id, "code"))
             else:
-                for issue in lint_python_task(n):
+                for issue in lint.get(id(n), []):
                     problems.append(
                         Problem(
                             severity="error" if issue.severity == "error" else "warning",

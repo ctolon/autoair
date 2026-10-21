@@ -34,6 +34,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, ValidationError
 
+from autoair.ai.approvals import ToolApprovalView
 from autoair.ai.assist import _RawFinding
 from autoair.ai.assistants.airflow_actions import (
     ActionBusy,
@@ -62,7 +63,7 @@ FAILED_STATES = ("failed", "upstream_failed", "up_for_retry", "skipped", "remove
 Category = Literal[
     "spec", "code", "configuration", "infrastructure", "data", "dependency", "platform", "unknown"
 ]
-Status = Literal["proposed", "no_change", "approved", "rejected", "applied"]
+Status = Literal["proposed", "no_change", "approved", "rejected", "applied", "awaiting_approval"]
 
 
 # --------------------------------------------------------------------------- request
@@ -223,6 +224,11 @@ class TroubleshootAnalysis(BaseModel):
     decisions: list[Decision] = Field(default_factory=list)
     notes: list[str] = Field(default_factory=list)
     guardrails: list[str] = Field(default_factory=list)
+    approvals: list[ToolApprovalView] = Field(
+        default_factory=list,
+        description="Tool approvals of the analysis run (the last one is current); "
+        "status awaiting_approval while one is pending.",
+    )
 
 
 class AnalysisSummary(BaseModel):
@@ -519,7 +525,7 @@ async def collect_evidence(
         if not ti.try_number:
             parts.append("Never started (try 0): no log.")
             continue
-        last = max(1, ti.try_number)
+        last = await gw.latest_log_try(ti)
         if body.try_number and body.task_id == ti.task_id:
             last = min(last, body.try_number)
         first = max(1, last - settings.max_tries + 1)
@@ -960,7 +966,7 @@ def build_analysis(
         tools_used=sorted(set(sources.used_tools)),
         sources=sources.citations,
         steps=result.steps,
-        stopped=None if result.stopped == "answer" else result.stopped,
+        stopped=None if result.stopped in ("answer", "approval") else result.stopped,
         summary=result.answer.strip(),
         hypotheses=sorted(parse(Hypothesis, extra.get("hypotheses")), key=lambda h: -h.confidence),
         remediation=parse(RemediationStep, extra.get("remediation")),

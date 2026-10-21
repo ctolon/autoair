@@ -1,0 +1,15 @@
+# Example: AutoAir as a plugin of an Airflow you deploy from plain manifests. Replace
+# airflow-api-server.yaml with your own Airflow manifests (all components); the component
+# then swaps the image everywhere and adds the AutoAir settings to the api-server.
+#
+#   kubectl kustomize deploy/kustomize/overlays/airflow-plugin
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: airflow
+
+resources:
+  - airflow-api-server.yaml
+
+components:
+  - ../../components/airflow-plugin

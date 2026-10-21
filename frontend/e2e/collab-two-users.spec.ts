@@ -77,7 +77,7 @@ test("two users co-edit a DAG across replicas", async ({ browser, request }) => 
   test.skip(!meta.collab_enabled, "collaboration disabled");
 
   const spec = {
-    spec_version: 2,
+    spec_version: 3,
     dag_id: DAG_ID,
     output_mode: "python",
     nodes: [

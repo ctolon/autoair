@@ -7,6 +7,7 @@ operation guides are on the documentation site:
 |---|---|
 | Install as an Airflow plugin (image, Helm values) | [Airflow plugin](https://ctolon.github.io/autoair/docs/installation/plugin), [Helm](https://ctolon.github.io/autoair/docs/installation/helm), [Helm with the plugin](https://ctolon.github.io/autoair/docs/deployment/helm-plugin) |
 | Run the standalone server next to Airflow | [Standalone](https://ctolon.github.io/autoair/docs/installation/standalone), [Behind a reverse proxy](https://ctolon.github.io/autoair/docs/deployment/standalone-proxy) |
+| Run the standalone server on Kubernetes (Kustomize) | [Kubernetes with Kustomize](https://ctolon.github.io/autoair/docs/deployment/kustomize) (`deploy/kustomize/README.md`) |
 | Try AutoAir on a laptop without Airflow | [Local mode](https://ctolon.github.io/autoair/docs/installation/local) |
 | Docker Compose demo stack | [Docker Compose](https://ctolon.github.io/autoair/docs/installation/docker-compose) (`deploy/compose/README.md`) |
 | Choose a deploy target (folder, object storage, git) | [Deploy](https://ctolon.github.io/autoair/docs/user-guide/deploy), [Git bundles](https://ctolon.github.io/autoair/docs/deployment/git-bundles), [Object storage](https://ctolon.github.io/autoair/docs/deployment/object-storage) |
@@ -25,7 +26,7 @@ operation guides are on the documentation site:
 Health, readiness and Prometheus metrics are `<api>/health`, `<api>/ready` and `<api>/metrics`.
 
 ## Compatibility
-Python 3.10+ · Airflow 3.0 or later, below 4 (CI matrix: 3.0.6, 3.1.8, 3.2.2, 3.3.2; the 3.4.0b1
+Python 3.10+ · Airflow 3.0 or later, below 4 (CI matrix: 3.0.6, 3.1.8, 3.2.2, 3.3.2; the 3.4.0b2
 pre-release is tested in a separate nox session). Features that need a newer Airflow (Airflow 3.1: deadline alerts, the `all_done_min_one_success`
 trigger rule; 3.2: asset partitions; 3.3: retry policies, `rerun_with_latest_version`, `@result`,
 `@task.stub`; 3.4: `AssetAndTimeSchedule`, `batch_asset_events`, task loops) are

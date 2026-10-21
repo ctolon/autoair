@@ -21,6 +21,7 @@ import {
   useEnvPreviewCode,
   usePreviewEnv,
 } from "../../codemode/EnvPreview";
+import { usePreservedFile } from "../../codemode/preserved";
 import { editorAvailability, useCodeMode, useIsRaw } from "../../codemode/store";
 import { useAccess } from "../../lib/access";
 import { useMeta } from "../hooks";
@@ -62,37 +63,47 @@ function PythonView({ live }: { live: LiveState }) {
   const previewEnv = usePreviewEnv();
   const preview = useEnvPreviewCode(previewEnv);
   const previewing = previewEnv !== null;
-  const text = previewing ? preview.code : raw ? live.code : (draft ?? live.code);
+  // A DAG that keeps its hand-written file shows that file, not generated code.
+  const preserved = usePreservedFile();
+  const fileCode = preserved.active ? preserved.code : live.code;
+  const text = previewing ? preview.code : raw ? live.code : (draft ?? fileCode);
   const header = (
     <HStack gap={2}>
       {previewing ? <PreviewBadge env={previewEnv} /> : null}
       <PreviewEnvSelect />
     </HStack>
   );
-  if ((live.checking || (previewing && preview.loading)) && !text) return <Spinner m={3} size="sm" />;
+  if ((live.checking || (previewing && preview.loading) || preserved.loading) && !text)
+    return <Spinner m={3} size="sm" />;
   if (!text) {
     return (
       <Stack gap={2} p={3}>
         {header}
         <Text fontSize="sm" color="fg.muted">
-          {(previewing ? preview.error : live.error) ?? t("code.fixProblems")}
+          {(previewing ? preview.error : (preserved.error ?? live.error)) ?? t("code.fixProblems")}
         </Text>
       </Stack>
     );
   }
   const problems = editable && !previewing && check.source === draft ? (check.result?.problems ?? []) : [];
-  const canEdit = editable && !previewing;
+  const canEdit = editable && !previewing && !(preserved.active && fileCode === null);
+  // The kept hand-written file is shown (not generated code), unless an environment preview is.
+  const keptFile = !previewing && preserved.active && fileCode !== null;
   return (
     <Stack gap={2} h="100%" p={2}>
       <HStack justify="space-between" wrap="wrap">
         <HStack gap={2} wrap="wrap">
           {header}
-          <Text fontSize="xs" color="fg.muted">
-            {raw ? t("code.rawHelp") : canEdit ? t("code.pythonEditHelp") : t("code.pythonHelp")}
+          <Text fontSize="xs" color="fg.muted" data-testid="python-caption">
+            {raw
+              ? t("code.rawHelp")
+              : keptFile
+                ? t(canEdit ? "code.pythonKeptEditHelp" : "code.pythonKeptHelp")
+                : t(canEdit ? "code.pythonEditHelp" : "code.pythonHelp")}
           </Text>
         </HStack>
         <HStack gap={2}>
-          {canEdit ? <DraftActions generated={live.code} compact /> : null}
+          {canEdit ? <DraftActions generated={fileCode} compact handWritten={preserved.active} /> : null}
           <CopyDownload text={text} filename={`${dagId}.py`} mime="text/x-python" />
         </HStack>
       </HStack>
@@ -109,7 +120,7 @@ function PythonView({ live }: { live: LiveState }) {
           value={text}
           language="python"
           readOnly={!canEdit}
-          {...(canEdit ? { onChange: (v: string) => useCodeMode.getState().edit(v, live.code) } : {})}
+          {...(canEdit ? { onChange: (v: string) => useCodeMode.getState().edit(v, fileCode) } : {})}
           label={t("code.python")}
         />
       </Box>

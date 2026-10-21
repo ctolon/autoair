@@ -884,7 +884,7 @@ async def fix(
                 if try_number is None:
                     tis = await gateway.task_instances(dag_id, body.run_id)
                     ti = next((t for t in tis if t.task_id == task_id), None)
-                    try_number = max(1, ti.try_number) if ti else 1
+                    try_number = await gateway.latest_log_try(ti) if ti else 1
                 log_text = await gateway.task_log(dag_id, body.run_id, task_id, try_number)
             except AirflowError as exc:
                 raise HTTPException(
@@ -984,9 +984,14 @@ def _agent_tools(
 
         # The caller's LLM (not the central one) rewrites queries / reranks hits.
         tools += research_tools(services, llm=llm)
-    allow = _ai(services).guardrails.tool_allowlist
-    selected: list[AgentTool] = filter_tools(tools, request_role(request), allow)
-    return selected
+    from autoair.ai.approvals import withdraw_gated
+
+    ai = _ai(services)
+    selected: list[AgentTool] = filter_tools(
+        tools, request_role(request), ai.guardrails.tool_allowlist
+    )
+    # A one-shot answer cannot pause for a decision: tools needing approval are not offered.
+    return withdraw_gated(selected, ai.approvals, "developer")
 
 
 async def _agent_task(

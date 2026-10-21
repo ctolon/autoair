@@ -1,0 +1,11 @@
+# This deployment's settings. A Component listed last in ../kustomization.yaml: its values
+# win over the defaults of the other components (a configMapGenerator in the overlay
+# itself would run before the components and lose to them).
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+
+configMapGenerator:
+  - name: autoair-config
+    behavior: merge
+    envs:
+      - settings.env

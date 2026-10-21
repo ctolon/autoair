@@ -26,6 +26,7 @@ from autoair.ai.llm import LLM, build_llm
 from autoair.api import platform
 from autoair.audit import AuditLog
 from autoair.auth import AuthBackend
+from autoair.blueprints.catalog import BlueprintCatalog
 from autoair.catalog import OperatorCatalog
 from autoair.catalog.service import configured_sources
 from autoair.collab import collab_secret, key_file
@@ -381,6 +382,9 @@ def build_services(settings: Settings, auth: AuthBackend) -> Services:
             return key_file(state / "collab.key")
 
     catalog = _catalog(settings)
+    catalog.blueprints = BlueprintCatalog(
+        settings.blueprints, enabled=lambda: settings.feature("blueprints")
+    )
     icons.package_icons = catalog  # SVG icons shipped by operator packages
     return Services(
         settings=settings,
@@ -423,6 +427,7 @@ def create_api(services: Services) -> FastAPI:
         admin_features,
         ai_mount,
         airflow,
+        blueprints,
         catalog,
         collab,
         config,
@@ -466,6 +471,7 @@ def create_api(services: Services) -> FastAPI:
 
         with contextlib.suppress(AttributeError):  # a services object without attributes
             services._kb_scheduler = start_scheduler(services) or False  # type: ignore[attr-defined]
+
     # The operator catalog alone is ~0.7 MB of JSON with every provider installed: compress.
     server = services.settings.server
     api.add_middleware(
@@ -509,6 +515,11 @@ def create_api(services: Services) -> FastAPI:
     protected.include_router(meta.router)  # /meta, /me: any signed-in user
     protected.include_router(catalog.router, dependencies=[use])
     protected.include_router(catalog.write_router, dependencies=[require(P.CATALOG_REFRESH)])
+    blueprints_on = feature("blueprints")
+    protected.include_router(blueprints.router, dependencies=[use, blueprints_on])
+    protected.include_router(
+        blueprints.write_router, dependencies=[require(P.CATALOG_REFRESH), blueprints_on]
+    )
     protected.include_router(
         airflow.router, dependencies=[require(P.AIRFLOW_READ), feature("airflow")]
     )

@@ -55,7 +55,9 @@ A Python configuration file or module is executed with the privileges of the `au
 | [`db`](#autoair-db) | Migrate and inspect the SQL state store |
 | [`kb`](#autoair-kb) | Manage and search the documentation knowledge base; build and import bundles |
 | [`ai-serve`](#autoair-ai-serve) | Run the AI service on its own |
+| [`validator-serve`](#autoair-validator-serve) | Run the validator service for isolated import checks |
 | [`mcp`](#autoair-mcp) / [`mcp-serve`](#autoair-mcp-serve) | Run the MCP server (stdio or HTTP) |
+| [`docs-mcp`](#autoair-docs-mcp) | Serve AutoAir's own documentation over MCP for coding agents |
 
 ## Servers
 
@@ -137,6 +139,23 @@ Run the AI service on its own: the AI API at `/api/ai` and MCP at `/mcp`. Point 
 autoair ai-serve --host 0.0.0.0 --port 8790
 ```
 
+### `autoair validator-serve`
+
+Run the validator service: DagBag import checks of untrusted DAG code in sandboxed worker processes (`POST /v1/check`, `/health`, `/ready`, `/metrics`). Point the main server at it with `AUTOAIR_VALIDATOR__URL=http://HOST:PORT`; both sides share an HMAC key, the password of the Airflow connection `validator.secret_conn_id`, given to this service as `AIRFLOW_CONN_<CONN_ID>`. See [Validator service](/docs/deployment/validator-service).
+
+| Option | Default | Description |
+|---|---|---|
+| `--host TEXT` | `127.0.0.1` | Bind address |
+| `--port INTEGER` | `8791` | Port |
+| `--no-auth` / `--no-no-auth` | `--no-no-auth` | Accept unsigned checks (tests only: anyone who reaches the port can run code) |
+| `--config`, `-c TEXT` | none | Configuration file; repeatable |
+
+Exit codes: `1` when Apache Airflow is not installed, `2` when no key is configured and `--no-auth` is not given.
+
+```bash
+autoair validator-serve --host 0.0.0.0 --port 8791
+```
+
 ### `autoair mcp`
 
 Run the AutoAir MCP server: stdio by default (for a local agent that starts the process), or unauthenticated streamable HTTP for local use. For a shared endpoint prefer `autoair mcp-serve --http`. See [MCP](/docs/ai/mcp).
@@ -160,6 +179,24 @@ Standalone MCP server. In HTTP mode it uses the same authentication as `autoair 
 
 ```bash
 autoair mcp-serve --http --host 0.0.0.0 --port 8766
+```
+
+### `autoair docs-mcp`
+
+An MCP server with only the documentation tools (`search_autoair_docs`, `read_autoair_doc`,
+`list_autoair_docs`) over the documentation packaged with the installed version: no Airflow,
+settings, state or network. Needs the `mcp` extra; over HTTP it has no authentication. See
+[AutoAir docs MCP](/docs/ai/docs-mcp).
+
+| Option | Default | Description |
+|---|---|---|
+| `--http` | off | Serve streamable HTTP instead of stdio |
+| `--host HOST` | `127.0.0.1` | HTTP bind address |
+| `--port PORT` | `8767` | HTTP port |
+| `--path PATH` | `/mcp` | HTTP endpoint path |
+
+```bash
+uvx --from 'autoair[mcp]' autoair docs-mcp --http --port 8767
 ```
 
 ## Specs and code

@@ -48,6 +48,8 @@ export function graphFromSpec(
         return { ...base, type: "python_task", data: { spec: rest } };
       case "custom":
         return { ...base, type: "custom", data: { spec: rest } };
+      case "blueprint":
+        return { ...base, type: "blueprint", data: { spec: rest } };
       case "note":
         return {
           ...base,

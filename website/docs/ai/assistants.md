@@ -138,4 +138,5 @@ assistant's prompt.
 - [`ai.assistants`](/docs/reference/configuration#aiassistants)
 - [Assist features](/docs/ai/assist)
 - [Troubleshooting runs](/docs/ai/troubleshooting)
+- [Tool-call approval](/docs/ai/tool-approval): `remember` and MCP tools that change something wait for your decision
 - [Guardrails and AI audit](/docs/ai/guardrails)

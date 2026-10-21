@@ -14,6 +14,7 @@ from pydantic import BaseModel
 from autoair.codegen.timedeltas import coerce_timedelta
 from autoair.spec import (
     AssetSchedule,
+    BlueprintNode,
     CronSchedule,
     CustomNode,
     DagSpec,
@@ -120,9 +121,16 @@ def export_dag_factory(spec: DagSpec) -> DagFactoryExport:
         if isinstance(src, TaskGroupNode) or isinstance(tgt, TaskGroupNode):
             warnings.append(f"edge {e.source} → {e.target}: group dependencies are not exported")
             continue
+        if isinstance(src, BlueprintNode) or isinstance(tgt, BlueprintNode):
+            continue  # the step itself is skipped (warning below)
         if src is not None and tgt is not None and src.kind != "note" and tgt.kind != "note":
             upstream.setdefault(e.target, []).append(src.task_id)
 
+    for bp in spec.blueprint_nodes():
+        warnings.append(
+            f"blueprint step {bp.step_id!r} ({bp.blueprint}) is not supported by dag-factory "
+            "and was skipped, with its dependencies"
+        )
     tasks: list[dict[str, Any]] = []
     for n in spec.task_nodes():
         if isinstance(n, (PythonTaskNode, CustomNode)):

@@ -1,0 +1,98 @@
+# AutoAir validator service: runs the DagBag import checks of the builder in its own pods,
+# so DAG code written in AutoAir never executes inside the Airflow api-server.
+#
+#   kubectl create secret generic autoair-validator \
+#     --from-literal=connection='{"conn_type":"generic","password":"<random 32+ chars>"}'
+#   helm upgrade --install autoair-validator deploy/helm/autoair-validator -n airflow
+#
+# Then point AutoAir at it (deploy/helm/values-autoair.yaml): AUTOAIR_VALIDATOR__URL and the
+# same connection as AIRFLOW_CONN_AUTOAIR_VALIDATOR (or any Airflow connection store).
+
+image:
+  # The image AutoAir runs in (deploy/docker/Dockerfile): the validator must import the
+  # same providers as your DAGs.
+  repository: registry.example.com/my-airflow-autoair
+  tag: "3.3.2"
+  pullPolicy: IfNotPresent
+imagePullSecrets: []
+
+replicas: 2
+port: 8791
+
+# Secret holding the HMAC key as an Airflow connection (JSON or URI form, password = key).
+# The validator reads only this environment variable and never passes it to its workers.
+keySecret:
+  name: autoair-validator
+  key: connection
+  # validator.secret_conn_id; the variable is AIRFLOW_CONN_<CONN_ID upper-cased>
+  connId: autoair_validator
+
+# AUTOAIR_VALIDATOR__* settings (docs/configuration-reference.md, section validator).
+settings:
+  AUTOAIR_VALIDATOR__POOL_SIZE: "2"
+  AUTOAIR_VALIDATOR__MAX_TASKS_PER_CHILD: "1"
+  AUTOAIR_VALIDATOR__MEMORY_LIMIT_MB: "1024"
+  AUTOAIR_VALIDATOR__CPU_LIMIT_SECONDS: "120"
+  AUTOAIR_VALIDATOR__FILE_SIZE_LIMIT_MB: "16"
+  AUTOAIR_VALIDATOR__MAX_REQUEST_BYTES: "4194304"
+  AUTOAIR_VALIDATOR__MAX_CHECK_SECONDS: "120"
+  AUTOAIR_VALIDATOR__AUDIT_HOOK: "true"
+  # Unprivileged user namespaces are usually blocked by the RuntimeDefault seccomp profile;
+  # "auto" then relies on the NetworkPolicy below.
+  AUTOAIR_VALIDATOR__NETWORK_ISOLATION: "auto"
+  AUTOAIR_LOGGING__FORMAT: "json"
+extraEnv: []
+
+resources:
+  requests:
+    cpu: 500m
+    memory: 1Gi
+  limits:
+    cpu: "2"
+    # pool_size x memory_limit_mb plus the service process
+    memory: 3Gi
+    ephemeral-storage: 1Gi
+
+# Scratch space (read-only root file system): AIRFLOW_HOME, temporary DAG files.
+tmpSizeLimit: 512Mi
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 50000
+  runAsGroup: 0
+  fsGroup: 0
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  readOnlyRootFilesystem: true
+  allowPrivilegeEscalation: false
+  privileged: false
+  capabilities:
+    drop: [ALL]
+
+networkPolicy:
+  enabled: true
+  # Pods allowed to call the validator: the Airflow api-servers (plugin mode) and, if you
+  # run it, `autoair serve`. Labels of the official Airflow chart by default.
+  allowFrom:
+    - podSelector:
+        matchLabels:
+          component: api-server
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/name: autoair
+  # Prometheus scraping /metrics, e.g. a namespaceSelector for the monitoring namespace.
+  allowMetricsFrom: []
+
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+podAnnotations:
+  prometheus.io/scrape: "true"
+  prometheus.io/port: "8791"
+  prometheus.io/path: /metrics
+nodeSelector: {}
+tolerations: []
+affinity: {}

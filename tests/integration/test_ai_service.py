@@ -345,3 +345,72 @@ def test_direct_ai_service_calls_go_through_iam(
     assert resp.status_code == status, resp.text
     if role:
         assert resp.json()["role"] == role
+
+
+def test_tool_approval_through_the_ai_service(tmp_path: Path) -> None:
+    """A paused chat turn is decided and resumed through the proxy: the separate AI service
+    keeps the approval and trusts the signed identity of the user who started the run."""
+    from fastapi import Depends, HTTPException
+
+    from autoair.ai.service import create_ai_service
+
+    secret = SecretStr("shared-secret-0123456789")
+    users = {"Bearer alice": "alice", "Bearer bob": "bob"}
+
+    async def signed_in(request: Request) -> None:
+        user = users.get(request.headers.get("authorization", ""))
+        if user is None:
+            raise HTTPException(status_code=401, detail="bad token")
+        request.state.autoair_user = user
+
+    ai_settings = Settings(
+        dags_folder=tmp_path,
+        subfolder="",
+        ai=AiSettings(service=AiServiceSettings(shared_secret=secret, verify_tokens=True)),
+    )
+    ai_services = build_services(ai_settings, AuthBackend(app=[Depends(signed_in)], name="bearer"))
+    ai_services.llm = FakeLLM(
+        [tool_calls(("remember", {"text": "Use pools for the warehouse"})), "Stored."]
+    )
+    main_settings = Settings(
+        dags_folder=tmp_path,
+        subfolder="",
+        ai=AiSettings(
+            service_url="http://ai-service", service=AiServiceSettings(shared_secret=secret)
+        ),
+    )
+    main_services = build_services(
+        main_settings, AuthBackend(app=[Depends(signed_in)], name="bearer")
+    )
+    main_services.ai_proxy_transport = httpx2.ASGITransport(  # type: ignore[attr-defined]
+        app=create_ai_service(ai_services)
+    )
+    client = TestClient(create_app(main_services))
+    alice = {"Authorization": "Bearer alice"}
+
+    turn = frames(
+        client.post(
+            "/api/ai/assistant/chat/stream",
+            json={"mode": "developer", "message": "remember pools"},
+            headers=alice,
+        )
+    )
+    result = next(e for e in turn if e["type"] == "result")["data"]
+    approval = result["message"]["approvals"][-1]
+    assert approval["status"] == "pending"
+    listed = client.get("/api/ai/approvals", headers=alice).json()
+    assert [a["id"] for a in listed] == [approval["id"]]
+    other = client.get(
+        f"/api/ai/approvals/{approval['id']}", headers={"Authorization": "Bearer bob"}
+    )
+    assert other.status_code == 404
+    resumed = frames(
+        client.post(
+            f"/api/ai/approvals/{approval['id']}/stream",
+            json={"decisions": [{"id": approval["calls"][0]["id"], "approved": True}]},
+            headers=alice,
+        )
+    )
+    message = next(e for e in resumed if e["type"] == "result")["data"]["message"]
+    assert message["content"] == "Stored."
+    assert message["approvals"][-1]["status"] == "resolved"

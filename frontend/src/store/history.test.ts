@@ -5,7 +5,7 @@ import { undo } from "../canvas/actions";
 import { useBuilder } from "./builder";
 
 const spec = {
-  spec_version: 2,
+  spec_version: 3,
   dag_id: "demo",
   output_mode: "python",
   nodes: [{ kind: "operator", id: "a", task_id: "extract", operator: "m.Op", position: { x: 0, y: 0 } }],

@@ -34,7 +34,7 @@ Details: [SSO](/docs/admin/sso).
 
 Two layers apply to every request:
 
-1. **AutoAir permissions** (`builder:use`, `spec:read`, `audit:read`, `airflow:read`, `spec:write`, `spec:delete`, `code:execute`, `run:test`, `connection:write`, `catalog:refresh`, `ai:use`, `review`, `deploy`, `deploy:direct_push`, `promote`, `run:trigger`, `run:manage`, `template:write`, `icon:write`, `admin:deploy_target`, `admin:config`, `admin:panel`, `ai:admin`), grouped into built-in roles (Authenticated, Viewer, Author, Reviewer, Deployer, Operator, TemplateManager, Admin) and derived from the caller's Airflow roles through the configured strategies (`airflow_permissions`, `role_mapping`, `custom_view`).
+1. **AutoAir permissions** (`builder:use`, `spec:read`, `audit:read`, `airflow:read`, `spec:write`, `spec:delete`, `code:execute`, `run:test`, `connection:write`, `catalog:refresh`, `ai:use`, `review`, `deploy`, `deploy:direct_push`, `promote`, `run:trigger`, `run:manage`, `template:write`, `icon:write`, `admin:deploy_target`, `admin:config`, `admin:panel`, `ai:admin`), grouped into built-in roles (Authenticated, Viewer, Author, Reviewer, Deployer, CodeDeployer, Operator, TemplateManager, Admin) and derived from the caller's Airflow roles through the configured strategies (`airflow_permissions`, `role_mapping`, `custom_view`).
 2. **Airflow's own permissions.** Routes about one DAG also require Airflow's DAG access (`requires_access_dag`), honouring per-DAG permissions and multi-team. Every call AutoAir proxies to Airflow (pickers, runs, logs, connections) carries the caller's token, so Airflow's RBAC applies again.
 
 Governance features on top: pull-request mode for git targets, `deploy:direct_push` granted only through trusted grants (never by wildcard, never to anonymous users), four-eyes approvals (`iam.require_approval`), and a mandatory context block plus git trailers on every commit.
@@ -49,7 +49,7 @@ Some features do execute DAG code **on the AutoAir host**:
 
 | Feature | What runs | Permission | Isolation |
 |---|---|---|---|
-| Import check (`/validate?import_check=true`, deploy with `import_check_on_deploy`) | Imports the generated DAG file with a DagBag: module-level code, inline functions, decorators | `code:execute` (deploys skip it for users without it when `iam.import_check_requires_code_execute=true`, the default) | Warm worker subprocesses (`dagbag_pool`), timeout `import_check_timeout` (60 s), scrubbed environment |
+| Import check (`/validate?import_check=true`, deploy with `import_check_on_deploy`) | Imports the generated DAG file with a DagBag: module-level code, inline functions, decorators | `code:execute` (deploys skip it for users without it when `iam.import_check_requires_code_execute=true`, the default) | Warm worker subprocesses (`dagbag_pool`), timeout `import_check_timeout` (60 s), scrubbed environment; or a separate, locked-down [validator service](/docs/deployment/validator-service) (`validator.url`) with resource limits and no egress |
 | Python DAG import (`/interchange/python/import`, MCP `import_python_dag`) | Executes an uploaded Python DAG file | `code:execute`, `allow_python_code` | Subprocess, timeout `python_import_timeout` (90 s), scrubbed environment |
 | Code mode apply | Re-imports the edited DAG file into a spec | `spec:write`, `code:execute`, `features.python_code` | As above |
 | Test runs (`/runner/test-task`, `/runner/test-dag`) | Executes tasks, including operators that call external systems with real connections | `run:test`, `features.test_runs` | Fresh interpreter in its own process group with a hard timeout (`runner.default_task_timeout` 120 s, `runner.default_dag_timeout` 300 s, at most `runner.max_timeout` 600 s), scrubbed environment |
@@ -59,6 +59,7 @@ Some features do execute DAG code **on the AutoAir host**:
 These subprocesses are **not a security sandbox**: they run as the same OS user, on the same network, with access to the same files as AutoAir. They prevent accidents (hangs, leaked environment secrets), not attacks. If authors are not trusted:
 
 - withhold `code:execute` and `run:test` from them (validation remains static),
+- run the import check in the [validator service](/docs/deployment/validator-service), so DAG code is imported in a separate container without credentials or network access,
 - or run AutoAir standalone in a dedicated container with no credentials beyond what it needs, a read-only file system where possible, and an egress policy,
 - and keep `allow_python_code=false` / `features.python_code=false` if inline Python is not needed.
 

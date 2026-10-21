@@ -271,10 +271,14 @@ def validate(
     env = environment or settings.default_environment
     if env and env in loaded.environments:
         loaded = loaded.with_environment(env)
+    from autoair.blueprints.catalog import BlueprintCatalog
+
+    catalog = OperatorCatalog()
+    catalog.blueprints = BlueprintCatalog(settings.blueprints)
     report = validate_spec(
         loaded,
         environment=env,
-        catalog=OperatorCatalog(),
+        catalog=catalog,
         import_check=import_check,
         import_timeout=settings.import_check_timeout,
         policy=policy_from_settings(settings),
@@ -443,8 +447,10 @@ def mcp_serve(
     from autoair.auth import TokenVerifier, bearer_passthrough
     from autoair.mcp.http import create_mcp_asgi_app
     from autoair.settings import Settings
+    from autoair.validation.sandbox import harden_server_process
 
     settings = Settings(mode="standalone")
+    harden_server_process("mcp-serve", enabled=settings.server.harden_process)
     verifier = TokenVerifier(
         settings.airflow_url, ttl=settings.auth_cache_ttl, timeout=settings.auth_timeout
     )
@@ -453,6 +459,24 @@ def mcp_serve(
     root.mount("/mcp", create_mcp_asgi_app(services))
     typer.echo(f"AutoAir MCP at http://{host}:{port}/mcp/ (Airflow at {settings.airflow_url})")
     uvicorn.run(root, host=host, port=port)
+
+
+@app.command(
+    "docs-mcp",
+    context_settings={"allow_extra_args": True, "ignore_unknown_options": True},
+    add_help_option=False,
+)
+def docs_mcp(ctx: typer.Context) -> None:
+    """Serve AutoAir's own documentation over MCP for coding agents (stdio by default).
+
+    Only the documentation tools (search_autoair_docs, read_autoair_doc, list_autoair_docs)
+    over the pages packaged with this version: no Airflow, settings, state or network.
+    Options: --http, --host, --port, --path; `autoair docs-mcp --help` shows them with setup
+    snippets for Claude Code, Codex CLI and Cursor. Needs autoair[mcp]
+    (`uvx --from 'autoair[mcp]' autoair docs-mcp`)."""
+    from autoair.docs.mcp import main
+
+    main(list(ctx.args))
 
 
 @app.command("ai-serve")
@@ -474,9 +498,77 @@ def ai_serve(
     import uvicorn
 
     from autoair.ai.service import build_ai_service
+    from autoair.settings import Settings
+    from autoair.validation.sandbox import harden_server_process
 
+    harden_server_process("ai-serve", enabled=Settings(mode="standalone").server.harden_process)
     typer.echo(f"AutoAir AI service on http://{host}:{port} (API /api/ai, MCP /mcp)")
     uvicorn.run(build_ai_service(no_auth=no_auth), host=host, port=port)
+
+
+@app.command("validator-serve")
+def validator_serve(
+    host: Annotated[str, typer.Option(help="Bind address.")] = "127.0.0.1",
+    port: Annotated[int, typer.Option(help="Port.")] = 8791,
+    no_auth: Annotated[
+        bool,
+        typer.Option(
+            help="Accept unsigned checks (tests only: anyone who reaches the port can run code)."
+        ),
+    ] = False,
+    config: ConfigOption = None,
+) -> None:
+    """Run the validator service: DagBag import checks of untrusted DAG code in sandboxed
+    worker processes (POST /v1/check, /health, /ready, /metrics).
+
+    Point the main server at it with AUTOAIR_VALIDATOR__URL=http://HOST:PORT. Both sides
+    share an HMAC key: the password of the Airflow connection validator.secret_conn_id,
+    given to this service as AIRFLOW_CONN_<CONN_ID>."""
+    _require_http_server("validator-serve")
+    if config:
+        from autoair.config_sources import add_config_files
+
+        add_config_files(config)
+    settings = _settings()
+    import importlib.util
+
+    if importlib.util.find_spec("airflow") is None:
+        typer.echo(
+            "autoair validator-serve: Apache Airflow is not installed (pip install "
+            "'autoair[airflow,standalone]' plus the providers your DAGs use)",
+            err=True,
+        )
+        raise typer.Exit(1)
+    cfg = settings.validator
+    if no_auth and host not in ("127.0.0.1", "localhost", "::1"):
+        typer.echo(
+            "autoair validator-serve: --no-auth is only allowed on a loopback --host", err=True
+        )
+        raise typer.Exit(2)
+    from autoair.validation.remote import connection_env_name, password_from_env
+
+    if not no_auth and not password_from_env(cfg.secret_conn_id):
+        typer.echo(
+            f"autoair validator-serve: no HMAC key; set {connection_env_name(cfg.secret_conn_id)} "
+            "(an Airflow connection with a password, JSON or URI form) or pass --no-auth "
+            "for tests",
+            err=True,
+        )
+        raise typer.Exit(2)
+    import uvicorn
+
+    from autoair.logging_setup import configure_logging
+    from autoair.validation.service import create_validator_app, harden_process
+
+    configure_logging(settings.logging)
+    harden_process()
+    typer.echo(f"AutoAir validator on http://{host}:{port} (POST /v1/check)")
+    uvicorn.run(
+        create_validator_app(cfg, no_auth=no_auth),
+        host=host,
+        port=port,
+        log_config=None,
+    )
 
 
 @app.command("import-python")

@@ -166,7 +166,7 @@ class StoreStats(BaseModel):
 class ComponentInfo(BaseModel):
     id: str
     title: str
-    family: Literal["apache", "astronomer"]
+    family: Literal["apache", "astronomer", "autoair"]
     default: bool
     description: str = ""
 

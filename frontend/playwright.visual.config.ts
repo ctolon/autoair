@@ -25,6 +25,8 @@ const sh = (p: string) => `'${p.replaceAll("'", "'\\''")}'`;
 
 export default defineConfig({
   testDir: "e2e/visual",
+  // plugin.spec.ts runs inside Airflow: playwright.visual-plugin.config.ts.
+  testMatch: "screens.spec.ts",
   outputDir: path.join(RUN_DIR, "results"),
   snapshotPathTemplate: "{testDir}/__screenshots__/{testFilePath}/{arg}-{projectName}{ext}",
   timeout: 90_000,

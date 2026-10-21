@@ -1,0 +1,15 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: autoair
+spec:
+  template:
+    spec:
+      containers:
+        - name: autoair
+          env:
+            - name: AIRFLOW_CONN_AUTOAIR_VALIDATOR
+              valueFrom:
+                secretKeyRef:
+                  name: autoair-validator
+                  key: connection

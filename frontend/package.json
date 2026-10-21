@@ -19,7 +19,8 @@
     "test": "vitest run",
     "format": "prettier --write src e2e",
     "format:check": "prettier --check src e2e",
-    "test:visual": "node e2e/visual/run.mjs"
+    "test:visual": "node e2e/visual/run.mjs",
+    "test:visual:plugin": "node e2e/visual/run.mjs --plugin"
   },
   "dependencies": {
     "@chakra-ui/react": "~3.37.0",

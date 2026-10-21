@@ -1,0 +1,34 @@
+# Three kinds of traffic must pass (website/docs/deployment/standalone-proxy.md): plain HTTP
+# with bodies up to server.max_body_bytes (16 MiB), WebSockets (/collab/<dag_id>,
+# /api/lsp/ws/<language>) and server-sent events under /api/ai/ (no response buffering,
+# read timeout above the longest agent run). Annotations are controller specific; the ones
+# below are for controllers that read the nginx.ingress.kubernetes.io/* keys.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: autoair
+  labels:
+    app.kubernetes.io/name: autoair
+    app.kubernetes.io/component: server
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: 16m
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "900"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "900"
+    nginx.ingress.kubernetes.io/proxy-buffering: "off"
+    # cert-manager.io/cluster-issuer: letsencrypt
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts: [autoair.example.com]
+      secretName: autoair-tls
+  rules:
+    - host: autoair.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: autoair
+                port:
+                  name: http

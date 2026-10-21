@@ -75,6 +75,16 @@ def test_bulk_upload_summary_and_create_only(tmp_path):
         "errors": 1,
     }
 
+    # The imported file is the DAG's hand-written source (source policy auto -> preserve).
+    # It imports a helper module the deploy target does not have: written as it is it
+    # would break in Airflow, so the round trip refuses it instead of regenerating it.
+    assert orders["spec"]["source"]["origin"] == "python"
+    refused = client.put("/api/specs/orders", json={"spec": orders["spec"], "create_only": True})
+    assert refused.json()["status"] == "source_refused"
+    assert "No module named 'common'" in refused.json()["message"]
+    # generated files resolve the helper's values: deploy them deliberately
+    orders["spec"]["source"]["policy"] = "generate"
+
     # deploy one; a second create_only deploy of the same DAG must not overwrite it
     first = client.put("/api/specs/orders", json={"spec": orders["spec"], "create_only": True})
     assert first.status_code == 200, first.text

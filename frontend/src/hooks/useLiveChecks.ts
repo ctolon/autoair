@@ -4,7 +4,9 @@ import { generateCode, validateSpec } from "../api/gen/sdk.gen";
 import type { Problem } from "../api/gen/types.gen";
 import { errorMessage } from "../api/setup";
 import { schemaProblems } from "../lib/schemaErrors";
+import { liveCheckDelay } from "../canvas/largeGraph";
 import { useBuilder } from "../store/builder";
+import { liveDocEqual } from "../store/docEqual";
 
 /**
  * Validation problems plus the code generator's. A node the validator already reports an
@@ -26,6 +28,8 @@ export type LiveState = { code: string | null; checking: boolean; error: string 
 /**
  * Debounced server-side validation + code preview on every document change. The backend
  * is the single source of truth for validity (Pydantic, catalog, graph and policy checks).
+ * Large documents wait longer after the last change (`liveCheckDelay`): each check sends and
+ * re-renders the whole document.
  */
 export function useLiveChecks(delay = 600): LiveState {
   // A check is scheduled at once: "checking" until the first result (no "fix the problems" flash).
@@ -68,27 +72,21 @@ export function useLiveChecks(delay = 600): LiveState {
     };
     const schedule = () => {
       clearTimeout(timer);
-      timer = setTimeout(() => void run(), delay);
+      timer = setTimeout(() => void run(), liveCheckDelay(delay, useBuilder.getState().nodes.length));
     };
     schedule();
-    // Ignore pure selection/measurement changes: compare a serialisation of the document
-    // with the last one (computed once per change, not twice).
-    const doc = (x: ReturnType<typeof useBuilder.getState>) =>
-      JSON.stringify([
-        x.dag,
-        x.edges.map((e) => [e.source, e.target, e.label]),
-        x.nodes.map((n) => [n.id, n.parentId, n.data]),
-      ]);
-    let last = doc(useBuilder.getState());
+    // Ignore pure selection/measurement/position changes: compare the parts the checks depend
+    // on with the last checked document (by reference first, so a drag frame costs no
+    // serialisation of the whole document).
+    let last = useBuilder.getState();
     const unsubscribe = useBuilder.subscribe((s, prev) => {
       if (s.environment !== prev.environment) {
         schedule();
         return;
       }
       if (s.dag === prev.dag && s.nodes === prev.nodes && s.edges === prev.edges) return;
-      const next = doc(s);
-      if (next !== last) {
-        last = next;
+      if (!liveDocEqual(last, s)) {
+        last = s;
         schedule();
       }
     });

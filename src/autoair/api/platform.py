@@ -30,15 +30,17 @@ log = logging.getLogger(__name__)
 def rate_group(method: str, path: str) -> str | None:
     """The ``limits.rate_limits`` group of an API route (``path`` is the route template
     inside the API app, e.g. ``/specs/{dag_id}``)."""
-    if method == "POST" and path == "/validate":
+    if method == "POST" and path in ("/validate", "/blueprints/preview"):
         return "validate"
     if method == "POST" and path.startswith("/interchange/") and path.endswith("/import"):
         return "import"
+    if method == "POST" and path == "/specs/{dag_id}/source-preview":
+        return "import"  # imports the DAG file (round trip) like a Python import
     if method == "POST" and path.startswith("/ai/"):
         return "ai"
     if method == "POST" and path.startswith("/runner/"):
         return "test_runs"
-    if method == "POST" and path == "/catalog/refresh":
+    if method == "POST" and path in ("/catalog/refresh", "/blueprints/refresh"):
         return "catalog_refresh"
     if path == "/specs/{dag_id}" and method in ("PUT", "DELETE"):
         return "deploy"

@@ -1,0 +1,49 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: autoair
+spec:
+  template:
+    spec:
+      # `autoair db upgrade` before every start: concurrent upgrades are serialised by an
+      # advisory lock, and an up-to-date schema makes it a no-op.
+      initContainers:
+        - name: migrate
+          image: ghcr.io/ctolon/autoair
+          imagePullPolicy: IfNotPresent
+          command: [/usr/bin/dumb-init, --, autoair]
+          args: [db, upgrade]
+          envFrom:
+            - configMapRef:
+                name: autoair-config
+          env:
+            - name: HOME
+              value: /tmp
+            - name: AUTOAIR_DATABASE__PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: autoair-db
+                  key: password
+          securityContext:
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            privileged: false
+            capabilities:
+              drop: [ALL]
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              memory: 1Gi
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      containers:
+        - name: autoair
+          env:
+            - name: AUTOAIR_DATABASE__PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: autoair-db
+                  key: password

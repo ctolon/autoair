@@ -4,7 +4,7 @@ Reference for contributors and operators. Task-oriented guide on the documentati
 
 AutoAir has no user database. **Airflow authenticates every user**, and Airflow's roles
 decide what each user may do in AutoAir. On top of Airflow's own DAG permissions, AutoAir
-has a few built-in roles (Viewer, Author, Reviewer, Deployer, Operator, TemplateManager,
+has a few built-in roles (Viewer, Author, Reviewer, Deployer, CodeDeployer, Operator, TemplateManager,
 Admin). Each role is a set of fine-grained AutoAir permissions such as `spec:write`,
 `deploy` or `deploy:direct_push`. Admins assign those roles in Airflow. Settings are in the
 `iam` section (`autoair.iam.config.IamSettings`, [§ 9](#9-settings-reference)).
@@ -68,6 +68,7 @@ Expired tokens: standalone rejects a token whose `exp` has passed without asking
 | `review` | Approve, request changes on, or comment a spec version | `can_create` on `AutoAir Reviews` |
 | `deploy` | Saves that go live: local and object targets, git push mode, direct pushes | `can_create` on `AutoAir Deploy` |
 | `deploy:direct_push` | Git PR mode: `direct_push: true` pushes straight to the branch | `can_create` on `AutoAir Direct Push` |
+| `deploy:overwrite_ejected` | Overwrite a DAG file AutoAir would otherwise not replace, after an explicit confirmation: a generated file changed outside AutoAir (also needs `preserve.ejected_files=overwrite`), the hand-written file AutoAir keeps for a DAG (switch to generate), or the file of a `force=true` deploy of another output mode or raw code. Every overwrite also needs `preserve.allow_force_overwrite=true` (default `false`; without it nobody can overwrite, administrators included). Deleting a DAG whose hand-written file AutoAir keeps needs only this permission. Files without AutoAir's marker are never overwritten by `force`. See [Editing existing Python DAGs](https://ctolon.github.io/autoair/docs/user-guide/editing-python-dags#overwriting-is-off-by-default). Never granted by a wildcard | `can_create` on `AutoAir Overwrite Ejected Files` |
 | `promote` | Promote a DAG between environments | `can_create` on `AutoAir Promote` |
 | `run:trigger` | Trigger runs, create asset events | `can_create` on `AutoAir DAG Runs` |
 | `run:manage` | Pause/unpause, clear, backfill | `can_edit` on `AutoAir DAG Runs` |
@@ -86,10 +87,13 @@ Expired tokens: standalone rejects a token whose `exp` has passed without asking
 | **Author** | Viewer + `spec:write`, `code:execute`, `code:raw`, `run:test`, `ai:use`, `connection:write`, `catalog:refresh`. Authors *propose*: in git PR mode their saves open pull requests. On local/object targets, and in push mode, they cannot go live without `deploy`. |
 | **Reviewer** | Viewer + `review`, `ai:use` |
 | **Deployer** | Viewer + `spec:write`, `spec:delete`, `deploy`, `promote`, `run:trigger` |
+| **CodeDeployer** | Deployer + `code:execute`, `code:raw`: deploys DAGs that keep their hand-written Python file (imported or edited in the code mode) |
 | **Operator** | Viewer + `run:trigger`, `run:manage` |
 | **TemplateManager** | Viewer + `template:write`, `icon:write` |
-| **Admin** | Every permission except `deploy:direct_push` |
+| **Admin** | Every permission except `deploy:direct_push` (`deploy:overwrite_ejected` included) |
 | *Authenticated* | Baseline of the `airflow_permissions` strategy: `builder:use`, `airflow:read`, `ai:use`, `connection:write`, `run:trigger`, `run:manage`. Airflow still enforces its own RBAC on every proxied call. |
+
+Deploying a DAG that keeps its hand-written Python file (imported, or applied in the code mode; source policy preserve) runs a round-trip import of the file, which needs `code:execute`, and writing the imported file itself needs `code:raw`. **Deployer** has neither, deliberately (the kept file is arbitrary Python): such a deploy is refused with a message naming the missing permission. Give those users the **CodeDeployer** role (Deployer + `code:execute` + `code:raw`), or deploy the DAG with the source policy *Generate*.
 
 `deploy:direct_push` is in **no** role definition. It goes to the roles in
 `AUTOAIR_IAM__DIRECT_PUSH_ROLES` (default `["Admin"]`). A deploy target can override that

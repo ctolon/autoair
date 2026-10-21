@@ -23,7 +23,42 @@ def codes(report, severity: str = "error") -> set[str]:
 
 def test_v1_documents_are_migrated():
     spec = DagSpec.model_validate({"spec_version": 1, "dag_id": "old"})
-    assert spec.spec_version == 2
+    assert spec.spec_version == 3
+
+
+def test_v2_documents_upgrade_without_changes():
+    """v3 (AutoAir 0.2.0) only added optional parts: a v2 document loads unchanged."""
+    from autoair.spec.migrations import LATEST, MIGRATIONS
+
+    assert LATEST == 3
+    doc = {"spec_version": 2, "dag_id": "old", "nodes": [op("a")], "tags": ["x"]}
+    assert MIGRATIONS[2](doc) == {**doc, "spec_version": 3}
+    spec = DagSpec.model_validate(doc)
+    assert spec.spec_version == 3
+    assert spec.source is None
+    assert [n.id for n in spec.nodes] == ["a"]
+
+
+def test_v3_documents_with_new_parts_load():
+    spec = DagSpec.model_validate(
+        {
+            "spec_version": 3,
+            "dag_id": "new",
+            "source": {"policy": "preserve", "origin": "python", "base_sha": "0" * 64},
+            "nodes": [
+                {
+                    "kind": "blueprint",
+                    "id": "b",
+                    "step_id": "b",
+                    "blueprint": "load",
+                    "class_path": "pkg.Load",
+                }
+            ],
+        }
+    )
+    assert spec.source is not None
+    assert spec.source.base_sha == "0" * 64
+    assert spec.blueprint_nodes()[0].blueprint == "load"
 
 
 def test_newer_spec_version_is_rejected():

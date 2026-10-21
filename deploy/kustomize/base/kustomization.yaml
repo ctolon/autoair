@@ -1,0 +1,36 @@
+# AutoAir standalone server (`autoair serve`): one replica, file state, local deploy target.
+# Use an overlay (../overlays/dev, ../overlays/production) or your own one on top of it;
+# optional pieces are Kustomize Components under ../components.
+#
+#   kubectl kustomize deploy/kustomize/overlays/production | kubectl apply -f -
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - serviceaccount.yaml
+  - deployment.yaml
+  - service.yaml
+  - pdb.yaml
+
+# Non-secret AUTOAIR_* settings (docs/configuration-reference.md). The generated name carries
+# a content hash, so a changed setting rolls the pods. Components merge keys into it with
+# `behavior: merge`, in the order they are listed; an overlay's own configMapGenerator runs
+# before its components, so overlays put their settings in a Component listed last
+# (overlays/production/settings).
+configMapGenerator:
+  - name: autoair-config
+    envs:
+      - settings.env
+
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: autoair
+    includeSelectors: false
+
+# The release image (deploy/docker/Dockerfile, published by .github/workflows/release.yml):
+# Apache Airflow 3.3.2 plus AutoAir and its extras. Bump newTag with every AutoAir release;
+# the overlays repeat this entry (it must reach the containers their components add), and
+# a custom image with your providers goes in your overlay (newName/newTag).
+images:
+  - name: ghcr.io/ctolon/autoair
+    newTag: "0.1.0"

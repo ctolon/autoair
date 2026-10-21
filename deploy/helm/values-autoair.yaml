@@ -51,6 +51,13 @@ env:
   - { name: AUTOAIR_AI__MODEL, value: "claude-sonnet-5-5" }
   - { name: AUTOAIR_AI__LLM_MODE, value: "central" }
   # - { name: AUTOAIR_AI__SERVICE_URL, value: "http://autoair-ai:8790" }
+  # Isolated import checks: the validator service (chart deploy/helm/autoair-validator).
+  # Import checks then no longer run DAG code in the api-server (Python DAG import and test
+  # runs still do); the HMAC key is the Airflow connection
+  # autoair_validator (secret below). fail_mode open (default) deploys without
+  # the import check while it is down; closed blocks deploys instead.
+  # - { name: AUTOAIR_VALIDATOR__URL, value: "http://autoair-validator:8791" }
+  # - { name: AUTOAIR_VALIDATOR__FAIL_MODE, value: "open" }
   # Config exposure for admins (like Airflow's [api] expose_config)
   - { name: AUTOAIR_EXPOSE_CONFIG, value: "non-sensitive-only" }
 
@@ -64,6 +71,11 @@ secret:
   - envName: AUTOAIR_AI__API_KEY
     secretName: autoair-ai
     secretKey: api-key
+  # Required with AUTOAIR_VALIDATOR__URL: the validator's HMAC key as an Airflow connection
+  # (the same Secret the autoair-validator chart mounts)
+  # - envName: AIRFLOW_CONN_AUTOAIR_VALIDATOR
+  #   secretName: autoair-validator
+  #   secretKey: connection
   # Required when the AI service runs separately (HMAC of the forwarded identity)
   # - envName: AUTOAIR_AI__SERVICE__SHARED_SECRET
   #   secretName: autoair-ai

@@ -1,0 +1,11 @@
+# NetworkPolicies for the AutoAir server, the AI service and the MCP server (the validator
+# brings its own, without any egress). Policies for components you do not use select no
+# pods and have no effect. Adjust the namespace and pod selectors marked below to your
+# cluster: the ingress controller, Airflow, DNS, PostgreSQL and the git host / LLM endpoint.
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+
+resources:
+  - server.yaml
+  - ai.yaml
+  - mcp.yaml

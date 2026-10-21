@@ -1,0 +1,105 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: autoair-mcp
+  labels:
+    app.kubernetes.io/name: autoair-mcp
+    app.kubernetes.io/component: mcp
+spec:
+  replicas: 1
+  revisionHistoryLimit: 5
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: autoair-mcp
+      app.kubernetes.io/component: mcp
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: autoair-mcp
+        app.kubernetes.io/component: mcp
+        app.kubernetes.io/part-of: autoair
+    spec:
+      serviceAccountName: autoair
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 50000
+        runAsGroup: 0
+        fsGroup: 0
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: mcp
+          image: ghcr.io/ctolon/autoair
+          imagePullPolicy: IfNotPresent
+          command: [/usr/bin/dumb-init, --, autoair]
+          args: [mcp-serve, --http, --host, 0.0.0.0, --port, "8766"]
+          ports:
+            - name: http
+              containerPort: 8766
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: autoair-config
+          env:
+            - name: HOME
+              value: /tmp
+            - name: TMPDIR
+              value: /tmp
+            # The same secrets as the server when components/postgresql and
+            # components/git-target are used, and the validator's key with components/validator
+            # (absent Secrets are skipped).
+            - name: AUTOAIR_DATABASE__PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: autoair-db
+                  key: password
+                  optional: true
+            - name: AIRFLOW_CONN_GIT_DAGS
+              valueFrom:
+                secretKeyRef:
+                  name: autoair-git
+                  key: connection
+                  optional: true
+            - name: AIRFLOW_CONN_AUTOAIR_VALIDATOR
+              valueFrom:
+                secretKeyRef:
+                  name: autoair-validator
+                  key: connection
+                  optional: true
+          securityContext:
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            privileged: false
+            capabilities:
+              drop: [ALL]
+          resources:
+            requests:
+              cpu: 100m
+              memory: 512Mi
+              ephemeral-storage: 128Mi
+            limits:
+              memory: 2Gi
+              ephemeral-storage: 1Gi
+          # mcp-serve has no health route (only /mcp/, which needs a token): probe the port.
+          startupProbe:
+            tcpSocket:
+              port: http
+            periodSeconds: 5
+            failureThreshold: 36
+          readinessProbe:
+            tcpSocket:
+              port: http
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: http
+            periodSeconds: 20
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 1Gi

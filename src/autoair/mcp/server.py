@@ -54,6 +54,7 @@ from autoair.gateway import AirflowError, AirflowGateway, DagStatus
 from autoair.iam import model as P
 from autoair.mcp.git_token import mcp_writer, request_git_token
 from autoair.mcp.models import (
+    BlueprintList,
     CodeResult,
     ConnectionList,
     DagCode,
@@ -74,6 +75,7 @@ from autoair.mcp.models import (
     PatchResult,
     RunList,
     SaveResult,
+    SourceSummary,
     TaskLog,
     TemplateSaveResult,
     TriggerOutcome,
@@ -115,6 +117,12 @@ _BUILTIN_KINDS: tuple[tuple[str, str, str], ...] = (
         "TaskFlow function: `function_name`, `code` (function body), `decorator`, `arguments`.",
     ),
     ("task_group", "Task group", "Groups nodes; members reference it via `parent_group`."),
+    (
+        "blueprint",
+        "Astronomer Blueprint step",
+        "A blueprint template (list_blueprints): `step_id`, `blueprint`, `version`, `class_path`, "
+        "`config_class` and `config` (validated against the blueprint's config_schema).",
+    ),
     ("note", "Note", "Canvas sticky note (`text`); not a task."),
 )
 
@@ -132,6 +140,10 @@ LLM_TOOL = ToolAnnotations(
 )
 DESTRUCTIVE = ToolAnnotations(
     read_only_hint=False, destructive_hint=True, idempotent_hint=True, open_world_hint=False
+)
+#: Not read-only: runs the DAG file's code in a sandbox (the round-trip import).
+RUNS_CODE = ToolAnnotations(
+    read_only_hint=False, destructive_hint=False, idempotent_hint=True, open_world_hint=False
 )
 MEMORY_WRITE = ToolAnnotations(
     read_only_hint=False, destructive_hint=False, idempotent_hint=True, open_world_hint=False
@@ -152,6 +164,25 @@ UseAiArg = Annotated[
         "reason about the deterministic findings yourself."
     ),
 ]
+
+
+def _source_summary(plan: Any) -> SourceSummary:
+    diff = plan.diff
+    cut = len(diff) > MAX_CODE_CHARS
+    return SourceSummary(
+        policy=plan.policy,
+        action=plan.action,
+        target_state=plan.target_state,
+        operations=plan.operations,
+        warnings=plan.warnings,
+        refusals=[r.message for r in plan.refusals],
+        options=list(plan.options),
+        diff=diff[:MAX_CODE_CHARS] if cut else diff,
+        diff_truncated=cut or plan.diff_truncated,
+        target_sha=plan.target_sha,
+        content_hidden=plan.content_hidden,
+        message=plan.message,
+    )
 
 
 def _git_failure(dag_id: str, exc: AuthError, raw: str | None) -> str:
@@ -285,6 +316,10 @@ def create_mcp_server(
 
     def spec_store() -> SpecStore:
         return store if store is not None else store_for(services())
+
+    def custom_store() -> bool:
+        """A store passed to create_mcp_server (no deploy target behind it)."""
+        return store is not None
 
     def policy() -> Policy:
         return policy_from_settings(services().settings)
@@ -446,6 +481,27 @@ def create_mcp_server(
             )
         return NodeKindList(node_kinds=kinds)
 
+    @mcp.tool(title="List blueprints", annotations=READ_ONLY, tags={"catalog"})
+    def list_blueprints(
+        name: Annotated[
+            str | None, Field(description="Only this blueprint name (all its versions).")
+        ] = None,
+        limit: Annotated[int, Field(ge=1, le=MAX_PAGE)] = 50,
+    ) -> BlueprintList:
+        """Astronomer Blueprint templates usable as `kind: blueprint` nodes, with the JSON
+        Schema of each version's config. Copy name, version, class_path and config_class into
+        the node exactly as listed."""
+        svc = services()
+        catalog = getattr(svc.catalog, "blueprints", None)
+        if catalog is None or not svc.settings.feature("blueprints"):
+            return BlueprintList(available=False, blueprints=[])
+        found = [d for d in catalog.data().blueprints if name is None or d.name == name]
+        return BlueprintList(
+            available=True,
+            blueprints=[d.model_dump(mode="json", exclude={"docstring"}) for d in found[:limit]],
+            total=len(found),
+        )
+
     @mcp.tool(title="List notifiers", annotations=READ_ONLY, tags={"catalog"})
     def list_notifiers() -> NotifierList:
         """Notifier classes usable in `callbacks` (`notifier` FQN + `params`)."""
@@ -585,14 +641,61 @@ def create_mcp_server(
         return spec
 
     @mcp.tool(title="Save DAG spec", annotations=DESTRUCTIVE, tags={"specs", "write"})
-    def save_dag_spec(spec: SpecArg, confirm: ConfirmArg = False) -> SaveResult:
+    def save_dag_spec(
+        spec: SpecArg,
+        confirm: ConfirmArg = False,
+        expected_target_sha: Annotated[
+            str | None,
+            Field(
+                max_length=64,
+                description="target_sha of the preview (dry run or preview_dag_source) the "
+                "user agreed to: the save stops when the DAG file changed since.",
+            ),
+        ] = None,
+    ) -> SaveResult:
         """Validate and save a DagSpec, writing the DAG file to the deploy target (Airflow's
         DAG folder, object storage or git); overwrites an AutoAir DAG with the same dag_id.
 
         Without `confirm=true` this is a dry run that only validates and says whether it
         would create or overwrite. Ask the user before confirming.
         """
-        return save_spec(spec, confirm)
+        return save_spec(spec, confirm, expected_target_sha)
+
+    @mcp.tool(title="Preview DAG file", annotations=RUNS_CODE, tags={"specs"})
+    def preview_dag_source(
+        spec: SpecArg,
+        resolution: Annotated[
+            Literal["preserve", "overwrite"] | None,
+            Field(
+                description="Only after a 'blocked' preview (a file changed outside "
+                "AutoAir): preview applying the change to that file (preserve) or "
+                "regenerating it (overwrite)."
+            ),
+        ] = None,
+    ) -> SourceSummary:
+        """What save_dag_spec would write as the DAG file, without writing: generated from
+        the spec, or -- for DAGs that come from hand-written Python (source policy
+        preserve) -- the existing file with the change patched in (comments and formatting
+        kept), with a unified diff. Preserve previews import the file in a sandbox."""
+        from autoair.api.source_plans import plan_for
+
+        parsed = parse(spec)
+        svc = services()
+        target = getattr(svc, "target", None)
+        if target is None:
+            raise ToolError("this MCP server has no deploy target to compare with")
+        try:
+            plan = plan_for(
+                svc,
+                _mcp_principal(),
+                parsed,
+                target=target,
+                environment=None,
+                resolution=resolution,
+            )
+        except Exception as exc:
+            raise ToolError(mask(f"cannot preview {parsed.dag_id!r}: {exc}")) from None
+        return _source_summary(plan)
 
     @mcp.tool(title="Get DAG code", annotations=READ_ONLY, tags={"specs"})
     def get_dag_code(dag_id: str) -> DagCode:
@@ -606,6 +709,19 @@ def create_mcp_server(
             raise ToolError(f"no AutoAir spec for {dag_id!r} (see list_dags)")
         if spec.raw_code is not None:
             return DagCode(dag_id=dag_id, document_type="raw", code=spec.raw_code)
+        from autoair.api.source_plans import existing_file
+        from autoair.preserve.service import keeps_hand_written_file
+
+        target = getattr(services(), "target", None)
+        settings = getattr(services(), "settings", None)
+        if store is None and target is not None and keeps_hand_written_file(spec, settings):
+            # The DAG keeps its hand-written file: that file is the DAG, not generated code.
+            try:
+                current = existing_file(target, dag_id, None, None)
+            except Exception as exc:
+                raise ToolError(mask(f"cannot read the DAG file of {dag_id!r}: {exc}")) from None
+            if current is not None:
+                return DagCode(dag_id=dag_id, document_type="spec", code=current.content)
         code, problems = render_problems(spec)
         if code is None:
             raise ToolError("; ".join(p.message for p in problems) or "code generation failed")
@@ -650,7 +766,38 @@ def create_mcp_server(
             data["tags"] = tags
         return save_spec(data, confirm)
 
-    def save_spec(spec: Mapping[str, Any], confirm: bool) -> SaveResult:
+    def preserved_problems(parsed: DagSpec, plan: Any) -> list[SpecProblem] | None:
+        """Errors of a patched / kept hand-written file (policy rules on its hand-written
+        parts, like the deploy route's validation); None when it may be written."""
+        if plan is None or plan.action not in ("preserve", "unchanged") or plan.source is None:
+            return None
+        from autoair.validation import validate_spec
+
+        svc = services()
+        principal = _mcp_principal()
+        templates = getattr(svc, "templates", None)
+        settings = getattr(svc, "settings", None)
+        # The same inputs the REST deploy validates with (specs.validate_for_write), so
+        # policy rules and OPA decide the same over MCP.
+        report = validate_spec(
+            parsed,
+            catalog=svc.catalog,
+            registry=svc.registry,
+            policy=policy(),
+            target_version=settings.target_version_tuple() if settings is not None else None,
+            templates=templates.lock if templates is not None else None,
+            environment=None,
+            context={
+                "user": getattr(principal, "user", None) or current_user(),
+                "action": "deploy",
+            },
+            source=plan.source,
+        )
+        return None if report.ok else with_paths(parsed, report.problems)
+
+    def save_spec(
+        spec: Mapping[str, Any], confirm: bool, expected_target_sha: str | None = None
+    ) -> SaveResult:
         writes_allowed()
         svc = services()
         check = check_spec(spec, catalog=svc.catalog, registry=svc.registry, policy=policy())
@@ -664,17 +811,47 @@ def create_mcp_server(
         parsed = check.spec
         target = spec_store()
         try:
-            exists = target.get(parsed.dag_id) is not None
+            stored = target.get(parsed.dag_id)
         except Exception:
-            exists = False
+            stored = None
+        exists = stored is not None
+        # A raw code DAG replacing its own code (the caller sent all of it): like the REST
+        # deploy, the kept file may be replaced without deploy:overwrite_ejected, and only
+        # while it is unchanged since AutoAir wrote it (no force over MCP).
+        raw_edit = (
+            parsed.raw_code is not None and stored is not None and stored.raw_code is not None
+        )
+        # A dry run reads the target with the shared credentials (no token header needed):
+        # when that is not possible the preview is left out instead of failing.
+        plan = source_plan(svc, parsed, getattr(svc, "target", None), soft=True)
+        summary = _source_summary(plan) if plan is not None else None
+        if plan is not None and plan.action in ("blocked", "refused"):
+            return SaveResult(
+                saved=False,
+                dry_run=not confirm,
+                problems=check.problems,
+                source=summary,
+                message=plan.message + "".join(f"\n- {r.message}" for r in plan.refusals[:10]),
+            )
+        refused = preserved_problems(parsed, plan)
+        if refused is not None:
+            return SaveResult(
+                saved=False,
+                dry_run=not confirm,
+                problems=refused,
+                source=summary,
+                message="validation of the DAG file failed; nothing was written",
+            )
         if not confirm:
             verb = "overwrite the existing" if exists else "create a new"
+            how = f" ({plan.message})" if plan is not None else ""
             return SaveResult(
                 saved=False,
                 dry_run=True,
                 problems=check.problems,
+                source=summary,
                 message=f"validation passed; call again with confirm=true to {verb} "
-                f"DAG {parsed.dag_id!r}",
+                f"DAG {parsed.dag_id!r}{how}",
             )
         source: str | None = None
         if parsed.output_mode == "python":
@@ -686,9 +863,46 @@ def create_mcp_server(
         raw = request_git_token()  # storage.git.mcp_request_token (autoair.mcp.git_token)
         with masking(raw):
             writer = mcp_writer(svc, raw)
+            # the plan the write follows: read with the user's token when there is one
+            try:
+                plan = source_plan(
+                    svc, parsed, writer if writer is not None else getattr(svc, "target", None)
+                )
+            except AuthError as exc:
+                raise ToolError(_git_failure(parsed.dag_id, exc, raw)) from None
+            if plan is not None and plan.action in ("blocked", "refused"):
+                return SaveResult(
+                    saved=False, dry_run=False, source=_source_summary(plan), message=plan.message
+                )
+            if (
+                plan is not None
+                and expected_target_sha is not None
+                and plan.target_sha != expected_target_sha
+            ):
+                return SaveResult(
+                    saved=False,
+                    dry_run=False,
+                    source=_source_summary(plan),
+                    message="the DAG file in the target changed since the preview: preview "
+                    "it again",
+                )
+            refused = preserved_problems(parsed, plan)
+            if refused is not None:
+                return SaveResult(
+                    saved=False,
+                    dry_run=False,
+                    problems=refused,
+                    source=_source_summary(plan),
+                    message="validation of the DAG file failed; nothing was written",
+                )
             store = RepositoryStore(TargetRepository(writer)) if writer is not None else target
             try:
-                location = store.save(parsed, source)
+                if plan is not None and plan.action in ("preserve", "unchanged"):
+                    location = preserve_write(svc, writer, parsed, plan)
+                elif raw_edit and not custom_store() and (writer or getattr(svc, "target", None)):
+                    location = raw_write(svc, writer, parsed, source)
+                else:
+                    location = store.save(parsed, source)
             except AuthError as exc:
                 raise ToolError(_git_failure(parsed.dag_id, exc, raw)) from None
             except Exception as exc:
@@ -704,8 +918,55 @@ def create_mcp_server(
             dry_run=False,
             location=location,
             problems=check.problems,
+            source=_source_summary(plan) if plan is not None else None,
             message=f"saved to {location}; Airflow picks it up on the next DAG bundle parse",
         )
+
+    def source_plan(svc: Any, parsed: DagSpec, target: Any, *, soft: bool = False) -> Any:
+        """The source plan of writing ``parsed`` to ``target`` (None: a custom store, an
+        output mode the source policy does not apply to, or -- ``soft`` -- a target that
+        cannot be read right now)."""
+        from autoair.api.source_plans import plan_for
+        from autoair.preserve.service import applicable
+
+        if store is not None or target is None or not applicable(parsed):
+            return None
+        if getattr(svc, "settings", None) is None:
+            return None
+        try:
+            return plan_for(svc, _mcp_principal(), parsed, target=target, environment=None)
+        except AuthError:
+            if soft:
+                return None
+            raise  # reported like a refused write (never echoing the token)
+        except Exception as exc:
+            if soft:
+                return None
+            raise ToolError(mask(f"cannot plan the DAG file of {parsed.dag_id!r}: {exc}")) from None
+
+    def preserve_write(svc: Any, writer: Any, parsed: DagSpec, plan: Any) -> str:
+        """Write the patched (or unchanged hand-written) file of a preserve plan."""
+        target_obj = writer if writer is not None else svc.target
+        name = f"{parsed.dag_id}.py"
+        kwargs: dict[str, Any] = {}
+        if plan.expected_sha is not None:
+            kwargs["expected"] = {name: plan.expected_sha}
+        if plan.hand_written or plan.overwrite:
+            # Like the REST deploy: the kept file is recorded as hand-written, so a later
+            # regenerate needs preserve.allow_force_overwrite and deploy:overwrite_ejected
+            # (REST only) and a delete over MCP is refused.
+            kwargs["hand_written"] = plan.hand_written
+        result = target_obj.save(plan.stored_spec or parsed, {name: plan.source}, **kwargs)
+        return str(result.path)
+
+    def raw_write(svc: Any, writer: Any, parsed: DagSpec, source: str | None) -> str:
+        """Write a raw code DAG over its own earlier code (``allow_hand_written``)."""
+        from autoair.storage import render_dag_files
+
+        target_obj = writer if writer is not None else svc.target
+        files = render_dag_files(parsed, python_source=source)
+        result = target_obj.save(parsed, files, allow_hand_written=True)
+        return str(result.path)
 
     @mcp.tool(title="Delete DAG spec", annotations=DESTRUCTIVE, tags={"specs", "write"})
     def delete_dag_spec(dag_id: str, confirm: ConfirmArg = False) -> DeleteOutcome:
@@ -980,8 +1241,14 @@ def create_mcp_server(
         if not services().settings.feature("python_code"):
             raise ToolError("importing Python is disabled (AUTOAIR_ALLOW_PYTHON_CODE=false)")
         from autoair.importer.python_dag import import_python_source
+        from autoair.preserve.service import mark_hand_written
 
         result = import_python_source(source, timeout=60)
+        if len(result.dags) == 1 and result.dags[0].spec is not None:
+            # the file is the DAG's hand-written source: save_dag_spec preserves it
+            dag = result.dags[0]
+            if dag.spec is not None:
+                dag.spec = mark_hand_written(dag.spec, source, dag.warnings)
         return ImportResult(
             dags=[
                 ImportedSpec(dag_id=d.dag_id, spec=d.spec, warnings=d.warnings, error=d.error)
@@ -1142,7 +1409,7 @@ def create_mcp_server(
                         (t for t in tis if t.task_id == task_id and t.map_index == map_index),
                         None,
                     )
-                    try_number = max(1, ti.try_number) if ti else 1
+                    try_number = await gw.latest_log_try(ti) if ti else 1
                 text = await gw.task_log(dag_id, run_id, task_id, try_number, map_index)
         except AirflowError as exc:
             raise ToolError(f"Airflow: {exc.detail}") from exc
@@ -1596,6 +1863,12 @@ def create_mcp_server(
     from autoair.kb.mcp import register_kb_tools
 
     register_kb_tools(mcp, services)
+
+    # ------------------------------------------------------------------ AutoAir documentation
+
+    from autoair.docs.mcp import register_docs_tools
+
+    register_docs_tools(mcp)
 
     def _research_tool(name: str, *, online_only: bool = False) -> Any:
         from autoair.ai.research.tools import research_tools

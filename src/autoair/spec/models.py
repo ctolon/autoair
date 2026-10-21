@@ -12,7 +12,7 @@ from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-SPEC_VERSION: Literal[2] = 2
+SPEC_VERSION: Literal[3] = 3
 
 # Airflow's KEY_REGEX for dag_id / task_id / group_id.
 KEY_PATTERN = r"^[A-Za-z0-9_.-]+$"
@@ -649,6 +649,47 @@ class CustomNode(_TaskBase):
     config: dict[str, Value] = Field(default_factory=dict)
 
 
+BLUEPRINT_NAME_PATTERN = r"^[a-z][a-z0-9_]*$"
+
+
+class BlueprintNode(_NodeBase):
+    """A step built from an Astronomer Blueprint template (``airflow-blueprint``).
+
+    A blueprint is a reusable ``Blueprint[Config]`` class with a Pydantic config model whose
+    ``render()`` returns a task or a TaskGroup. The generated DAG imports ``class_path``, sets
+    ``step_id`` on an instance and calls ``render(Config(**config))``, the way the blueprint
+    project documents its use in Python DAGs. Edges to and from the node depend on the whole
+    rendered step. The Airflow environment needs ``airflow-blueprint`` and the template.
+    """
+
+    kind: Literal["blueprint"]
+    step_id: Key = Field(description="Task or group id the blueprint renders under.")
+    blueprint: str = Field(
+        pattern=BLUEPRINT_NAME_PATTERN,
+        max_length=100,
+        description="Registered blueprint name (snake_case), as `blueprint list` shows it.",
+    )
+    version: int = Field(default=1, ge=1, description="Blueprint version the step is pinned to.")
+    class_path: str = Field(
+        pattern=FQN_PATTERN,
+        max_length=300,
+        description="Importable path of the Blueprint class (module.Class).",
+    )
+    config_class: Identifier | None = Field(
+        default=None,
+        description="Name of the config model in the blueprint's module; omitted: the "
+        "generated code asks the class for it (get_config_type()).",
+    )
+    config: dict[str, Value] = Field(
+        default_factory=dict,
+        description="Config values, validated against the blueprint's config schema. Plain "
+        "JSON values only (no XCom references or tagged values).",
+    )
+    disabled: bool = Field(
+        default=False, description="Excluded from the generated DAG (kept on the canvas)."
+    )
+
+
 class NoteNode(_NodeBase):
     """Sticky note on the canvas. Not a task; optionally appended to the DAG docs."""
 
@@ -659,7 +700,7 @@ class NoteNode(_NodeBase):
 
 
 Node = Annotated[
-    OperatorNode | PythonTaskNode | TaskGroupNode | CustomNode | NoteNode,
+    OperatorNode | PythonTaskNode | TaskGroupNode | CustomNode | BlueprintNode | NoteNode,
     Field(discriminator="kind"),
 ]
 TaskNode = OperatorNode | PythonTaskNode | CustomNode
@@ -733,6 +774,44 @@ OutputMode = Literal["python", "loader", "yaml"]
 RAW_CODE_MAX_CHARS = 2_000_000
 
 
+SourcePolicy = Literal["auto", "generate", "preserve", "strict-preserve"]
+
+
+class DagSource(StrictModel):
+    """How the DAG file of a spec-backed DAG is written (python output mode only).
+
+    ``generate`` writes the file AutoAir generates from the spec; ``preserve`` applies each
+    change to the existing (hand-written) file as a minimal patch and keeps its comments,
+    formatting and ordering; ``strict-preserve`` is preserve that refuses every change it
+    cannot apply exactly. ``auto``: preserve for DAGs that come from hand-written Python
+    (imported or applied in the code mode), generate for DAGs built in AutoAir."""
+
+    policy: SourcePolicy = Field(
+        default="auto",
+        description="auto | generate | preserve | strict-preserve (see the model description).",
+    )
+    origin: Literal["autoair", "python"] = Field(
+        default="autoair",
+        description="autoair: built in AutoAir; python: imported from or edited as a "
+        "hand-written Python file (makes 'auto' preserve).",
+    )
+    code: str | None = Field(
+        default=None,
+        max_length=RAW_CODE_MAX_CHARS,
+        description="The hand-written file this spec was last imported from or applied in "
+        "the code mode. Preserve patches it when the deploy target has no newer version of "
+        "the file. Writing it needs the 'code:raw' permission (it is arbitrary Python).",
+    )
+    base_sha: str | None = Field(
+        default=None,
+        pattern=r"^[0-9a-f]{64}$",
+        description="sha256 of the file the editor started from (the imported file). Equal "
+        "to the hash of `code`: the code is that file unchanged; different: it was edited in "
+        "the code mode, so a merge with changes made outside AutoAir uses the version "
+        "deployed last as the common ancestor.",
+    )
+
+
 class EnvironmentOverlay(StrictModel):
     """Per-environment overrides applied at deploy time (dev / staging / prod...)."""
 
@@ -770,7 +849,7 @@ def check_timezone(value: str | None) -> str | None:
 
 
 class DagSpec(StrictModel):
-    spec_version: Literal[2] = SPEC_VERSION
+    spec_version: Literal[3] = SPEC_VERSION
     dag_id: Key
     output_mode: OutputMode = "python"
     display_name: str | None = None
@@ -817,6 +896,11 @@ class DagSpec(StrictModel):
     environments: dict[Key, EnvironmentOverlay] = Field(default_factory=dict)
     nodes: list[Node] = Field(default_factory=list)
     edges: list[Edge] = Field(default_factory=list)
+    source: DagSource | None = Field(
+        default=None,
+        description="Source policy of the DAG file (generate / preserve / strict-preserve) "
+        "and the hand-written file it comes from. None: auto policy, built in AutoAir.",
+    )
     raw_code: str | None = Field(
         default=None,
         max_length=RAW_CODE_MAX_CHARS,
@@ -907,6 +991,13 @@ class DagSpec(StrictModel):
 
     def group_nodes(self) -> list[TaskGroupNode]:
         return [n for n in self.nodes if isinstance(n, TaskGroupNode)]
+
+    def blueprint_nodes(self, *, include_disabled: bool = True) -> list[BlueprintNode]:
+        return [
+            n
+            for n in self.nodes
+            if isinstance(n, BlueprintNode) and (include_disabled or not n.disabled)
+        ]
 
 
 def iter_tagged(value: Any, tag: str) -> list[dict[str, Any]]:

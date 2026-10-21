@@ -225,7 +225,10 @@
     "keepMineHelp": "Onların değişikliklerini at ve sizin sürümünüzü dağıt",
     "ejectedTitle": "DAG dosyası elle düzenlenmiş",
     "ejectedHelp": "Üretilen dosya artık AutoAir'in yazdığıyla eşleşmiyor (\"ejected\" edilip doğrudan düzenlenmiş). Dağıtmak bu elle yapılan düzenlemelerin üzerine yazar.",
-    "force": "Üzerine yaz (zorla)"
+    "force": "Üzerine yaz (zorla)",
+    "handWrittenTitle": "Bu DAG elle yazılmış bir dosyayı koruyor",
+    "handWrittenHelp": "DAG dosyası, AutoAir'in bu DAG için koruduğu elle yazılmış dosyadır. Dağıtmak onu bu sürümün dosyasıyla değiştirir.",
+    "forceOff": "AutoAir bu dosyanın üzerine burada yazmaz. Değişikliğinizi dosyaya preserve ile uygulayın (Python çıktısı) ya da DAG'i ham kod olarak tutun; bir yönetici preserve.allow_force_overwrite ile üzerine yazmaya izin verebilir."
   },
   "trigger": {
     "title": "DAG çalıştırmasını tetikle",
@@ -753,7 +756,9 @@
     "dagFactoryHelp": "astronomer/dag-factory kullanan ekipler için tek yönlü dışa aktarma.",
     "specHelp": "AutoAir'in sakladığı ve dağıttığı belge.",
     "pythonEditHelp": "Üretilen DAG dosyası. Düzenleyip uygulayın: kod tuvale geri aktarılır (geri alınabilir).",
-    "rawHelp": "Dağıtılan haliyle DAG dosyası (ana düzenleyicide düzenleyin)."
+    "rawHelp": "Dağıtılan haliyle DAG dosyası (ana düzenleyicide düzenleyin).",
+    "pythonKeptHelp": "AutoAir'in koruduğu DAG dosyası (elle yazılmış, salt okunur).",
+    "pythonKeptEditHelp": "AutoAir'in koruduğu elle yazılmış DAG dosyası, kanvas değişiklikleri uygulanmış hâliyle. Düzenleyip uygulayın: kod kanvasa geri aktarılır (geri alınabilir)."
   },
   "runs": {
     "run": "Çalıştırma",
@@ -989,6 +994,7 @@
     "unknownParam": "“{{name}}”, {{operator}} için bir parametre değil.",
     "duplicateNode": "İki node aynı kimliği kullanıyor: “{{id}}”.",
     "cycle": "Bu görevler döngüsel olarak birbirine bağlı: {{path}}.",
+    "taskGroupCycle": "Bu görev grupları döngüsel olarak birbirine bağlı: {{members}}. Bir grubun herhangi bir görevine giren ya da çıkan bağımlılık tüm grup için sayılır. Airflow 3.4 bu durumda uyarı verir, Airflow 3.5'in ise DAG'i reddetmesi planlanıyor: görevleri gruplar arasında taşıyarak her grubun diğerlerine yalnızca tek yönde bağlı olmasını sağlayın.",
     "dates": "Bitiş tarihi başlangıç tarihinden sonra olmalı.",
     "selfLoop": "Bir görev kendisine bağımlı olamaz.",
     "noteEdge": "Notlar görevlere bağlanamaz.",
@@ -1025,10 +1031,20 @@
     "rawDagId": "Kod dag_id'si '{{id}}' olan bir DAG tanımlamıyor (bulunan: {{found}}): koddaki dag_id belgeninkiyle aynı olmalıdır.",
     "rawPrivileged": "{{name}} rastgele komut çalıştırır ve politika gereği kapalıdır (allow_privileged_operators).",
     "rawForbidden": "{{name}} politika gereği yasaktır.",
+    "importServiceClosed": "İçe aktarma denetimi hizmetine ulaşılamıyor ({{reason}}). Hizmet yeniden yanıt verene kadar dağıtımlar engellenir; doğrulama hizmetini bir yöneticiye kontrol ettirin.",
+    "importServiceOpen": "İçe aktarma denetimi hizmetine ulaşılamıyor ({{reason}}). DAG Airflow ile içe aktarılmadı, bu nedenle içe aktarma hataları tespit edilemez.",
     "rawImportMissing": "Airflow dosyayı içe aktardı ancak '{{id}}' DAG'ini bulamadı (bulunan: {{found}}).",
     "dagIdTeamPrefix": "dag_id, ekip öneki '{{prefix}}' ile başlamalıdır.",
     "dagIdPrefix": "dag_id '{{prefix}}' ile başlamalıdır.",
-    "dagIdPattern": "dag_id '{{pattern}}' kalıbına uymalıdır."
+    "dagIdPattern": "dag_id '{{pattern}}' kalıbına uymalıdır.",
+    "blueprintUnknown": "“{{name}}” v{{version}} blueprint'i blueprint kataloğunda yok: paketini AutoAir ortamına kurun veya blueprints.template_dirs ayarını yapın.",
+    "blueprintRuntime": "Bu DAG'ın ayrıştırılması için Airflow ortamında airflow-blueprint ve “{{module}}” modülü gerekir.",
+    "blueprintOutputMode": "Blueprint adımları YAML DAG'larında ifade edilemez: python veya loader çıktı modunu kullanın.",
+    "blueprintLoop": "Blueprint adımları döngü grubuna yerleştirilemez.",
+    "blueprintPlainJson": "Blueprint yapılandırma değerleri düz JSON olmalıdır (XCom referansı, timedelta veya başka etiketli değer olmaz).",
+    "blueprintOutdated": "“{{name}}” için daha yeni bir sürüm mevcut.",
+    "xcomBlueprint": "XCom bir blueprint adımına değil, bir göreve başvurmalıdır.",
+    "blueprintDisabled": "Blueprint adımları bu sunucuda kapalı (features.blueprints)."
   },
   "operatorTemplates": {
     "saveTitle": "Operatör şablonu olarak kaydet",
@@ -1098,7 +1114,11 @@
     "previewHint": "Bu, bu ortama dağıtılan koddur: ortamın katmanı ve bağlantı/değişken eşlemesi uygulanmıştır. Düzenleme temel üzerinde kalır: bu kodu geri uygulamak ortamın değerlerini tüm ortamlara kopyalardı.",
     "previewBack": "Temele dön",
     "emptyHelp": "DAG'da henüz görev yok. Görevleri aşağıdaki koda yazıp uygulayın, bir şablonla başlayın ya da ham kod DAG'ı oluşturun.",
-    "emptyReadOnly": "DAG'da henüz görev yok."
+    "emptyReadOnly": "DAG'da henüz görev yok.",
+    "handWritten": "Elle yazılmış dosya",
+    "preservedHelp": "Bu DAG elle yazılmış dosyasını korur: bir dağıtımın yazacağı dosyayı, tuval değişiklikleri yamalanmış olarak görüyorsunuz. Burada uyguladığınız düzenlemeler o dosya olur.",
+    "preservedLoading": "Elle yazılmış dosya yükleniyor…",
+    "preservedError": "Elle yazılmış dosya mevcut değişikliklerle gösterilemiyor ({{error}}). Değişiklik uygulanabilene kadar düzenleme kapalı; seçenekler için dağıtım penceresine bakın."
   },
   "endpoint": {
     "title": "Tetikleme uç noktası",
@@ -1168,14 +1188,19 @@
       "invalid": "geçersiz",
       "ejected": "elle düzenlenmiş",
       "pending_approval": "onay bekliyor",
-      "error": "başarısız"
+      "error": "başarısız",
+      "source_refused": "dosyaya uygulanamadı"
     },
     "planned": "{{count}} deploy edilecek, {{skipped}} mevcut DAG onaylanmadı",
     "deploy_one": "{{count}} DAG'ı deploy et",
     "deploy_other": "{{count}} DAG'ı deploy et",
     "close": "Kapat",
     "skippedFiles_one": "DAG içermeyen veya hariç tutulan {{count}} dosya listelenmedi.",
-    "skippedFiles_other": "DAG içermeyen veya hariç tutulan {{count}} dosya listelenmedi."
+    "skippedFiles_other": "DAG içermeyen veya hariç tutulan {{count}} dosya listelenmedi.",
+    "filePolicy": "DAG dosyaları",
+    "filePolicyPreserve": "İçe aktarılan dosyaları koru (sonraki düzenlemeler yamalanır)",
+    "filePolicyGenerate": "Dosyaları spec'lerden üret",
+    "filePolicyHelp": "Korunan dosyalar yorumları ve biçimiyle yazıldığı gibi dağıtılır; dağıtım hedefinde olmayan yardımcı modülleri içe aktaran bir dosya reddedilir. Üretilen dosyalar kendi kendine yeterlidir."
   },
   "gitToken": {
     "label": "Git belirteci",
@@ -1328,5 +1353,79 @@
     "deleteUsedHere_other": "Açık DAG'de bu şablondan oluşturulmuş {{count}} görev var.",
     "deleteConfirm": "Şablonu sil",
     "alreadyGone": "Şablon zaten silinmişti"
+  },
+  "source": {
+    "dagFile": "DAG dosyası",
+    "noDiff": "DAG dosyasında değişiklik yok.",
+    "diffTruncated": "Fark burada kesildi; dağıtımda dosyanın tamamı yazılır.",
+    "diffLabel": "DAG dosyasındaki değişiklikler",
+    "notApplicable": "Kaynak politikası burada uygulanmaz: loader ve YAML dosyaları her zaman üretilir, ham kod DAG'ları yazıldığı gibi dağıtılır.",
+    "previewing": "Dosya önizlemesi hazırlanıyor…",
+    "previewFailed": "Dosya önizlemesi yok: {{error}}",
+    "policy": {
+      "generate": "Üret",
+      "preserve": "Koru",
+      "strict-preserve": "Katı koru"
+    },
+    "action": {
+      "generate": "DAG dosyası spec'ten üretilir.",
+      "preserve": "Değişikliğiniz mevcut dosyaya yamalanır; dosyanın geri kalanı yazıldığı gibi kalır.",
+      "unchanged": "Mevcut dosya zaten eşleşiyor: olduğu gibi yazılır.",
+      "blocked": "Durduruldu: mevcut DAG dosyası sizin seçiminiz olmadan değiştirilmez.",
+      "refused": "Durduruldu: bu değişiklik mevcut dosyaya uygulanamıyor.",
+      "not_applicable": "Kaynak politikası bu DAG için geçerli değil."
+    },
+    "state": {
+      "ejected": "{{file}} son dağıtımdan bu yana AutoAir dışında değiştirildi.",
+      "foreign": "{{file}}, AutoAir'in oluşturmadığı elle yazılmış bir dosya.",
+      "hand_written": "{{file}}, AutoAir'in bu DAG için koruduğu elle yazılmış dosya."
+    },
+    "code": {
+      "unmappable": "bulunamadı",
+      "unsupported": "desteklenmiyor",
+      "risky": "katı",
+      "conflict": "çakışma",
+      "roundtrip": "gidiş-dönüş",
+      "syntax": "sözdizimi",
+      "import": "içe aktarma",
+      "policy": "politika",
+      "permission": "yetki",
+      "ejected": "değiştirilmiş",
+      "foreign": "elle yazılmış"
+    },
+    "refusalsTitle": "Neden uygulanamıyor",
+    "operations_one": "Dosyada {{count}} düzenleme",
+    "operations_other": "Dosyada {{count}} düzenleme",
+    "blockedTitle": "Mevcut DAG dosyası değiştirilmez",
+    "blockedHelp": "Dosyayı yeniden üretmek içeriğini siler. Bunun yerine değişikliğinizi dosyaya uygulayın (yorumlar ve biçim korunur) ya da dosyayı ham kod DAG'ı olarak saklayın.",
+    "refusedTitle": "Bu değişiklik mevcut dosyaya uygulanamıyor",
+    "refusedHelp": "AutoAir elle yazılmış dosyaları yalnızca tam olarak sizin değişikliğinizi uygulayabildiği yerlerde düzenler ve onları asla kendiliğinden yeniden üretmez. Dosyayı ham kod DAG'ı olarak saklayın ya da DAG'ı bilinçli olarak üretilen koda geçirin.",
+    "applyPreserve": "Dosyaya uygula",
+    "overwrite": "Dosyanın üzerine yaz",
+    "confirmOverwrite": "Anlıyorum: AutoAir dışında yapılan değişiklikler silinir.",
+    "keepRaw": "Ham kod DAG'ı olarak sakla",
+    "switchGenerate": "Üretilen koda geç",
+    "preservePreview": "Değişikliğinizi uygulamak neyi yazar",
+    "deployedWithWarnings": "DAG dosyasıyla ilgili notlarla dağıtıldı",
+    "contentHidden": "Dağıtım hedefindeki dosya AutoAir'in yazmadığı elle yazılmış bir dosya: içeriği gösterilmez.",
+    "blockedAction": {
+      "hand_written": "Durduruldu: kod üretmek, AutoAir'in bu DAG için koruduğu elle yazılmış dosyanın yerini alır.",
+      "ejected": "Durduruldu: DAG dosyası AutoAir dışında değiştirildi.",
+      "foreign": "Durduruldu: DAG dosyası AutoAir'in oluşturmadığı elle yazılmış bir dosya."
+    },
+    "overwritePermission": "Bu dosyayı üretilen kodla değiştirmek deploy:overwrite_ejected yetkisi gerektirir.",
+    "overwriteOff": "Bu dosyayı üretilen kodla değiştirmek burada kapalı (preserve.allow_force_overwrite): değişiklikleri preserve ile uygulayın ya da DAG'i ham kod olarak tutun.",
+    "blockedTitleBy": {
+      "hand_written": "Kod üretmek elle yazılmış DAG dosyasının yerini alır",
+      "ejected": "DAG dosyası AutoAir dışında değiştirildi",
+      "foreign": "DAG dosyası AutoAir tarafından oluşturulmadı"
+    },
+    "blockedHelpBy": {
+      "hand_written": "AutoAir bu DAG'ın elle yazılmış dosyasını korur ve onu asla kendiliğinden yeniden üretmez. Bunun yerine değişikliğinizi dosyaya uygulayın (yorumlar ve biçim korunur) ya da dosyayı ham kod DAG'ı olarak saklayın.",
+      "ejected": "Dosyayı yeniden üretmek bu değişiklikleri siler. Bunun yerine değişikliğinizi dosyaya uygulayın (yorumlar ve biçim korunur) ya da dosyayı ham kod DAG'ı olarak saklayın.",
+      "foreign": "AutoAir, oluşturmadığı elle yazılmış bir dosyanın üzerine asla yazmaz. Bunun yerine değişikliğinizi dosyaya uygulayın (yorumlar ve biçim korunur) ya da dosyayı ham kod DAG'ı olarak saklayın."
+    },
+    "confirmOverwriteHandWritten": "Anlıyorum: elle yazılmış dosyanın yerini üretilen kod alır.",
+    "policyDraftNote": "Dağıttığınızda DAG'ın kaynak politikasını değiştirir (geri alınabilir). İptal mevcut politikayı korur."
   }
 }

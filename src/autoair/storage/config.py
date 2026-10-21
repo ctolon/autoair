@@ -478,11 +478,17 @@ class UnavailableTarget:
         message: str | None = None,
         environment: str | None = None,
         force: bool = False,
+        **_options: Any,
     ) -> SaveResult:
         raise self._refuse()
 
     def delete(
-        self, dag_id: str, *, base_etag: str | None = None, author: str | None = None
+        self,
+        dag_id: str,
+        *,
+        base_etag: str | None = None,
+        author: str | None = None,
+        **_options: Any,
     ) -> bool:
         raise self._refuse()
 

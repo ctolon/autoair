@@ -504,6 +504,172 @@
         }
       }
     },
+    "/blueprints": {
+      "get": {
+        "tags": [
+          "blueprints"
+        ],
+        "summary": "List Blueprints",
+        "description": "Every blueprint version found (entry points, template folders, configured modules).",
+        "operationId": "listBlueprints",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/BlueprintSummary"
+                  },
+                  "type": "array",
+                  "title": "Response Listblueprints"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/blueprints/status": {
+      "get": {
+        "tags": [
+          "blueprints"
+        ],
+        "summary": "Blueprint Status",
+        "operationId": "getBlueprintStatus",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BlueprintCatalogStatus"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/blueprints/{name}/{version}": {
+      "get": {
+        "tags": [
+          "blueprints"
+        ],
+        "summary": "Get Blueprint",
+        "description": "One blueprint version with its config schema and default task preview.",
+        "operationId": "getBlueprint",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "maxLength": 100,
+              "pattern": "^[a-z][a-z0-9_]*$",
+              "title": "Name"
+            }
+          },
+          {
+            "name": "version",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "maximum": 10000,
+              "minimum": 1,
+              "title": "Version"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BlueprintDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/blueprints/preview": {
+      "post": {
+        "tags": [
+          "blueprints"
+        ],
+        "summary": "Preview Blueprint",
+        "description": "The task ids the step renders with ``config``: the step is generated as in a deployed\nDAG and imported by the DagBag worker pool (rate limit group ``validate``).",
+        "operationId": "previewBlueprint",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BlueprintPreviewRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BlueprintPreview"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/blueprints/refresh": {
+      "post": {
+        "tags": [
+          "blueprints"
+        ],
+        "summary": "Refresh Blueprints",
+        "operationId": "refreshBlueprints",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BlueprintCatalogStatus"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/airflow/connections": {
       "get": {
         "tags": [
@@ -3379,6 +3545,125 @@
         }
       }
     },
+    "/ai/approvals": {
+      "get": {
+        "tags": [
+          "ai"
+        ],
+        "summary": "List Tool Approvals",
+        "description": "The caller's tool approvals waiting for a decision (or being resumed).",
+        "operationId": "listToolApprovals",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ToolApprovalView"
+                  },
+                  "type": "array",
+                  "title": "Response Listtoolapprovals"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/ai/approvals/{approval_id}": {
+      "get": {
+        "tags": [
+          "ai"
+        ],
+        "summary": "Get Tool Approval",
+        "operationId": "getToolApproval",
+        "parameters": [
+          {
+            "name": "approval_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Approval Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ToolApprovalView"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/ai/approvals/{approval_id}/stream": {
+      "post": {
+        "tags": [
+          "ai"
+        ],
+        "summary": "Resume Tool Approval",
+        "description": "Approve or deny each pending tool call of a paused run and resume it as a stream.\n\nThe approval is claimed first (compare-and-set): a second decision - also on another\nreplica - gets 409, an expired approval 410. The stream ends with the result of the\npaused run's kind: ``assistant_turn`` (the completed chat message) or ``troubleshoot``\n(the analysis). Every decision is written to the AI audit log.",
+        "operationId": "resumeToolApprovalStream",
+        "parameters": [
+          {
+            "name": "approval_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Approval Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ToolApprovalDecision"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/ai/troubleshoot/options": {
       "get": {
         "tags": [
@@ -3468,7 +3753,7 @@
           "ai"
         ],
         "summary": "Troubleshoot Stream",
-        "description": "Analyse a DAG run as a stream (evidence collection, tool calls, tokens), ending with\nthe stored ``troubleshoot`` analysis. Read-only: proposals need an explicit decision.",
+        "description": "Analyse a DAG run as a stream (evidence collection, tool calls, tokens), ending with\nthe stored ``troubleshoot`` analysis. Read-only: proposals need an explicit decision;\ntool calls that need approval (``ai.approvals``) pause it (``awaiting_approval``).",
         "operationId": "troubleshootStream",
         "requestBody": {
           "content": {
@@ -5901,6 +6186,77 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/DeployPreview"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/specs/{dag_id}/source-preview": {
+      "post": {
+        "tags": [
+          "specs"
+        ],
+        "summary": "Preview Source",
+        "description": "What a deploy of ``body.spec`` would write as the DAG file, without writing: the\nsource policy in force, whether the file in the target was changed outside AutoAir, and\nthe unified diff of the generated or patched file. Preserve plans import the existing\nand the patched file in a sandboxed subprocess (round-trip check), so this can take a\nfew seconds.",
+        "operationId": "previewSource",
+        "parameters": [
+          {
+            "name": "dag_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Dag Id"
+            }
+          },
+          {
+            "name": "X-AutoAir-Git-Token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Git token for this one write (storage.git.request_token): used instead of the configured credentials, never stored or logged. HTTPS only.",
+              "title": "X-Autoair-Git-Token"
+            },
+            "description": "Git token for this one write (storage.git.request_token): used instead of the configured credentials, never stored or logged. HTTPS only."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SourcePreviewRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SourcePlan"
                 }
               }
             }
@@ -8425,7 +8781,8 @@
               "answer",
               "max_steps",
               "budget",
-              "timeout"
+              "timeout",
+              "approval"
             ],
             "title": "Stopped",
             "default": "answer"
@@ -8467,6 +8824,20 @@
             "items": {},
             "type": "array",
             "title": "Messages"
+          },
+          "pending": {
+            "items": {
+              "$ref": "#/components/schemas/PendingToolCall"
+            },
+            "type": "array",
+            "title": "Pending",
+            "description": "stopped=approval: the tool calls waiting for the user's decision."
+          },
+          "requests": {
+            "type": "integer",
+            "title": "Requests",
+            "description": "Model requests of this run.",
+            "default": 0
           }
         },
         "type": "object",
@@ -8871,6 +9242,12 @@
             "type": "boolean",
             "title": "Scheduling State",
             "description": "DAG scheduling_state active/draining/paused and drain (>= 3.4)."
+          },
+          "retry_try_is_next": {
+            "type": "boolean",
+            "title": "Retry Try Is Next",
+            "description": "An up_for_retry task instance's try_number is the upcoming try, which has no log yet; the failed try is try_number - 1 (>= 3.4).",
+            "default": false
           }
         },
         "type": "object",
@@ -9020,7 +9397,8 @@
               "no_change",
               "approved",
               "rejected",
-              "applied"
+              "applied",
+              "awaiting_approval"
             ],
             "title": "Status"
           },
@@ -9876,6 +10254,549 @@
           "to_date"
         ],
         "title": "BackfillRequest"
+      },
+      "BlueprintCatalogError": {
+        "properties": {
+          "location": {
+            "type": "string",
+            "title": "Location"
+          },
+          "error": {
+            "type": "string",
+            "title": "Error"
+          }
+        },
+        "type": "object",
+        "required": [
+          "location",
+          "error"
+        ],
+        "title": "BlueprintCatalogError"
+      },
+      "BlueprintCatalogStatus": {
+        "properties": {
+          "available": {
+            "type": "boolean",
+            "title": "Available",
+            "description": "airflow-blueprint is installed in AutoAir's environment (needed to read config schemas; install autoair[blueprint])."
+          },
+          "package_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Package Version",
+            "description": "airflow-blueprint version."
+          },
+          "blueprints": {
+            "type": "integer",
+            "title": "Blueprints"
+          },
+          "errors": {
+            "items": {
+              "$ref": "#/components/schemas/BlueprintCatalogError"
+            },
+            "type": "array",
+            "title": "Errors"
+          },
+          "built_at": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Built At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "available",
+          "blueprints"
+        ],
+        "title": "BlueprintCatalogStatus",
+        "description": "What the catalog found and whether schemas can be read in this installation."
+      },
+      "BlueprintDetail": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name",
+            "description": "Registered name (snake_case), as `blueprint list` shows it."
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Version"
+          },
+          "class_name": {
+            "type": "string",
+            "title": "Class Name"
+          },
+          "module": {
+            "type": "string",
+            "title": "Module",
+            "description": "Module the generated DAG imports the class from."
+          },
+          "class_path": {
+            "type": "string",
+            "title": "Class Path",
+            "description": "module.Class"
+          },
+          "config_class": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Config Class",
+            "description": "Name of the config model importable from the same module, if any."
+          },
+          "summary": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Summary",
+            "description": "First sentence of the docstring."
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "entry_point",
+              "template_dir",
+              "module"
+            ],
+            "title": "Source"
+          },
+          "package": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Package",
+            "description": "Distribution providing it."
+          },
+          "package_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Package Version"
+          },
+          "supports_params": {
+            "type": "boolean",
+            "title": "Supports Params",
+            "description": "Config fields become DAG params (supports_params=True).",
+            "default": false
+          },
+          "latest": {
+            "type": "boolean",
+            "title": "Latest",
+            "description": "Highest version of this name.",
+            "default": true
+          },
+          "schema_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Schema Error",
+            "description": "Why the config schema could not be read (e.g. the module failed to import)."
+          },
+          "docstring": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Docstring"
+          },
+          "config_schema": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Config Schema",
+            "description": "JSON Schema of the config model (Blueprint.get_schema(): references inlined), read in a child process."
+          },
+          "preview": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BlueprintPreview"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Tasks rendered with the config defaults, when they suffice."
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "version",
+          "class_name",
+          "module",
+          "class_path",
+          "source"
+        ],
+        "title": "BlueprintDetail",
+        "description": "A blueprint version with its config schema and a default task preview."
+      },
+      "BlueprintNode": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9_-]+$",
+            "title": "Id"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label",
+            "description": "Canvas label only."
+          },
+          "icon": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(builtin|custom|package):[a-z0-9][a-z0-9-]{0,80}$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Icon",
+            "description": "Canvas icon only (builtin:<logo> or custom:<name>); overrides the default."
+          },
+          "parent_group": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100,
+                "minLength": 1,
+                "pattern": "^[A-Za-z0-9_-]+$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Group",
+            "description": "Id of a task_group node."
+          },
+          "position": {
+            "$ref": "#/components/schemas/Position"
+          },
+          "kind": {
+            "type": "string",
+            "const": "blueprint",
+            "title": "Kind"
+          },
+          "step_id": {
+            "type": "string",
+            "maxLength": 250,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9_.-]+$",
+            "title": "Step Id",
+            "description": "Task or group id the blueprint renders under."
+          },
+          "blueprint": {
+            "type": "string",
+            "maxLength": 100,
+            "pattern": "^[a-z][a-z0-9_]*$",
+            "title": "Blueprint",
+            "description": "Registered blueprint name (snake_case), as `blueprint list` shows it."
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Version",
+            "description": "Blueprint version the step is pinned to.",
+            "default": 1
+          },
+          "class_path": {
+            "type": "string",
+            "maxLength": 300,
+            "pattern": "^[A-Za-z_][A-Za-z0-9_]*(\\.[A-Za-z_][A-Za-z0-9_]*)+$",
+            "title": "Class Path",
+            "description": "Importable path of the Blueprint class (module.Class)."
+          },
+          "config_class": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100,
+                "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Config Class",
+            "description": "Name of the config model in the blueprint's module; omitted: the generated code asks the class for it (get_config_type())."
+          },
+          "config": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Config",
+            "description": "Config values, validated against the blueprint's config schema. Plain JSON values only (no XCom references or tagged values)."
+          },
+          "disabled": {
+            "type": "boolean",
+            "title": "Disabled",
+            "description": "Excluded from the generated DAG (kept on the canvas).",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "kind",
+          "step_id",
+          "blueprint",
+          "class_path"
+        ],
+        "title": "BlueprintNode",
+        "description": "A step built from an Astronomer Blueprint template (``airflow-blueprint``).\n\nA blueprint is a reusable ``Blueprint[Config]`` class with a Pydantic config model whose\n``render()`` returns a task or a TaskGroup. The generated DAG imports ``class_path``, sets\n``step_id`` on an instance and calls ``render(Config(**config))``, the way the blueprint\nproject documents its use in Python DAGs. Edges to and from the node depend on the whole\nrendered step. The Airflow environment needs ``airflow-blueprint`` and the template."
+      },
+      "BlueprintPreview": {
+        "properties": {
+          "kind": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "task",
+                  "group"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kind",
+            "description": "What render() returned: one task or a TaskGroup."
+          },
+          "tasks": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Tasks",
+            "description": "Task ids inside the step (without the step prefix); a single-task blueprint lists its own id."
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error",
+            "description": "Why the preview could not be built."
+          }
+        },
+        "type": "object",
+        "title": "BlueprintPreview",
+        "description": "The tasks one blueprint step renders, relative to its ``step_id``."
+      },
+      "BlueprintPreviewRequest": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 100,
+            "pattern": "^[a-z][a-z0-9_]*$",
+            "title": "Name"
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Version"
+          },
+          "step_id": {
+            "type": "string",
+            "maxLength": 250,
+            "pattern": "^[A-Za-z0-9_.-]+$",
+            "title": "Step Id",
+            "default": "step"
+          },
+          "config": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Config"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "version"
+        ],
+        "title": "BlueprintPreviewRequest"
+      },
+      "BlueprintSummary": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name",
+            "description": "Registered name (snake_case), as `blueprint list` shows it."
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Version"
+          },
+          "class_name": {
+            "type": "string",
+            "title": "Class Name"
+          },
+          "module": {
+            "type": "string",
+            "title": "Module",
+            "description": "Module the generated DAG imports the class from."
+          },
+          "class_path": {
+            "type": "string",
+            "title": "Class Path",
+            "description": "module.Class"
+          },
+          "config_class": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Config Class",
+            "description": "Name of the config model importable from the same module, if any."
+          },
+          "summary": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Summary",
+            "description": "First sentence of the docstring."
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "entry_point",
+              "template_dir",
+              "module"
+            ],
+            "title": "Source"
+          },
+          "package": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Package",
+            "description": "Distribution providing it."
+          },
+          "package_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Package Version"
+          },
+          "supports_params": {
+            "type": "boolean",
+            "title": "Supports Params",
+            "description": "Config fields become DAG params (supports_params=True).",
+            "default": false
+          },
+          "latest": {
+            "type": "boolean",
+            "title": "Latest",
+            "description": "Highest version of this name.",
+            "default": true
+          },
+          "schema_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Schema Error",
+            "description": "Why the config schema could not be read (e.g. the module failed to import)."
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "version",
+          "class_name",
+          "module",
+          "class_path",
+          "source"
+        ],
+        "title": "BlueprintSummary",
+        "description": "One version of a blueprint template, for the palette."
       },
       "Branding": {
         "properties": {
@@ -10764,6 +11685,14 @@
             ],
             "title": "Error"
           },
+          "approvals": {
+            "items": {
+              "$ref": "#/components/schemas/ToolApprovalView"
+            },
+            "type": "array",
+            "title": "Approvals",
+            "description": "Tool approvals of this turn (the last one is current); a pending one means the turn is paused until the user decides its tool calls."
+          },
           "history": {
             "anyOf": [
               {
@@ -11287,7 +12216,8 @@
             "type": "string",
             "enum": [
               "apache",
-              "astronomer"
+              "astronomer",
+              "autoair"
             ],
             "title": "Family"
           },
@@ -11527,6 +12457,18 @@
               }
             ],
             "title": "Ejected File"
+          },
+          "hand_written": {
+            "type": "boolean",
+            "title": "Hand Written",
+            "description": "ejected_file is the hand-written DAG file AutoAir keeps for this DAG (not a generated file changed outside AutoAir).",
+            "default": false
+          },
+          "force_allowed": {
+            "type": "boolean",
+            "title": "Force Allowed",
+            "description": "Deploying again with force=true would overwrite ejected_file for this caller (preserve.allow_force_overwrite and 'deploy:overwrite_ejected').",
+            "default": false
           }
         },
         "type": "object",
@@ -12697,13 +13639,69 @@
         ],
         "title": "DagRunInfo"
       },
+      "DagSource": {
+        "properties": {
+          "policy": {
+            "type": "string",
+            "enum": [
+              "auto",
+              "generate",
+              "preserve",
+              "strict-preserve"
+            ],
+            "title": "Policy",
+            "description": "auto | generate | preserve | strict-preserve (see the model description).",
+            "default": "auto"
+          },
+          "origin": {
+            "type": "string",
+            "enum": [
+              "autoair",
+              "python"
+            ],
+            "title": "Origin",
+            "description": "autoair: built in AutoAir; python: imported from or edited as a hand-written Python file (makes 'auto' preserve).",
+            "default": "autoair"
+          },
+          "code": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2000000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Code",
+            "description": "The hand-written file this spec was last imported from or applied in the code mode. Preserve patches it when the deploy target has no newer version of the file. Writing it needs the 'code:raw' permission (it is arbitrary Python)."
+          },
+          "base_sha": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Base Sha",
+            "description": "sha256 of the file the editor started from (the imported file). Equal to the hash of `code`: the code is that file unchanged; different: it was edited in the code mode, so a merge with changes made outside AutoAir uses the version deployed last as the common ancestor."
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "DagSource",
+        "description": "How the DAG file of a spec-backed DAG is written (python output mode only).\n\n``generate`` writes the file AutoAir generates from the spec; ``preserve`` applies each\nchange to the existing (hand-written) file as a minimal patch and keeps its comments,\nformatting and ordering; ``strict-preserve`` is preserve that refuses every change it\ncannot apply exactly. ``auto``: preserve for DAGs that come from hand-written Python\n(imported or applied in the code mode), generate for DAGs built in AutoAir."
+      },
       "DagSpec": {
         "properties": {
           "spec_version": {
             "type": "integer",
-            "const": 2,
+            "const": 3,
             "title": "Spec Version",
-            "default": 2
+            "default": 3
           },
           "dag_id": {
             "type": "string",
@@ -13038,12 +14036,16 @@
                   "$ref": "#/components/schemas/CustomNode"
                 },
                 {
+                  "$ref": "#/components/schemas/BlueprintNode"
+                },
+                {
                   "$ref": "#/components/schemas/NoteNode"
                 }
               ],
               "discriminator": {
                 "propertyName": "kind",
                 "mapping": {
+                  "blueprint": "#/components/schemas/BlueprintNode",
                   "custom": "#/components/schemas/CustomNode",
                   "note": "#/components/schemas/NoteNode",
                   "operator": "#/components/schemas/OperatorNode",
@@ -13061,6 +14063,17 @@
             },
             "type": "array",
             "title": "Edges"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DagSource"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Source policy of the DAG file (generate / preserve / strict-preserve) and the hand-written file it comes from. None: auto policy, built in AutoAir."
           },
           "raw_code": {
             "anyOf": [
@@ -14189,7 +15202,37 @@
           "force": {
             "type": "boolean",
             "title": "Force",
+            "description": "Overwrite a generated file that was changed outside AutoAir, or the hand-written file AutoAir keeps (output modes other than python and raw code; needs preserve.allow_force_overwrite and 'deploy:overwrite_ejected', otherwise ignored). Python DAG files use source_resolution instead.",
             "default": false
+          },
+          "source_resolution": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "preserve",
+                  "overwrite"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Resolution",
+            "description": "Answer to a deploy that stopped at a DAG file changed outside AutoAir (status 'ejected'): preserve applies the change to that file (LibCST patch); overwrite regenerates it and discards the outside changes (needs preserve.allow_force_overwrite, 'deploy:overwrite_ejected' and, for a file changed outside AutoAir, preserve.ejected_files=overwrite)."
+          },
+          "source_target_sha": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Target Sha",
+            "description": "The `target_sha` of the source preview the user reviewed: the deploy stops ('source_refused') when the DAG file in the target is no longer that one ('' = there was no file)."
           },
           "create_only": {
             "type": "boolean",
@@ -14229,7 +15272,8 @@
               "invalid",
               "conflict",
               "ejected",
-              "pending_approval"
+              "pending_approval",
+              "source_refused"
             ],
             "title": "Status",
             "description": "'pending_approval' (HTTP 202): stored as a deploy proposal that needs another user's approval (iam.require_approval); nothing went live.",
@@ -14319,6 +15363,28 @@
             ],
             "title": "Proposal Etag",
             "description": "Etag of the stored deploy proposal (pending_approval)."
+          },
+          "source": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SourcePlan"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Python DAGs: how the DAG file was (or would be) written -- generated or the existing file patched (source policy), with the diff; 'source_refused': why the change cannot be applied to the existing file."
+          },
+          "stored_spec": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DagSpec"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The spec as stored, when it differs from the one sent (a preserve deploy merged changes made to the file outside AutoAir): reload it."
           },
           "message": {
             "type": "string",
@@ -15855,12 +16921,16 @@
                   "$ref": "#/components/schemas/CustomNode"
                 },
                 {
+                  "$ref": "#/components/schemas/BlueprintNode"
+                },
+                {
                   "$ref": "#/components/schemas/NoteNode"
                 }
               ],
               "discriminator": {
                 "propertyName": "kind",
                 "mapping": {
+                  "blueprint": "#/components/schemas/BlueprintNode",
                   "custom": "#/components/schemas/CustomNode",
                   "note": "#/components/schemas/NoteNode",
                   "operator": "#/components/schemas/OperatorNode",
@@ -18990,6 +20060,12 @@
             "title": "Airflow Public Url",
             "description": "Airflow as browsers and API clients reach it (sso.airflow_public_url, else airflow_url): base of the trigger-endpoint snippets."
           },
+          "allow_force_overwrite": {
+            "type": "boolean",
+            "title": "Allow Force Overwrite",
+            "description": "preserve.allow_force_overwrite: the overwrite (force) choice for a DAG file changed outside AutoAir or the hand-written file AutoAir keeps is offered (still with 'deploy:overwrite_ejected'). false: hide it.",
+            "default": false
+          },
           "secrets_backend": {
             "type": "boolean",
             "title": "Secrets Backend",
@@ -20796,6 +21872,51 @@
           "paused"
         ],
         "title": "PauseRequest"
+      },
+      "PendingToolCall": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id",
+            "description": "The model's tool call id."
+          },
+          "tool": {
+            "type": "string",
+            "title": "Tool"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "read",
+              "write"
+            ],
+            "title": "Kind",
+            "default": "write"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description",
+            "description": "The tool's description (shortened).",
+            "default": ""
+          },
+          "arguments": {
+            "title": "Arguments",
+            "description": "Arguments with secrets masked and long values cut (display only)."
+          },
+          "truncated": {
+            "type": "boolean",
+            "title": "Truncated",
+            "description": "Arguments were cut for display.",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "tool"
+        ],
+        "title": "PendingToolCall",
+        "description": "One tool call waiting for a decision, as the approval card shows it."
       },
       "PolicyInfo": {
         "properties": {
@@ -23427,6 +24548,36 @@
         "title": "SourceInfo",
         "description": "A configured source with the admin overrides applied."
       },
+      "SourceIssue": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code",
+            "description": "unmappable, unsupported, risky, conflict, roundtrip, ..."
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "task_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "SourceIssue"
+      },
       "SourceOverride": {
         "properties": {
           "enabled": {
@@ -23474,6 +24625,231 @@
         "type": "object",
         "title": "SourceOverride",
         "description": "Admin-panel changes of one source (``None`` keeps the configured value)."
+      },
+      "SourcePlan": {
+        "properties": {
+          "applicable": {
+            "type": "boolean",
+            "title": "Applicable",
+            "description": "False for output modes other than python and for raw code DAGs (the source policy does not apply to them).",
+            "default": true
+          },
+          "requested": {
+            "type": "string",
+            "title": "Requested",
+            "description": "The spec's source.policy.",
+            "default": "auto"
+          },
+          "policy": {
+            "type": "string",
+            "enum": [
+              "generate",
+              "preserve",
+              "strict-preserve"
+            ],
+            "title": "Policy",
+            "default": "generate"
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "generate",
+              "preserve",
+              "unchanged",
+              "blocked",
+              "refused",
+              "not_applicable"
+            ],
+            "title": "Action",
+            "default": "generate"
+          },
+          "target_state": {
+            "type": "string",
+            "enum": [
+              "absent",
+              "clean",
+              "hand_written",
+              "ejected",
+              "foreign"
+            ],
+            "title": "Target State",
+            "default": "absent"
+          },
+          "target_file": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target File"
+          },
+          "base": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "target",
+                  "source"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Base",
+            "description": "The file a preserve deploy patched: the target's file or the hand-written source.code of the spec."
+          },
+          "diff": {
+            "type": "string",
+            "title": "Diff",
+            "description": "Unified diff of the file in the target -> new.",
+            "default": ""
+          },
+          "diff_truncated": {
+            "type": "boolean",
+            "title": "Diff Truncated",
+            "default": false
+          },
+          "operations": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Operations"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Warnings"
+          },
+          "refusals": {
+            "items": {
+              "$ref": "#/components/schemas/SourceIssue"
+            },
+            "type": "array",
+            "title": "Refusals"
+          },
+          "options": {
+            "items": {
+              "type": "string",
+              "enum": [
+                "preserve",
+                "overwrite",
+                "generate",
+                "raw"
+              ]
+            },
+            "type": "array",
+            "title": "Options",
+            "description": "What the user can do next: preserve (apply the change to the file in the target), overwrite (needs confirmation, 'deploy:overwrite_ejected' and preserve.allow_force_overwrite), generate (switch the DAG's source policy), raw (keep the file as a raw code DAG)."
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "default": ""
+          },
+          "target_sha": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Sha",
+            "description": "sha256 of the DAG file in the target the plan was made from (empty: no file). Send it back as source_target_sha to deploy exactly what was previewed."
+          },
+          "content_hidden": {
+            "type": "boolean",
+            "title": "Content Hidden",
+            "description": "The file in the target is a hand-written file AutoAir never wrote: its content (diff, file, current code) is not shown.",
+            "default": false
+          },
+          "content": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content",
+            "description": "Source preview only: the complete DAG file the deploy would write (the code mode shows it for DAGs that keep their hand-written file)."
+          },
+          "current_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Code",
+            "description": "The DAG file the change could not be applied to (the target's file or the spec's hand-written code), when the plan offers to keep it as a raw code DAG."
+          }
+        },
+        "type": "object",
+        "title": "SourcePlan",
+        "description": "What a deploy writes as the DAG file and why (deploy result, source preview)."
+      },
+      "SourcePreviewRequest": {
+        "properties": {
+          "spec": {
+            "$ref": "#/components/schemas/DagSpec"
+          },
+          "environment": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Environment"
+          },
+          "direct_push": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Direct Push",
+            "description": "As in the deploy request (decides the git branch read)."
+          },
+          "source_resolution": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "preserve",
+                  "overwrite"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Resolution",
+            "description": "Preview the answer to an ejected file: preserve (patch it) or overwrite."
+          }
+        },
+        "type": "object",
+        "required": [
+          "spec"
+        ],
+        "title": "SourcePreviewRequest"
       },
       "SourceRun": {
         "properties": {
@@ -25439,6 +26815,120 @@
         ],
         "title": "ThreadSummary"
       },
+      "ToolApprovalDecision": {
+        "properties": {
+          "decisions": {
+            "items": {
+              "$ref": "#/components/schemas/ToolDecision"
+            },
+            "type": "array",
+            "maxItems": 50,
+            "minItems": 1,
+            "title": "Decisions",
+            "description": "One decision per pending tool call (approve, or deny with an optional reason that is sent to the model)."
+          }
+        },
+        "type": "object",
+        "required": [
+          "decisions"
+        ],
+        "title": "ToolApprovalDecision"
+      },
+      "ToolApprovalView": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "agent": {
+            "type": "string",
+            "enum": [
+              "developer",
+              "admin",
+              "troubleshoot"
+            ],
+            "title": "Agent"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "resuming",
+              "resolved",
+              "expired",
+              "cancelled",
+              "failed"
+            ],
+            "title": "Status",
+            "default": "pending"
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At"
+          },
+          "expires_at": {
+            "type": "string",
+            "title": "Expires At"
+          },
+          "calls": {
+            "items": {
+              "$ref": "#/components/schemas/PendingToolCall"
+            },
+            "type": "array",
+            "title": "Calls"
+          },
+          "decisions": {
+            "items": {
+              "$ref": "#/components/schemas/ToolDecision"
+            },
+            "type": "array",
+            "title": "Decisions"
+          },
+          "decided_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decided By"
+          },
+          "decided_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decided At"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error",
+            "description": "Why a resumed run failed."
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "agent",
+          "created_at",
+          "expires_at"
+        ],
+        "title": "ToolApprovalView",
+        "description": "A paused run's approval as chat messages and analyses carry it."
+      },
       "ToolCallRecord": {
         "properties": {
           "id": {
@@ -25476,6 +26966,38 @@
           "name"
         ],
         "title": "ToolCallRecord"
+      },
+      "ToolDecision": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "maxLength": 200,
+            "title": "Id",
+            "description": "Tool call id."
+          },
+          "approved": {
+            "type": "boolean",
+            "title": "Approved"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 10000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "approved"
+        ],
+        "title": "ToolDecision"
       },
       "ToolRun": {
         "properties": {
@@ -25885,7 +27407,8 @@
               "no_change",
               "approved",
               "rejected",
-              "applied"
+              "applied",
+              "awaiting_approval"
             ],
             "title": "Status",
             "default": "no_change"
@@ -25910,6 +27433,14 @@
             },
             "type": "array",
             "title": "Guardrails"
+          },
+          "approvals": {
+            "items": {
+              "$ref": "#/components/schemas/ToolApprovalView"
+            },
+            "type": "array",
+            "title": "Approvals",
+            "description": "Tool approvals of the analysis run (the last one is current); status awaiting_approval while one is pending."
           }
         },
         "type": "object",

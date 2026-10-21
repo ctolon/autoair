@@ -2,7 +2,7 @@ import { create } from "zustand";
 
 import type { XYPosition } from "@xyflow/react";
 
-import type { ConflictInfo, DagSpec, Template } from "../api/gen/types.gen";
+import type { ConflictInfo, DagSpec, SourcePlan, Template } from "../api/gen/types.gen";
 import { specOnlyBlocked } from "../codemode/store";
 
 /** Request parameters of a deploy (kept to retry it after a conflict). */
@@ -18,6 +18,13 @@ export type DeployOptions = {
   prDescription?: string | null;
   /** Per-user git credentials: the user's Airflow connection to commit with. */
   gitConnId?: string | null;
+  /**
+   * Answer to a deploy that stopped at a DAG file changed outside AutoAir: apply the change
+   * to that file (preserve) or regenerate it (overwrite, needs deploy:overwrite_ejected).
+   */
+  sourceResolution?: "preserve" | "overwrite" | null;
+  /** The previewed DAG file (`target_sha`): the deploy stops when it changed since. */
+  sourceTargetSha?: string | null;
 };
 
 export type ImportSource = "python" | "airflow" | "yaml" | "spec";
@@ -27,6 +34,8 @@ export type LifecycleDialog =
   | { kind: "open" }
   | { kind: "deploy"; focus: "message" | "environment" }
   | { kind: "conflict"; conflict: ConflictInfo; request: DeployOptions; spec: DagSpec }
+  /** A deploy stopped by the source policy: an ejected DAG file or a refused patch. */
+  | { kind: "source"; plan: SourcePlan; request: DeployOptions; spec: DagSpec }
   | { kind: "trigger" }
   | { kind: "backfill" }
   | { kind: "clear"; runId: string }

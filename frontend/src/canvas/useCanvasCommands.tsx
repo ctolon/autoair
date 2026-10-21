@@ -204,7 +204,7 @@ export function useCanvasCommands(): void {
           group: canvas,
           shortcut: "shift+f",
           icon: <LuFocus />,
-          run: act.fitView,
+          run: () => act.fitView(),
         },
         {
           id: "canvas.toggleSnap",

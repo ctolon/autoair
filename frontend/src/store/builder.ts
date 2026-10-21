@@ -25,9 +25,10 @@ import type {
 } from "../lib/types";
 import { nodeKey } from "../lib/types";
 import { GROUP_DEFAULT_SIZE, NOTE_DEFAULT_SIZE, edgeId, fromSpec, toSpec } from "./convert";
+import { historyEqual } from "./docEqual";
 
 const emptyDag = (dagId = "my_new_dag"): DagSettings => ({
-  spec_version: 2,
+  spec_version: 3,
   dag_id: dagId,
   output_mode: "python",
   schedule: { type: "none" },
@@ -253,6 +254,9 @@ export const useBuilder = create<BuilderState>()(
           case "custom":
             node = { ...base, type: "custom", data: { spec } };
             break;
+          case "blueprint":
+            node = { ...base, type: "blueprint", data: { spec } };
+            break;
           case "note":
             node = { ...base, type: "note", data: { spec }, style: { ...NOTE_DEFAULT_SIZE } };
             break;
@@ -378,7 +382,7 @@ export const useBuilder = create<BuilderState>()(
           pendingPrUrl: meta?.pendingPrUrl ?? null,
         })),
       setEnvironment: (environment) => set({ environment }),
-      setRunOverlay: (runOverlay) => set({ runOverlay }),
+      setRunOverlay: (runOverlay) => set((s) => ({ runOverlay: reuseRunStates(s.runOverlay, runOverlay) })),
       setDiffOverlay: (diffOverlay) => set({ diffOverlay }),
       setError: (lastError) => set({ lastError }),
       toSpec: () => {
@@ -469,9 +473,9 @@ export const useBuilder = create<BuilderState>()(
           const hide = collapsed ? descendantsOf(s.nodes, [groupId]) : new Set<string>();
           return {
             nodes: s.nodes.map((n) => {
-              if (n.id === groupId && n.type === "task_group") {
+              if (n.id === groupId && (n.type === "task_group" || n.type === "blueprint")) {
                 const { collapsed: _c, ...data } = n.data;
-                return { ...n, data: collapsed ? { ...data, collapsed: true } : data };
+                return { ...n, data: collapsed ? { ...data, collapsed: true } : data } as BuilderNode;
               }
               // Hidden members cannot stay selected (keyboard actions would hit invisible nodes).
               return hide.has(n.id) && n.selected ? ({ ...n, selected: false } as BuilderNode) : n;
@@ -561,7 +565,9 @@ export const useBuilder = create<BuilderState>()(
         ),
         edges: s.edges.map(({ id, source, target, label }) => ({ id, source, target, label })),
       }),
-      equality: (a, b) => JSON.stringify(a) === JSON.stringify(b),
+      // Same result as comparing JSON.stringify of both snapshots, but by reference first:
+      // serialising a large document twice on every drag frame cost more than the drag.
+      equality: historyEqual,
       // Collapse drags (position-only bursts) into one history entry; every other change
       // (insert, delete, edit) is its own entry. An entry must hold the state from *before the
       // first* change of its burst: a plain debounce kept the last call's past state and so
@@ -601,6 +607,24 @@ export const useBuilder = create<BuilderState>()(
     },
   ),
 );
+
+/**
+ * The new overlay with every unchanged per-node entry (or the whole previous overlay when
+ * nothing changed): polling an active run must not re-render every node on the canvas.
+ */
+function reuseRunStates(prev: RunOverlay | null, next: RunOverlay | null): RunOverlay | null {
+  if (!prev || !next || prev.dagId !== next.dagId || prev.runId !== next.runId) return next;
+  let same = Object.keys(prev.states).length === Object.keys(next.states).length;
+  const states: RunOverlay["states"] = {};
+  for (const [id, entry] of Object.entries(next.states)) {
+    const old = prev.states[id];
+    const equal =
+      !!old && old.state === entry.state && old.tryNumber === entry.tryNumber && old.mapped === entry.mapped;
+    states[id] = equal ? old : entry;
+    if (!equal) same = false;
+  }
+  return same ? prev : { ...next, states };
+}
 
 /** Commits a pending (grouped) drag to history; call before undo/redo/clear. */
 export function flushHistory(): void {

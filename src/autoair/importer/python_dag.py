@@ -51,12 +51,45 @@ def import_python_source(
         return import_python_file(path, timeout=timeout)
 
 
+def import_python_sources(
+    sources: Sequence[tuple[str, str]],
+    timeout: float = 90,
+    *,
+    pythonpath: Sequence[Path] = (),
+) -> list[PythonImportResult]:
+    """Import several ``(source, filename)`` files in one subprocess (each with its own
+    DagBag, so files defining the same DAG do not collide); one result per file.
+    ``pythonpath``: folders the files may import from (the dags folder they live in)."""
+    if not sources:
+        return []
+    with tempfile.TemporaryDirectory(prefix="autoair-import-") as tmp:
+        paths = []
+        for i, (source, filename) in enumerate(sources):
+            folder = Path(tmp) / str(i)
+            folder.mkdir()
+            path = folder / filename
+            path.write_text(source, encoding="utf-8")
+            paths.append(path)
+        out = _subprocess_import(paths, timeout, pythonpath=pythonpath)
+    if isinstance(out, PythonImportResult):
+        return [out.model_copy(deep=True) for _ in sources]
+    return out
+
+
 def import_python_file(
     path: Path, timeout: float = 90, *, pythonpath: Sequence[Path] = ()
 ) -> PythonImportResult:
     """``pythonpath``: folders importable by the DAG file (e.g. the root of the repository it
     comes from, like Airflow puts the dags folder on ``sys.path``)."""
-    code = "import sys; from autoair.importer.python_dag import _run; _run(sys.argv[1])"
+    out = _subprocess_import([path], timeout, pythonpath=pythonpath)
+    return out if isinstance(out, PythonImportResult) else out[0]
+
+
+def _subprocess_import(
+    paths: Sequence[Path], timeout: float, *, pythonpath: Sequence[Path] = ()
+) -> PythonImportResult | list[PythonImportResult]:
+    """One result per path, or a single failed result (timeout, crash) for all of them."""
+    code = "import sys; from autoair.importer.python_dag import _run; _run(*sys.argv[1:])"
     env = user_code_env()  # the DAG's code runs there: no AutoAir secrets
     if pythonpath:
         extra = os.pathsep.join(str(p) for p in pythonpath)
@@ -65,7 +98,7 @@ def import_python_file(
         )
     try:
         proc = subprocess.run(
-            [sys.executable, "-c", code, str(path)],
+            [sys.executable, "-c", code, *(str(p) for p in paths)],
             capture_output=True,
             text=True,
             timeout=timeout,
@@ -78,7 +111,11 @@ def import_python_file(
     if marker < 0:
         tail = (proc.stderr or proc.stdout).strip().splitlines()[-25:]
         return PythonImportResult(dags=[], import_errors=["\n".join(tail) or "import failed"])
-    data = json.loads(proc.stdout[marker + len("@@AUTOAIR@@") :])
+    payload = json.loads(proc.stdout[marker + len("@@AUTOAIR@@") :])
+    return [_result(data) for data in payload["files"]]
+
+
+def _result(data: dict[str, Any]) -> PythonImportResult:
     dags = []
     for d in data["dags"]:
         spec = None
@@ -95,12 +132,19 @@ def import_python_file(
 # --------------------------------------------------------------------------- subprocess side
 
 
-def _run(dag_file: str) -> None:  # pragma: no cover - executed in a subprocess
+def _run(*dag_files: str) -> None:  # pragma: no cover - executed in a subprocess
+    _record_cron_presets()
+    out = {"files": [_import_one(f) for f in dag_files]}
+    sys.stdout.write("\n@@AUTOAIR@@" + json.dumps(out, default=str))
+
+
+def _import_one(dag_file: str) -> dict[str, Any]:  # pragma: no cover - executed in a subprocess
     import inspect as _inspect
 
     from autoair._compat import dagbag_class
+    from autoair.importer.blueprints import record_renders
 
-    _record_cron_presets()
+    record_renders()
     cls = dagbag_class()
     kwargs: dict[str, Any] = {"dag_folder": dag_file}
     if "include_examples" in _inspect.signature(cls.__init__).parameters:
@@ -124,7 +168,7 @@ def _run(dag_file: str) -> None:  # pragma: no cover - executed in a subprocess
                     "error": f"{type(exc).__name__}: {exc}",
                 }
             )
-    sys.stdout.write("\n@@AUTOAIR@@" + json.dumps(out, default=str))
+    return out
 
 
 # Cron presets as the spec stores them (``@annually`` is Airflow's alias of ``@yearly``).
@@ -579,12 +623,33 @@ def _convert_dag(dag: Any, warnings: list[str]) -> dict[str, Any]:
     def node_id(prefix: str, key: str) -> str:
         return f"{prefix}_{hashlib.sha1(key.encode()).hexdigest()[:8]}"  # noqa: S324 - ids only
 
+    from autoair.importer.blueprints import steps_of
+
+    # Astronomer Blueprint steps: their tasks and groups fold into one node each.
+    steps = steps_of(dag, warnings)
+    folded: dict[str, str] = {}
+    step_groups: set[str] = set()
+    for step in steps:
+        step.node["id"] = node_id("b", min(step.tasks))
+        folded.update(dict.fromkeys(step.tasks, step.node["id"]))
+        step_groups |= step.groups
+
     tasks = list(dag.tasks)
     for t in tasks:
-        ids[t.task_id] = node_id("t", t.task_id)
-    for t in tasks:
-        for tg in reversed(_group_chain(t)):
-            if tg.group_id in groups:
+        ids[t.task_id] = folded.get(t.task_id) or node_id("t", t.task_id)
+
+    def group_chain(start: Any) -> list[Any]:
+        chain = []
+        while start is not None and getattr(start, "group_id", None):
+            chain.append(start)
+            start = getattr(start, "parent_group", None)
+        return chain
+
+    chains = [_group_chain(t) for t in tasks if t.task_id not in folded]
+    chains += [group_chain(step.parent) for step in steps]
+    for chain in chains:
+        for tg in reversed(chain):
+            if tg.group_id in groups or tg.group_id in step_groups:
                 continue
             gid = node_id("g", tg.group_id)
             groups[tg.group_id] = gid
@@ -601,7 +666,15 @@ def _convert_dag(dag: Any, warnings: list[str]) -> dict[str, Any]:
                 entry["parent_group"] = groups.get(parent.group_id)
             nodes.append(entry)
 
+    for step in steps:
+        parent_id = getattr(step.parent, "group_id", None)
+        if parent_id and parent_id in groups:
+            step.node["parent_group"] = groups[parent_id]
+        nodes.append(step.node)
+
     for t in tasks:
+        if t.task_id in folded:
+            continue
         cls = type(t)
         chain = _group_chain(t)
         own_id = t.task_id
@@ -693,9 +766,14 @@ def _convert_dag(dag: Any, warnings: list[str]) -> dict[str, Any]:
         nodes.append(node)
 
     edges = []
+    seen_edges: set[tuple[str, str]] = set()
     for t in tasks:
         for up in sorted(t.upstream_task_ids):
-            edges.append({"source": ids[up], "target": ids[t.task_id]})
+            pair = (ids[up], ids[t.task_id])
+            if pair[0] == pair[1] or pair in seen_edges:
+                continue  # inside one blueprint step, or a step's many roots/leaves
+            seen_edges.add(pair)
+            edges.append({"source": pair[0], "target": pair[1]})
 
     spec: dict[str, Any] = {
         "dag_id": dag.dag_id,

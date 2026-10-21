@@ -29,6 +29,8 @@ frontend/shots/
 # Built UI bundles (produced by `npm run build`, shipped in the wheel)
 src/autoair/static/plugin/
 src/autoair/static/standalone/
+# AutoAir's documentation packaged by hatch_build.py (autoair.docs.build)
+src/autoair/docs/pages.json
 
 # Local state, secrets and tool scratch directories
 .env

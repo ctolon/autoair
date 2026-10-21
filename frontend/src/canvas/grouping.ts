@@ -122,7 +122,7 @@ export function ungroupNode(
 }
 
 /** Run/visibility information derived from collapsed task groups (UI only). */
-type CollapsedView = {
+export type CollapsedView = {
   /** Nodes inside a collapsed group (not rendered). */
   hidden: Set<string>;
   /** Hidden node → outermost collapsed group standing in for it. */
@@ -150,6 +150,28 @@ export function collapsedView(nodes: readonly BuilderNode[]): CollapsedView {
     }
   }
   return { hidden, representative };
+}
+
+const viewKeys = new WeakMap<readonly BuilderNode[], string>();
+let lastView: { key: string; view: CollapsedView } | null = null;
+
+/**
+ * `collapsedView` that returns the previous result while no parent link or collapsed flag
+ * changed: a drag replaces the node array on every frame without touching either, and every
+ * derived display edge would otherwise be rebuilt per frame.
+ */
+export function stableCollapsedView(nodes: readonly BuilderNode[]): CollapsedView {
+  let key = viewKeys.get(nodes);
+  if (key === undefined) {
+    key = nodes
+      .map((n) => `${n.id}\u0001${n.parentId ?? ""}\u0001${n.type === "task_group" && n.data.collapsed ? 1 : 0}`)
+      .join("\u0002");
+    viewKeys.set(nodes, key);
+  }
+  if (lastView?.key === key) return lastView.view;
+  const view = collapsedView(nodes);
+  lastView = { key, view };
+  return view;
 }
 
 /** Edges as displayed: endpoints inside collapsed groups are redirected to the group. */

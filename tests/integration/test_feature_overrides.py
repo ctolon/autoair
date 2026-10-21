@@ -21,6 +21,7 @@ from autoair.iam.config import IamSettings
 from autoair.persistence import FileDocumentStore
 from autoair.settings import Settings
 from tests.db_backends import BACKENDS, database_settings, drop_tables
+from tests.optional import requires_mcp
 
 pytestmark = pytest.mark.airflow
 
@@ -278,6 +279,7 @@ def test_collab_is_gated_at_request_time(app: Any) -> None:
     assert "collab feature is disabled" not in client.get("/collab/demo").text
 
 
+@requires_mcp
 def test_mcp_tools_follow_the_runtime_flag(app: Any) -> None:
     pytest.importorskip("mcp")
     client, services = app

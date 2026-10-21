@@ -42,6 +42,7 @@ TOOL_PERMISSIONS: Mapping[str, tuple[str, ...]] = {
     "get_dagspec_schema": (P.BUILDER_USE,),
     "list_node_kinds": (P.BUILDER_USE,),
     "list_notifiers": (P.BUILDER_USE,),
+    "list_blueprints": (P.BUILDER_USE,),
     "search_knowledge": (P.BUILDER_USE,),
     "validate_dag_spec": (P.BUILDER_USE,),
     "apply_spec_patch": (P.BUILDER_USE,),
@@ -53,6 +54,9 @@ TOOL_PERMISSIONS: Mapping[str, tuple[str, ...]] = {
     "list_dags": (P.SPEC_READ,),
     "get_dag_spec": (P.SPEC_READ,),
     "save_dag_spec": (P.SPEC_WRITE, P.DEPLOY),
+    # what save_dag_spec would write (REST: POST /specs/{dag_id}/source-preview); preserve
+    # previews import the DAG file, which the plan refuses without code:execute
+    "preview_dag_source": (P.SPEC_WRITE,),
     "get_dag_code": (P.SPEC_READ,),
     "save_raw_dag_code": (P.SPEC_WRITE, P.DEPLOY, P.CODE_RAW),
     "delete_dag_spec": (P.SPEC_DELETE,),
@@ -86,6 +90,11 @@ TOOL_PERMISSIONS: Mapping[str, tuple[str, ...]] = {
     "kb_search": (P.AI_USE,),
     "kb_sources": (P.AI_USE,),
     "kb_status": (P.AI_USE,),
+    # AutoAir's own documentation (autoair.docs): the same pages are public on the website,
+    # so no AutoAir permission; over HTTP the caller must still be identified.
+    "search_autoair_docs": (),
+    "read_autoair_doc": (),
+    "list_autoair_docs": (),
 }
 _UNKNOWN = (P.ADMIN_CONFIG,)
 
@@ -103,9 +112,11 @@ RAW_CODE_FEATURES = ("python_code", "code_editor")
 _AI = ("ai",)
 TOOL_FEATURES: Mapping[str, tuple[str, ...]] = {
     "save_dag_spec": ("deploy",),
+    "preview_dag_source": ("deploy",),
     "save_raw_dag_code": ("deploy", *RAW_CODE_FEATURES),
     "delete_dag_spec": ("deploy",),
     "import_python_dag": ("imports", "python_code"),
+    "list_blueprints": ("blueprints",),
     **{
         name: ("templates",)
         for name in (
@@ -145,6 +156,10 @@ TOOL_FEATURES: Mapping[str, tuple[str, ...]] = {
         )
     },
     **{name: ("kb",) for name in ("kb_search", "kb_sources", "kb_status")},
+    **{
+        name: ("autoair_docs",)
+        for name in ("search_autoair_docs", "read_autoair_doc", "list_autoair_docs")
+    },
 }
 
 

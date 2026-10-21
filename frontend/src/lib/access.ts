@@ -17,6 +17,7 @@ export type Permission =
   | "review"
   | "deploy"
   | "deploy:direct_push"
+  | "deploy:overwrite_ejected"
   | "promote"
   | "run:trigger"
   | "run:manage"
@@ -42,6 +43,7 @@ export type Feature =
   | "code_editor"
   | "code_edit_inline"
   | "ide_language_server"
+  | "blueprints"
   | "airflow";
 
 /** Opt-in flags: off unless the server reports them on. */
@@ -57,6 +59,12 @@ export type Access = {
   roles: string[];
   user: string | null;
   loaded: boolean;
+  /**
+   * The overwrite (force) choice for a DAG file changed outside AutoAir or the hand-written
+   * file AutoAir keeps: preserve.allow_force_overwrite (off unless the server says so) and
+   * deploy:overwrite_ejected.
+   */
+  forceOverwrite: boolean;
 };
 
 /**
@@ -81,5 +89,6 @@ export function accessOf(meta: ReturnType<typeof useMeta>): Access {
     roles: iam?.roles ?? [],
     user: iam?.user ?? null,
     loaded: !!meta,
+    forceOverwrite: meta?.allow_force_overwrite === true && can("deploy:overwrite_ejected"),
   };
 }

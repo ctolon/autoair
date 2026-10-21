@@ -11,6 +11,8 @@ AutoAir has two kinds of DAG documents, and both can be edited as Python:
 | **Visual DAG** (spec-backed) | The DAG spec (`<dag_id>.autoair.json`). The DAG file is generated from it. | In code mode: you edit the generated file and apply it back into the spec. The canvas, the inspector and the next deploy reflect it. |
 | **Raw code DAG** | The DAG file you write. AutoAir stores it in the spec document (`raw_code`) and deploys it as written. | In the raw code editor. No generated code, no spec rules, no canvas. See [Raw code DAGs](#raw-code-dags). |
 
+Code you apply in code mode becomes the DAG's hand-written file: later deploys patch it instead of regenerating it (source policy **Auto**), and code mode then shows that file with your canvas changes patched in. See [Editing existing Python DAGs](/docs/user-guide/editing-python-dags).
+
 <Screenshot name="code-mode" alt="Code mode: the generated DAG file in a full-height editor, with the draft status badge, Discard edits and Apply to canvas buttons, and the sync panel listing what applying will change" />
 
 <Video name="code-sync" title="Editing the generated code and applying it to the canvas" />

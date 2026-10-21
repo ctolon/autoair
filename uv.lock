@@ -97,6 +97,22 @@ wheels = [
 ]
 
 [[package]]
+name = "airflow-blueprint"
+version = "0.5.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "apache-airflow" },
+    { name = "click" },
+    { name = "pydantic" },
+    { name = "pyyaml" },
+    { name = "rich" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/7a/5e/7841fb78d6d3df34e6c4091c2f317597f4f3bc83eaaf7bc652056b2843a0/airflow_blueprint-0.5.0.tar.gz", hash = "sha256:7b5516cd95f696e822c274c693bb49c9260e08027cee5fe69a2c01356db5b19a", size = 286946, upload-time = "2026-09-11T17:05:37.969Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/7d/e1/36352010a0addfbd53a36345694dde2bec8109377a66bb2e177cfd2702f9/airflow_blueprint-0.5.0-py3-none-any.whl", hash = "sha256:9685fd5cbbffd8ac5f704ab7e491baa9b72370ebecc015b42352f5c62bc22089", size = 57114, upload-time = "2026-09-11T17:05:36.671Z" },
+]
+
+[[package]]
 name = "alembic"
 version = "1.20.0"
 source = { registry = "https://pypi.org/simple" }
@@ -913,6 +929,7 @@ dependencies = [
     { name = "httpx2" },
     { name = "jedi" },
     { name = "jinja2" },
+    { name = "libcst" },
     { name = "pillow" },
     { name = "prometheus-client" },
     { name = "pydantic" },
@@ -927,10 +944,12 @@ ai = [
     { name = "pydantic-ai-slim", version = "2.58.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
 ]
 ai-all = [
+    { name = "anthropic" },
     { name = "pydantic-ai-slim", version = "2.54.0", source = { registry = "https://pypi.org/simple" }, extra = ["anthropic", "bedrock", "cohere", "google", "groq", "mistral", "openai"], marker = "python_full_version < '3.11'" },
     { name = "pydantic-ai-slim", version = "2.58.0", source = { registry = "https://pypi.org/simple" }, extra = ["anthropic", "bedrock", "cohere", "google", "groq", "mistral", "openai"], marker = "python_full_version >= '3.11'" },
 ]
 ai-anthropic = [
+    { name = "anthropic" },
     { name = "pydantic-ai-slim", version = "2.54.0", source = { registry = "https://pypi.org/simple" }, extra = ["anthropic"], marker = "python_full_version < '3.11'" },
     { name = "pydantic-ai-slim", version = "2.58.0", source = { registry = "https://pypi.org/simple" }, extra = ["anthropic"], marker = "python_full_version >= '3.11'" },
 ]
@@ -974,6 +993,7 @@ airflow = [
     { name = "apache-airflow-providers-standard", version = "1.20.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
 ]
 all = [
+    { name = "anthropic" },
     { name = "opentelemetry-exporter-otlp-proto-http" },
     { name = "opentelemetry-instrumentation-fastapi" },
     { name = "opentelemetry-sdk" },
@@ -985,6 +1005,9 @@ all = [
     { name = "ruff" },
     { name = "shellcheck-py" },
     { name = "uvicorn", extra = ["standard"] },
+]
+blueprint = [
+    { name = "airflow-blueprint" },
 ]
 collab = [
     { name = "pycrdt" },
@@ -1038,6 +1061,8 @@ yaml = [
 
 [package.dev-dependencies]
 dev = [
+    { name = "airflow-blueprint" },
+    { name = "anthropic" },
     { name = "apache-airflow" },
     { name = "apache-airflow-providers-common-messaging", version = "2.1.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "apache-airflow-providers-common-messaging", version = "2.1.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
@@ -1071,6 +1096,9 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "airflow-blueprint", marker = "extra == 'blueprint'", specifier = ">=0.3,<1" },
+    { name = "anthropic", marker = "extra == 'ai-all'", specifier = ">=1.12.1,<2" },
+    { name = "anthropic", marker = "extra == 'ai-anthropic'", specifier = ">=1.12.1,<2" },
     { name = "apache-airflow", marker = "extra == 'airflow'", specifier = ">=3.0,<4" },
     { name = "apache-airflow-providers-standard", marker = "extra == 'airflow'", specifier = ">=1.0" },
     { name = "autoair", extras = ["standalone", "format", "git", "ai", "ai-anthropic", "ai-openai", "otel", "collab", "shell", "yaml"], marker = "extra == 'all'" },
@@ -1082,6 +1110,7 @@ requires-dist = [
     { name = "httpx2", specifier = ">=2.12" },
     { name = "jedi", specifier = ">=0.19" },
     { name = "jinja2", specifier = ">=3.1" },
+    { name = "libcst", specifier = ">=1.8.6" },
     { name = "llm-guard", marker = "extra == 'ai-guardrails'", specifier = ">=0.3" },
     { name = "mcp", marker = "extra == 'mcp'", specifier = ">=2.3" },
     { name = "opentelemetry-exporter-otlp-proto-http", marker = "extra == 'otel'", specifier = ">=1.29" },
@@ -1119,10 +1148,12 @@ requires-dist = [
     { name = "typer", specifier = ">=0.16" },
     { name = "uvicorn", extras = ["standard"], marker = "extra == 'standalone'", specifier = ">=0.30" },
 ]
-provides-extras = ["airflow", "standalone", "format", "git", "mcp", "collab", "collab-redis", "sqlite", "postgres", "kb-pgvector", "kb-elasticsearch", "otel", "ai", "ai-anthropic", "ai-openai", "ai-google", "ai-ollama", "ai-bedrock", "ai-groq", "ai-mistral", "ai-cohere", "ai-all", "ai-rerank", "ai-guardrails", "all", "shell", "lsp", "lsp-pyright", "yaml"]
+provides-extras = ["airflow", "standalone", "format", "git", "mcp", "collab", "collab-redis", "sqlite", "postgres", "kb-pgvector", "kb-elasticsearch", "otel", "ai", "ai-anthropic", "ai-openai", "ai-google", "ai-ollama", "ai-bedrock", "ai-groq", "ai-mistral", "ai-cohere", "ai-all", "ai-rerank", "ai-guardrails", "all", "shell", "lsp", "lsp-pyright", "yaml", "blueprint"]
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "airflow-blueprint", specifier = ">=0.3,<1" },
+    { name = "anthropic", specifier = ">=1.12.1,<2" },
     { name = "apache-airflow", specifier = ">=3.3.2,<4" },
     { name = "apache-airflow-providers-common-messaging", specifier = ">=2.1" },
     { name = "apache-airflow-providers-fab", specifier = ">=3.0" },

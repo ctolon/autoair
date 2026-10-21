@@ -3,6 +3,7 @@ import { useEffect } from "react";
 
 import { getRunOverlayOptions } from "../api/gen/@tanstack/react-query.gen";
 import { useBuilder } from "../store/builder";
+import { structureKey } from "../store/indexes";
 import { buildRunOverlay, isRunActive } from "./lib/runOverlay";
 import { useLifecycle } from "./store";
 
@@ -24,7 +25,8 @@ export function useSelectedRunOverlay() {
 export function useRunOverlaySync(): void {
   const dagId = useBuilder((s) => s.savedDagId);
   const runId = useLifecycle((s) => s.selectedRunId);
-  const nodes = useBuilder((s) => s.nodes);
+  // Only what task ids depend on: moving nodes must not rebuild (and re-render) the overlay.
+  const structure = useBuilder((s) => structureKey(s.nodes));
   const dag = useBuilder((s) => s.dag);
   const overlay = useSelectedRunOverlay();
   useEffect(() => {
@@ -36,5 +38,5 @@ export function useRunOverlaySync(): void {
     if (!overlay.data) return;
     st.setRunOverlay(buildRunOverlay(st.toSpec().nodes ?? [], dagId, runId, overlay.data));
     // Re-map when the graph changes (task ids / groups renamed).
-  }, [dagId, runId, overlay.data, nodes, dag]);
+  }, [dagId, runId, overlay.data, structure, dag]);
 }

@@ -1,4 +1,17 @@
-import { Badge, Box, Button, Checkbox, Field, HStack, Input, SegmentGroup, Stack, Table, Text } from "@chakra-ui/react";
+import {
+  Badge,
+  Box,
+  Button,
+  Checkbox,
+  Field,
+  HStack,
+  Input,
+  NativeSelect,
+  SegmentGroup,
+  Stack,
+  Table,
+  Text,
+} from "@chakra-ui/react";
 import { useMutation } from "@tanstack/react-query";
 import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -15,6 +28,7 @@ import {
   relativePath,
   wantedFile,
 } from "../../lib/bulkImport";
+import { withPolicy } from "../../lib/sourcePolicy";
 import { Hint } from "../../widgets/fields";
 import { DialogShell } from "../components/DialogShell";
 import { GitTokenField } from "../components/GitTokenField";
@@ -62,6 +76,9 @@ export default function BulkImportDialog() {
   // The deploy target's git token (storage.git.request_token), not the source repository's.
   const tokenInfo = useGitTokenInfo(null, meta?.storage.kind === "git");
   const [deployToken, setDeployToken] = useState("");
+  // How the deployed DAG files are written: the imported (hand-written) files kept and
+  // patched on later edits, or files generated from the specs.
+  const [filePolicy, setFilePolicy] = useState<"auto" | "generate">("auto");
   const [tokenError, setTokenError] = useState(false);
 
   const scan = useMutation({
@@ -97,8 +114,9 @@ export default function BulkImportDialog() {
       const specs = new Map(result.files.flatMap((f) => (f.dags ?? []).map((d) => [d.dag_id, d.spec] as const)));
       const out: Outcome[] = [];
       for (const plan of deploys) {
-        const spec = specs.get(plan.dagId);
-        if (!spec) continue;
+        const imported = specs.get(plan.dagId);
+        if (!imported) continue;
+        const spec = filePolicy === "generate" ? { ...imported, source: withPolicy(imported, "generate") } : imported;
         try {
           const { data } = await deploySpec({
             path: { dag_id: plan.dagId },
@@ -389,6 +407,23 @@ export default function BulkImportDialog() {
               })}
             </Hint>
           </Stack>
+        ) : null}
+        {result ? (
+          <Field.Root>
+            <Field.Label>{t("bulkImport.filePolicy")}</Field.Label>
+            <NativeSelect.Root size="sm">
+              <NativeSelect.Field
+                value={filePolicy}
+                onChange={(e) => setFilePolicy(e.target.value === "generate" ? "generate" : "auto")}
+                data-testid="bulk-import-file-policy"
+              >
+                <option value="auto">{t("bulkImport.filePolicyPreserve")}</option>
+                <option value="generate">{t("bulkImport.filePolicyGenerate")}</option>
+              </NativeSelect.Field>
+              <NativeSelect.Indicator />
+            </NativeSelect.Root>
+            <Field.HelperText>{t("bulkImport.filePolicyHelp")}</Field.HelperText>
+          </Field.Root>
         ) : null}
         {result ? (
           <GitTokenField

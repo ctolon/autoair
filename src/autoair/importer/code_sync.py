@@ -18,7 +18,7 @@ from pydantic import BaseModel, Field
 
 from autoair.importer.python_dag import PythonImportResult, import_python_source
 from autoair.merge import SpecDiff, diff_specs
-from autoair.spec import DagSpec
+from autoair.spec import DagSource, DagSpec
 
 # Fields of a node / the DAG that only exist on the canvas or in AutoAir (never in the code).
 _CANVAS_NODE_FIELDS = ("position", "label", "icon", "template_ref")
@@ -230,7 +230,23 @@ def sync_code(
         problems.append(CodeProblem(severity="error", message=message))
         return CodeSyncResult(ok=False, dag_ids=dag_ids, problems=problems)
     spec = carry_canvas_state(chosen.spec, current)
-    diff = diff_specs(current, spec) if current is not None else None
+    diff = (
+        diff_specs(
+            current.model_copy(update={"source": None}), spec.model_copy(update={"source": None})
+        )
+        if current is not None
+        else None
+    )
+    # The applied code is now the DAG's hand-written file: deploys preserve it (source
+    # policy auto) instead of regenerating it. A file defining several DAGs cannot be kept
+    # as the file of one of them.
+    from autoair.preserve.service import mark_hand_written
+
+    keep = source if len(result.dags) == 1 else None
+    edited_from = current.source if current is not None and current.source else DagSource()
+    notes: list[str] = []
+    spec = mark_hand_written(spec, keep, notes, edited_from=edited_from)
+    problems += [CodeProblem(severity="warning", message=n) for n in notes]
     ok = not any(p.severity == "error" for p in problems)
     return CodeSyncResult(ok=ok, spec=spec, dag_ids=dag_ids, problems=problems, diff=diff)
 
