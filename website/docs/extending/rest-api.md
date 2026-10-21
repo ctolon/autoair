@@ -174,7 +174,7 @@ curl -s -H "Authorization: Bearer $TOKEN" "$API/vcs/etl_daily/history?limit=5" |
 ### Health checks
 
 ```bash
-curl -s "$API/health"    # {"status": "ok", "version": "0.1.0"}
+curl -s "$API/health"    # {"status": "ok", "version": "0.2.0"}
 curl -s "$API/ready"     # {"ready": true, "checks": {"catalog": "ok (...)", "storage": "ok (git)"}}
 ```
 

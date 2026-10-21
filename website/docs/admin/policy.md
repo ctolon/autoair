@@ -220,7 +220,7 @@ AutoAir POSTs the spec and context to the decision URL. TLS and proxy options fo
 {"input": {
   "spec": {"...": "the DagSpec as JSON, after the environment overlay"},
   "context": {"environment": "prod", "team": "data", "user": "alice", "action": "deploy",
-              "autoair_version": "0.1.0", "airflow_version": "3.3.2"}
+              "autoair_version": "0.2.0", "airflow_version": "3.3.2"}
 }}
 ```
 

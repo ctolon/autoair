@@ -25,6 +25,14 @@ def main() -> None:
     assert re.search(rf"__version__\s*=\s*[\"\']{re.escape(version)}[\"\']", source)
     for package in ["frontend", "website"]:
         assert json.loads((ROOT / package / "package.json").read_text())["version"] == version
+    # The exported API specs carry the version too; CI's codegen drift check fails on a stale
+    # one, so catch it before the release commit.
+    for spec in ["frontend/openapi.json", "website/static/openapi.json"]:
+        found = json.loads((ROOT / spec).read_text())["info"]["version"]
+        assert found == version, (
+            f"{spec} says {found}: run `cd frontend && npm run codegen` and "
+            "`cd website && npm run export-api`"
+        )
     tag = os.environ.get("RELEASE_TAG")
     assert not tag or tag == f"v{version}", f"tag {tag!r} does not match {version}"
     assert (ROOT / "LICENSE").is_file()

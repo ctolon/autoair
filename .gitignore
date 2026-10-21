@@ -51,6 +51,10 @@ CLAUDE.local.md
 # Private working notes (owner's planning documents); never published
 docs/internal/
 
+# Local end-to-end demo (Docker Compose + Kubernetes) built on the published release; it is
+# meant to move to its own repository
+demo/
+
 # Local compose overrides (may hold secrets)
 deploy/compose/autoair.env
 
