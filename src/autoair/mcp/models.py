@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -69,7 +69,13 @@ class BlueprintList(BaseModel):
 class ValidationOutcome(BaseModel):
     ok: bool
     problems: list[SpecProblem]
-    import_errors: list[str] = []
+    import_errors: list[str] = Field(
+        default_factory=list,
+        description="Errors of importing the generated DAG (import_check_dag_spec only).",
+    )
+    note: str | None = Field(
+        default=None, description="Deprecation notes about the arguments of this call."
+    )
 
 
 class CodeResult(BaseModel):
@@ -125,11 +131,40 @@ class SaveResult(BaseModel):
     location: str | None = None
     problems: list[SpecProblem] = []
     source: SourceSummary | None = None
+    etag: str | None = Field(
+        default=None, description="Etag of the saved spec: the base_etag of the next save."
+    )
+    current_etag: str | None = Field(
+        default=None,
+        description="Etag of the spec stored now (the DAG exists): pass it as base_etag to "
+        "save_dag_spec to overwrite it.",
+    )
+    status: Literal["saved", "pr_opened", "pending_approval"] | None = Field(
+        default=None,
+        description="saved: written live; pr_opened: written to a pull request (live once "
+        "merged); pending_approval: stored as a deploy proposal that another user must "
+        "approve in AutoAir (iam.require_approval). None for dry runs and refusals.",
+    )
+    proposal_etag: str | None = Field(
+        default=None, description="The deploy proposal awaiting approval (pending_approval)."
+    )
     message: str
 
 
 class DeleteOutcome(BaseModel):
     deleted: bool
+    current_etag: str | None = Field(
+        default=None,
+        description="Etag of the spec stored now: pass it as base_etag to delete_dag_spec.",
+    )
+    status: Literal["deleted", "pr_opened", "pending_approval"] | None = Field(
+        default=None,
+        description="deleted: removed live; pr_opened: a pull request removes it (live until "
+        "merged); pending_approval: stored as a delete proposal another user must approve.",
+    )
+    proposal_etag: str | None = Field(
+        default=None, description="The delete proposal awaiting approval (pending_approval)."
+    )
     message: str
 
 

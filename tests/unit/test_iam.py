@@ -98,22 +98,59 @@ def test_airflow_permissions_default_matches_pre_iam_behaviour():
     assert admin.has(P.DEPLOY_DIRECT_PUSH)  # Admin is in iam.direct_push_roles
 
 
-def test_unverified_admin_never_gets_direct_push():
-    # standalone: no configuration check is possible, every check "passes" unverified
+def test_unverifiable_checks_grant_only_the_unverified_roles():
+    # standalone: no check can be asked of Airflow, so every check "passes" vacuously
+    # (all([]) is True); such a check must never grant its own roles
     p = run(Identity(user="u", checks=checks(True, True, True, verified=False)))
-    assert p.has(P.ADMIN_DEPLOY_TARGET)  # pre-IAM standalone behaviour kept
-    assert not p.has(P.DEPLOY_DIRECT_PUSH)
-    assert not p.can_direct_push(["Admin", "Deployer"])
+    assert p.roles == ["Authenticated", "Viewer"]
+    assert p.permissions == set(P.BUILTIN_ROLES[P.AUTHENTICATED]) | set(P.BUILTIN_ROLES[P.VIEWER])
+    for perm in (P.ADMIN_CONFIG, P.ADMIN_DEPLOY_TARGET, P.SPEC_WRITE, P.DEPLOY, P.CODE_EXECUTE):
+        assert not p.has(perm), perm
+    assert not p.can_direct_push(["Admin", "Deployer", "Viewer"])
+    # configurable, e.g. nothing beyond the Authenticated baseline
+    bare = run(
+        Identity(user="u", checks=checks(True, True, True, verified=False)),
+        airflow_permission_roles={"unverified": []},
+    )
+    assert bare.roles == ["Authenticated"]
+
+
+def test_unverifiable_checks_do_not_widen_other_strategies():
+    p = run(
+        Identity(
+            user="u",
+            airflow_roles=["Viewer"],
+            checks=checks(True, True, True, verified=False),
+        ),
+        strategies=["airflow_permissions", "role_mapping"],
+    )
+    assert set(p.roles) == {"Authenticated", "Viewer"}
+    deployer = run(
+        Identity(
+            user="u",
+            airflow_roles=["AutoAir Deployer"],
+            checks=checks(True, True, True, verified=False),
+        ),
+        strategies=["airflow_permissions", "role_mapping"],
+    )
+    assert deployer.has(P.DEPLOY)  # an explicit role mapping still grants
+    assert not deployer.has(P.ADMIN_CONFIG)
+
+
+def test_partly_verifiable_checks():
+    # only the verified checks grant their roles; a missing one adds the unverified roles
+    p = run(Identity(user="u", checks={"dag_edit": (True, True), "dag_read": (True, False)}))
+    assert {"Author", "Viewer"} <= set(p.roles)
+    assert not p.has(P.ADMIN_CONFIG)
 
 
 def test_anonymous_gets_anonymous_roles_without_direct_push():
     p = run(Identity(user=None, authenticated=False))
-    assert p.roles == ["Admin"]
-    assert p.has(P.ADMIN_CONFIG)
-    assert not p.has(P.DEPLOY_DIRECT_PUSH)
-    assert run(
-        Identity(user=None, authenticated=False), anonymous_roles=["Viewer"]
-    ).permissions == set(P.BUILTIN_ROLES[P.VIEWER])
+    assert p.roles == ["Viewer"]
+    assert p.permissions == set(P.BUILTIN_ROLES[P.VIEWER])
+    admin = run(Identity(user=None, authenticated=False), anonymous_roles=["Admin"])
+    assert admin.has(P.ADMIN_CONFIG)
+    assert not admin.has(P.DEPLOY_DIRECT_PUSH)
 
 
 def test_configurable_airflow_permission_roles():

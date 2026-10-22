@@ -46,8 +46,14 @@ def tokens() -> dict[str, str]:
     return {u: token(u) for u in ("admin", "editor", "viewer")}
 
 
-def api(path: str, tok: str | None = None, method: str = "GET", **kw: object) -> httpx2.Response:
-    headers = {"Authorization": f"Bearer {tok}"} if tok else {}
+def api(
+    path: str,
+    tok: str | None = None,
+    method: str = "GET",
+    headers: dict[str, str] | None = None,
+    **kw: object,
+) -> httpx2.Response:
+    headers = {**({"Authorization": f"Bearer {tok}"} if tok else {}), **(headers or {})}
     return httpx2.request(method, f"{URL}/autoair/api{path}", headers=headers, timeout=60, **kw)  # type: ignore[arg-type]
 
 
@@ -76,7 +82,8 @@ def test_editor_and_admin_can_deploy(tokens):
         r = api(f"/specs/{spec['dag_id']}", tokens[user], "PUT", json={"spec": spec})
         assert r.status_code == 200, (user, r.text)
         assert api(f"/specs/{spec['dag_id']}", tokens["viewer"]).status_code == 200
-        api(f"/specs/{spec['dag_id']}", tokens["admin"], "DELETE")
+        etag = r.json()["etag"]
+        api(f"/specs/{spec['dag_id']}", tokens["admin"], "DELETE", headers={"If-Match": etag})
 
 
 def test_collab_requires_edit_permission(tokens):

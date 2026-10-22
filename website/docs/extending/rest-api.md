@@ -76,7 +76,7 @@ A running server also publishes the document of exactly the version it runs, tog
 - **Feature flags.** Routes of a disabled feature (`features.*`) answer 404.
 - **Rate limits.** Expensive groups (`validate`, `import`, `ai`, `test_runs`, `deploy`, `catalog_refresh`) are limited per user (`limits.rate_limits`); over the limit the API answers 429 with `Retry-After`.
 - **Body size.** Requests above `server.max_body_bytes` (16 MiB) get 413.
-- **Optimistic locking.** `GET /specs/{dag_id}` returns the spec's `etag` (also as the `ETag` header). Send it back as `base_etag` (or `If-Match`) when deploying; if someone else deployed in between, the deploy is not applied and returns `status: "conflict"` with the current version.
+- **Optimistic locking.** `GET /specs/{dag_id}` returns the spec's `etag` (also as the `ETag` header). Send it back as `base_etag` (or `If-Match`) when deploying; if someone else deployed in between, the deploy is not applied and returns `status: "conflict"` with the current version. Overwriting an existing DAG without an etag is refused with `428 Precondition Required` (the `ETag` header and the message carry the current etag); `AUTOAIR_STORAGE__REQUIRE_BASE_ETAG=false` restores the old last-writer-wins behaviour for legacy clients.
 
 | Status | Meaning |
 |---|---|
@@ -102,7 +102,7 @@ A running server also publishes the document of exactly the version it runs, tog
 | Specs | `GET /specs`, `GET /specs/{dag_id}`, `PUT /specs/{dag_id}` (deploy), `POST /specs/{dag_id}/deploy-preview`, `DELETE /specs/{dag_id}`, `GET /specs/{dag_id}/audit`, `GET /specs/{dag_id}/reviews`, `POST /specs/{dag_id}/reviews`, `GET /specs/{dag_id}/proposals`, `GET /specs/{dag_id}/proposals/{etag}`, `POST /specs/{dag_id}/proposals/{etag}/deploy` | `spec:read`, `spec:write`, `deploy`, `spec:delete`, `review`, `audit:read` |
 | Versions | `GET /vcs/status`, `GET /vcs/{dag_id}/history`, `GET /vcs/{dag_id}/versions/{version}`, `GET /vcs/{dag_id}/diff`, `POST /vcs/diff`, `POST /vcs/merge`, `POST /vcs/{dag_id}/promote` | `spec:read`; promote `promote` |
 | Interchange | `POST /interchange/python/import`, `POST /interchange/yaml/import`, `POST /interchange/yaml/export`, `POST /interchange/spec/import`, `POST /interchange/airflow/{dag_id}/import` | `builder:use`; Python import `code:execute`; import from Airflow also `airflow:read` and `features.airflow` |
-| Test runs | `POST /runner/test-task`, `POST /runner/test-dag` | `run:test` |
+| Test runs | `POST /runner/test-task`, `POST /runner/test-dag` | `run:test` + `code:execute` (`mode=db`: also `admin:config`, `runner.allow_db_mode`) |
 | Airflow | `GET /airflow/connections`, `/pools`, `/variables`, `/assets`, `/bundles`, `/import-errors`, `GET /airflow/dags/{dag_id}/status`, `/runs`, `/versions`, task logs and XCom, `POST /airflow/dags/{dag_id}/trigger`, `/runs/{run_id}/clear`, `/backfill`, `PUT /airflow/dags/{dag_id}/paused`, `POST /airflow/next-runs` | `airflow:read`; `run:trigger`, `run:manage`, `connection:write` |
 | Templates | `GET /templates`, `GET /templates/{id}`, `POST /templates`, `DELETE /templates/{id}` | `builder:use`; writes `template:write` |
 | Marketplace | `GET /marketplace`, `POST /marketplace/install` | `builder:use`; install `template:write` |
@@ -148,9 +148,16 @@ curl -s -X PUT "$API/specs/etl_daily" \
 jq '{deployed, status, message, pr_url, version}'
 ```
 
-`DeployRequest` fields: `spec` (required), `base_etag`, `environment`, `message`, `pr_description`, `git_conn_id` (per-user git credentials), `force` (overwrite hand-edited files), `direct_push` (git targets; needs `deploy:direct_push` to push in PR mode). For a DAG that does not exist yet, omit `base_etag`. The response's `status` is `deployed`, `invalid`, `conflict`, `ejected` or `pending_approval`; a git target in PR mode returns the pull request in `pr_url`.
+`DeployRequest` fields: `spec` (required), `base_etag`, `environment`, `message`, `pr_description`, `git_conn_id` (per-user git credentials), `force` (overwrite hand-edited files), `direct_push` (git targets; needs `deploy:direct_push` to push in PR mode). For a DAG that does not exist yet, omit `base_etag`; for an existing one it is required (`428` otherwise, unless `storage.require_base_etag` is `false`). The response's `status` is `deployed`, `invalid`, `conflict`, `ejected` or `pending_approval`; a git target in PR mode returns the pull request in `pr_url`.
 
 Preview the commit message and pull-request text first with `POST /specs/{dag_id}/deploy-preview` (same body).
+
+`DELETE /specs/{dag_id}` needs the etag of the version it removes in `If-Match` (from `GET /specs/{dag_id}`): without it the answer is `428` with the current etag in the `ETag` header, and a stale one answers `409`. `storage.require_base_etag=false` drops the requirement.
+
+```bash
+ETAG=$(curl -s -H "Authorization: Bearer $TOKEN" "$API/specs/etl_daily" | jq -r .etag)
+curl -s -X DELETE "$API/specs/etl_daily" -H "Authorization: Bearer $TOKEN" -H "If-Match: \"$ETAG\""
+```
 
 ### Trigger a run and follow it
 

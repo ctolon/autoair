@@ -29,6 +29,7 @@ import { JsonField } from "../../widgets/fields";
 import { DialogShell } from "../components/DialogShell";
 import { JsonBlock } from "../components/JsonBlock";
 import { CodeView } from "../components/lazy";
+import { useMeta } from "../hooks";
 import { formatDuration } from "../lib/dates";
 import { paramDefaults } from "../lib/params";
 import { nodeTaskId } from "../lib/runOverlay";
@@ -63,6 +64,21 @@ function LogView({ log }: { log: string | undefined }) {
   );
 }
 
+/** Non-blocking: the run executed on this server without its own PID namespace. */
+function IsolationNotice({ result }: { result: TaskTestResult | DagTestResult }) {
+  const { t } = useTranslation("lifecycle");
+  if (result.where !== "local" || result.process_isolated !== false) return null;
+  return (
+    <Alert.Root status="warning" size="sm" data-testid="test-run-isolation-notice">
+      <Alert.Indicator />
+      <Alert.Content>
+        <Alert.Title fontSize="xs">{t("test.notIsolated.title")}</Alert.Title>
+        <Alert.Description fontSize="xs">{t("test.notIsolated.body")}</Alert.Description>
+      </Alert.Content>
+    </Alert.Root>
+  );
+}
+
 function TaskResult({ result }: { result: TaskTestResult }) {
   const { t } = useTranslation("lifecycle");
   return (
@@ -72,6 +88,7 @@ function TaskResult({ result }: { result: TaskTestResult }) {
         <Text fontSize="sm">{t("test.duration", { value: formatDuration(result.duration) })}</Text>
         {result.mapped ? <Badge>{t("test.mapped")}</Badge> : null}
       </HStack>
+      <IsolationNotice result={result} />
       {result.error ? (
         <Alert.Root status="error" size="sm">
           <Alert.Indicator />
@@ -113,6 +130,7 @@ function DagResult({ result }: { result: DagTestResult }) {
         <Text fontSize="sm">{t("test.duration", { value: formatDuration(result.duration) })}</Text>
         {result.mode ? <Badge variant="outline">{result.mode}</Badge> : null}
       </HStack>
+      <IsolationNotice result={result} />
       {result.error ? (
         <Text fontSize="xs" color="red.500" whiteSpace="pre-wrap">
           {result.error}
@@ -151,7 +169,25 @@ function DagResult({ result }: { result: DagTestResult }) {
   );
 }
 
-function TaskTab({ initialNodeId, conf }: { initialNodeId: string | null; conf: Record<string, unknown> }) {
+/** Shown next to a Run button while the conf JSON above cannot be parsed. */
+function ConfInvalidHint() {
+  const { t } = useTranslation("lifecycle");
+  return (
+    <Text fontSize="xs" color="fg.error" role="alert">
+      {t("common.confInvalid")}
+    </Text>
+  );
+}
+
+function TaskTab({
+  initialNodeId,
+  conf,
+  confInvalid,
+}: {
+  initialNodeId: string | null;
+  conf: Record<string, unknown>;
+  confInvalid: boolean;
+}) {
   const { t } = useTranslation("lifecycle");
   const nodes = useBuilder((s) => s.nodes);
   const edges = useBuilder((s) => s.edges);
@@ -298,9 +334,10 @@ function TaskTab({ initialNodeId, conf }: { initialNodeId: string | null; conf: 
           size="sm"
           colorPalette="blue"
           loading={run.isPending}
-          disabled={!node}
+          disabled={!node || confInvalid}
           onClick={() =>
             node &&
+            !confInvalid &&
             run.mutate({
               body: {
                 spec: useBuilder.getState().toSpec(),
@@ -315,6 +352,7 @@ function TaskTab({ initialNodeId, conf }: { initialNodeId: string | null; conf: 
         >
           <LuPlay /> {t("test.runTask")}
         </Button>
+        {confInvalid ? <ConfInvalidHint /> : null}
         {run.isPending ? (
           <Text fontSize="xs" color="fg.muted">
             {t("test.running")}
@@ -326,9 +364,13 @@ function TaskTab({ initialNodeId, conf }: { initialNodeId: string | null; conf: 
   );
 }
 
-function DagTab({ conf }: { conf: Record<string, unknown> }) {
+function DagTab({ conf, confInvalid }: { conf: Record<string, unknown>; confInvalid: boolean }) {
   const { t } = useTranslation("lifecycle");
-  const [mode, setMode] = useState<NonNullable<TestDagRequest["mode"]>>("memory");
+  const meta = useMeta();
+  // Until /meta answers, treat db as unavailable: the server refuses it unless allowed.
+  const dbUnavailable = meta ? (meta.test_runs?.db_mode_unavailable ?? null) : "disabled";
+  const [chosen, setMode] = useState<NonNullable<TestDagRequest["mode"]>>("memory");
+  const mode = chosen === "db" && dbUnavailable ? "memory" : chosen;
   const run = useMutation({
     ...testDagMutation(),
     onError: (e) => toaster.create({ type: "error", title: t("test.failed"), description: errorMessage(e) }),
@@ -340,23 +382,27 @@ function DagTab({ conf }: { conf: Record<string, unknown> }) {
         <NativeSelect.Root size="sm" maxW="320px">
           <NativeSelect.Field value={mode} onChange={(e) => setMode(e.target.value as typeof mode)}>
             {(["memory", "db", "auto"] as const).map((m) => (
-              <option key={m} value={m}>
+              <option key={m} value={m} disabled={m === "db" && !!dbUnavailable}>
                 {t(`test.modes.${m}`)}
               </option>
             ))}
           </NativeSelect.Field>
           <NativeSelect.Indicator />
         </NativeSelect.Root>
+        {dbUnavailable ? <Field.HelperText>{t(`test.dbUnavailable.${dbUnavailable}`)}</Field.HelperText> : null}
+        {meta?.test_runs?.on_validator ? <Field.HelperText>{t("test.onValidator")}</Field.HelperText> : null}
       </Field.Root>
       <HStack>
         <Button
           size="sm"
           colorPalette="blue"
           loading={run.isPending}
-          onClick={() => run.mutate({ body: { spec: useBuilder.getState().toSpec(), conf, mode } })}
+          disabled={confInvalid}
+          onClick={() => !confInvalid && run.mutate({ body: { spec: useBuilder.getState().toSpec(), conf, mode } })}
         >
           <LuFlaskConical /> {t("test.runDag")}
         </Button>
+        {confInvalid ? <ConfInvalidHint /> : null}
       </HStack>
       {run.data ? <DagResult result={run.data} /> : null}
     </Stack>
@@ -368,6 +414,7 @@ export default function TestTaskDialog({ nodeId, whole = false }: { nodeId: stri
   const { t } = useTranslation("lifecycle");
   const params = useBuilder((s) => s.dag.params);
   const [conf, setConf] = useState<Record<string, unknown>>(() => paramDefaults(params));
+  const [confValid, setConfValid] = useState(true);
   return (
     <DialogShell title={t("test.title")} description={t("test.description")} size="xl">
       <Stack gap={4}>
@@ -378,6 +425,7 @@ export default function TestTaskDialog({ nodeId, whole = false }: { nodeId: stri
           value={conf}
           validate={(v) => (isObj(v) ? undefined : t("common.mustBeObject"))}
           onChange={(v) => setConf(isObj(v) ? v : {})}
+          onValidityChange={setConfValid}
         />
         <Tabs.Root defaultValue={whole ? "dag" : "task"} size="sm" lazyMount>
           <Tabs.List>
@@ -385,10 +433,10 @@ export default function TestTaskDialog({ nodeId, whole = false }: { nodeId: stri
             <Tabs.Trigger value="dag">{t("test.tabDag")}</Tabs.Trigger>
           </Tabs.List>
           <Tabs.Content value="task">
-            <TaskTab initialNodeId={nodeId} conf={conf} />
+            <TaskTab initialNodeId={nodeId} conf={conf} confInvalid={!confValid} />
           </Tabs.Content>
           <Tabs.Content value="dag">
-            <DagTab conf={conf} />
+            <DagTab conf={conf} confInvalid={!confValid} />
           </Tabs.Content>
         </Tabs.Root>
       </Stack>

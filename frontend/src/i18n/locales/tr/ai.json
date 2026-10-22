@@ -303,7 +303,8 @@
     },
     "kind": {
       "write": "değişiklik yapar",
-      "read": "salt okunur"
+      "read": "salt okunur",
+      "execute": "sunucuda kod çalıştırır"
     },
     "approve": "Onayla",
     "deny": "Reddet",
@@ -316,6 +317,13 @@
     "denied": "reddedildi",
     "decidedBy": "Karar veren: {{user}}",
     "truncated": "Argümanlar görüntüleme için kısaltıldı; gizli değerler maskelendi.",
+    "truncatedMore_one": "1 karakter daha gösterilmiyor — onaylamadan önce argümanların tamamını inceleyin.",
+    "truncatedMore_other": "{{count}} karakter daha gösterilmiyor — onaylamadan önce argümanların tamamını inceleyin.",
+    "showFull": "Argümanların tamamını göster",
+    "showShort": "Kısaltılmış göster",
+    "loadingFull": "Argümanların tamamı yükleniyor…",
+    "fullFailed": "Argümanların tamamı yüklenemedi",
+    "fullMismatch": "Argümanların tamamı bu onayla eşleşmiyor; onaylamayın, yeniden sorun.",
     "noArguments": "argüman yok",
     "expiredHelp": "Bu onayın süresi doldu ve araçlar çalışmadı. Devam etmek için yeniden sorun.",
     "cancelledHelp": "Konuşma devam etti; bu araç çağrıları çalışmadı.",

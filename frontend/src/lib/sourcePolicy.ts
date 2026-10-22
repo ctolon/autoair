@@ -20,8 +20,18 @@ export function policyApplies(dag: { output_mode?: string | null; raw_code?: str
   return (dag.output_mode ?? "python") === "python" && dag.raw_code == null;
 }
 
-/** ``dag.source`` with another policy (origin and hand-written code are kept). */
-export function withPolicy(dag: { source?: DagSpec["source"] }, policy: SourcePolicyChoice): DagSpec["source"] {
+/**
+ * ``dag.source`` with another policy. Origin and hand-written code are kept unless
+ * ``dropCode`` is set: saving a document that carries ``source.code`` needs ``code:raw``, so a
+ * user without it who deliberately switches to generated code leaves the kept file behind.
+ */
+export function withPolicy(
+  dag: { source?: DagSpec["source"] },
+  policy: SourcePolicyChoice,
+  { dropCode = false }: { dropCode?: boolean } = {},
+): DagSpec["source"] {
   const current = dag.source && typeof dag.source === "object" ? dag.source : {};
-  return { ...current, policy };
+  if (!dropCode) return { ...current, policy };
+  const { code: _code, base_sha: _baseSha, ...rest } = current as Record<string, unknown>;
+  return { ...rest, policy } as DagSpec["source"];
 }

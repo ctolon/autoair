@@ -212,10 +212,10 @@ class AzureDevOpsProvider:
         check_branch(name)
         self._update_ref(name, ZERO, from_sha)
 
-    def reset_branch(self, name: str, to_sha: str) -> None:
+    def reset_branch(self, name: str, to_sha: str, *, expect: str | None = None) -> None:
         check_branch(name)
-        current = self.head(name)
-        self._update_ref(name, current or ZERO, to_sha)
+        current = expect or self.head(name)
+        self._update_ref(name, current or ZERO, to_sha)  # oldObjectId: compare-and-swap
 
     def commit_files(
         self,

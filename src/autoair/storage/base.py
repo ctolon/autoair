@@ -8,7 +8,11 @@ Ownership rules shared by all targets:
 * files that do not carry an AutoAir marker are never overwritten or deleted;
 * files whose content differs from what AutoAir last wrote are considered *ejected*
   (hand edited) and are only overwritten with ``force=True``;
-* the spec is written first, the DAG file(s) last (the loader stub reads the spec).
+* the spec is written first, the DAG file(s) after it (the loader stub reads the spec),
+  and a failed write leaves everything as it was;
+* a state record (``.autoair/state/<dag_id>.json``) that cannot be read fails closed: no
+  file is replaced or deleted until it is fixed; a missing one makes existing files
+  *unknown* (replaced only with ``force``).
 """
 
 from __future__ import annotations
@@ -20,9 +24,9 @@ import json
 import re
 from typing import Any, Literal, Protocol, runtime_checkable
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 
-from autoair.loader import SPEC_SUFFIX
+from autoair.loader import SPEC_SUFFIX, render_stub
 from autoair.spec import DagSpec
 from autoair.spec.models import KEY_RE
 
@@ -305,6 +309,30 @@ def is_owned(content: str) -> bool:
     return GENERATED_MARKER in head or STUB_MARKER in head
 
 
+def parse_state(raw: str | None, location: str, dag_id: str) -> DagState | None:
+    """``raw`` state record of ``dag_id`` for a write; ``None`` when there is none. An
+    unreadable record raises: it is the only place that says which files are hand-written
+    or were edited by hand, so a write must not guess (fail closed)."""
+    if raw is None:
+        return None
+    try:
+        state = DagState.model_validate_json(raw)
+    except ValueError as exc:
+        reason = exc.errors()[0]["msg"] if isinstance(exc, ValidationError) else str(exc)
+        raise StorageError(
+            f"AutoAir's state record {location} is unreadable ({reason}); no file of DAG "
+            f"{dag_id!r} is replaced or deleted until it is fixed. Restore it (version "
+            "control, a backup) or delete it: the DAG's files then count as unknown and are "
+            "replaced only by a deploy with force"
+        ) from exc
+    if state.dag_id != dag_id:
+        raise StorageError(
+            f"AutoAir's state record {location} belongs to DAG {state.dag_id!r}, not "
+            f"{dag_id!r}; restore or delete it"
+        )
+    return state
+
+
 def check_overwrite(
     location: str,
     existing: str | None,
@@ -312,13 +340,17 @@ def check_overwrite(
     new_sha: str | None,
     force: bool,
     expected: str | None = None,
+    *,
+    unknown: bool = False,
 ) -> None:
     """Refuse to clobber foreign files and (unless ``force``) hand-edited generated ones.
 
     ``recorded`` is the sha256 AutoAir stored when it last wrote the file; ``new_sha`` the
     hash of the content about to be written (``None`` when deleting). ``expected``: the
     hash of the file a source-preserving deploy patched -- the write goes ahead (also over a
-    hand-written file) only while the file is still exactly that one.
+    hand-written file) only while the file is still exactly that one. ``unknown``: there is
+    no state record, so nobody knows whether the file was edited by hand: it is replaced or
+    deleted only with ``force`` (unless the new content is identical).
     """
     if existing is None:
         return
@@ -335,6 +367,23 @@ def check_overwrite(
         )
     if recorded is not None and current_sha not in (recorded, new_sha) and not force:
         raise EjectedError(location)
+    if (
+        recorded is None
+        and unknown
+        and current_sha != new_sha
+        and not force
+        and not _pristine_stub(existing)
+    ):
+        raise EjectedError(location)
+
+
+_STUB_DAG_RE = re.compile(r"AutoAir loader stub for the airflow DAG '([^'\n]{1,250})'")
+
+
+def _pristine_stub(content: str) -> bool:
+    """An unmodified loader stub: nothing in it can have been edited by hand."""
+    match = _STUB_DAG_RE.search(content[:300])
+    return match is not None and content == render_stub(match.group(1))
 
 
 def main_file(dag_id: str, names: list[str] | dict[str, Any]) -> str:

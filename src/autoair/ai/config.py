@@ -749,8 +749,10 @@ class TroubleshootSettings(_Section):
 
 McpAgent = Literal["troubleshoot", "developer", "admin"]
 #: Side-effect class of an agent tool: ``read`` only reads; ``write`` changes something
-#: outside the run (stored memories, external MCP tools the server does not mark read-only).
-ToolClass = Literal["read", "write"]
+#: outside the run (stored memories, external MCP tools an admin has not listed as
+#: read-only); ``execute`` runs Python on the AutoAir server (importing a DAG file, the
+#: deploy dry run's DagBag import) and is gated like ``write``.
+ToolClass = Literal["read", "write", "execute"]
 ApprovalAgent = Literal["developer", "admin", "troubleshoot"]
 
 
@@ -764,8 +766,10 @@ class ToolApprovalRule(_Section):
     classes: list[ToolClass] = Field(
         default_factory=_write_class,
         description="Tool classes whose calls need approval (JSON list in the environment): "
-        "write = tools that change something (stored memories, external MCP tools not marked "
-        "read-only); read = every read-only tool too. [] = none by class.",
+        "write = tools that change something (stored memories, external MCP tools not listed "
+        "in the server's read_only_tools) and tools that run Python on the server (class "
+        "execute: import_python_dag, deploy_dry_run); execute = only the latter; read = "
+        "every read-only tool too. [] = none by class.",
     )
     tools: list[str] = Field(
         default_factory=list,
@@ -775,8 +779,9 @@ class ToolApprovalRule(_Section):
     exempt: list[str] = Field(
         default_factory=list,
         description="Tool names (fnmatch) that never need approval although their class "
-        "does, e.g. remember. Ignored for write tools of a troubleshooting analysis in hitl "
-        "mode.",
+        "does, e.g. mcp__metrics__*. Ignored for write and execute tools of a "
+        "troubleshooting analysis in hitl mode, and for remember (a stored memory always "
+        "needs approval).",
     )
 
 
@@ -796,7 +801,8 @@ class ToolApprovalSettings(_Section):
     agents: dict[ApprovalAgent, ToolApprovalRule] = Field(
         default_factory=dict,
         description="Rule per agent (developer, admin, troubleshoot), replacing default for "
-        'that agent, e.g. {"developer": {"classes": ["write"], "exempt": ["remember"]}} '
+        "that agent, e.g. "
+        '{"developer": {"classes": ["write"], "exempt": ["mcp__jira__get_*"]}} '
         "(JSON in the environment).",
     )
     ttl_seconds: float = Field(
@@ -876,6 +882,13 @@ class McpServerConfig(_Section):
     tools: list[str] = Field(
         default_factory=lambda: ["*"],
         description="Tools agents may call (fnmatch over the server's tool names).",
+    )
+    read_only_tools: list[str] = Field(
+        default_factory=list,
+        description="Tools (fnmatch over the server's tool names) an admin vouches only read: "
+        "they run without approval and the admin assistant may use them. The server's own "
+        "readOnlyHint is not trusted (a compromised server could mark a destructive tool "
+        "read-only), so every other tool needs approval. [] = none.",
     )
     timeout_seconds: float = Field(default=30, gt=0, description="Timeout of one tool call.")
     enabled: bool = Field(default=True, description="Offer this server.")

@@ -78,6 +78,7 @@ import { layoutCanvas, newDag, newRawDag } from "../lifecycle/actions";
 import { useEnvironments, useMeta } from "../lifecycle/hooks";
 import { aiUsable, needsUserModel, setAiModel, useAiModel, useAiStatus } from "../lifecycle/lib/ai";
 import { hostDagId, syncDeepLink } from "../lifecycle/lib/deepLink";
+import { deleteToast, deleteWentLive, ifMatch } from "../lifecycle/lib/deleteOutcome";
 import { type LifecycleDialog, useLifecycle } from "../lifecycle/store";
 import { EditorModeToggle } from "../codemode/EditorModeToggle";
 import { RawBadge } from "../codemode/RawCodeView";
@@ -177,13 +178,17 @@ function FileMenu() {
     }
     if (!window.confirm(t("confirm.delete", { dagId: savedDagId }))) return;
     remove.mutate(
-      { path: { dag_id: savedDagId } },
+      // If-Match: the server refuses deleting a version this editor never loaded.
+      { path: { dag_id: savedDagId }, headers: ifMatch(useBuilder.getState().baseEtag) },
       {
-        onSuccess: () => {
-          useBuilder.getState().reset();
-          useLifecycle.getState().setSelectedRunId(null);
-          syncDeepLink(null);
-          toaster.create({ type: "info", title: t("toolbar.deleted", { dagId: savedDagId }) });
+        onSuccess: (res) => {
+          // A delete proposal (four-eyes) or a pull request leaves the DAG live: keep it open.
+          if (deleteWentLive(res)) {
+            useBuilder.getState().reset();
+            useLifecycle.getState().setSelectedRunId(null);
+            syncDeepLink(null);
+          }
+          toaster.create(deleteToast(res, savedDagId, t));
         },
         onError: (e) =>
           toaster.create({ type: "error", title: t("toolbar.deleteFailed"), description: errorMessage(e) }),
@@ -305,7 +310,9 @@ function RunMenu() {
   const notDeployed = !deployed ? t("common.deployFirst") : undefined;
   const access = useAccess();
   const denied = (p: Permission) => (access.can(p) ? undefined : t("access.denied", { permission: p }));
-  const canTest = access.allows("test_runs", "run:test");
+  // A test run executes the DAG's Python on the server: it needs code:execute as well.
+  const canTest = access.allows("test_runs", "run:test") && access.can("code:execute");
+  const testDenied = denied("run:test") ?? denied("code:execute");
   const aiFeature = access.feature("ai");
   // Review and secret scan read the visual spec (gated like the palette's ai.review / ai.leaks).
   const raw = useIsRaw();
@@ -324,7 +331,7 @@ function RunMenu() {
       <Menu.Item
         value="test-task"
         disabled={!selectedTask || !canTest}
-        title={denied("run:test") ?? (!selectedTask ? t("toolbar.selectTaskFirst") : undefined)}
+        title={testDenied ?? (!selectedTask ? t("toolbar.selectTaskFirst") : undefined)}
         hidden={!access.feature("test_runs")}
         onClick={() => openDialog({ kind: "testTask", nodeId: selectedTask })}
       >
@@ -333,7 +340,7 @@ function RunMenu() {
       <Menu.Item
         value="test-dag"
         disabled={!canTest}
-        title={denied("run:test")}
+        title={testDenied}
         hidden={!access.feature("test_runs")}
         onClick={() => openDialog({ kind: "testTask", nodeId: selectedTask, whole: true })}
       >

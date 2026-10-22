@@ -15,7 +15,7 @@ from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
 from autoair import sections
-from autoair.sections import ValidatorSettings
+from autoair.sections import SandboxSettings, ValidatorSettings
 from autoair.settings import Settings
 from autoair.validation import dagbag_check, remote
 from autoair.validation.dagbag_check import ImportCheckResult, ImportCheckUnavailable
@@ -163,9 +163,10 @@ def test_key_cache_reads_again_after_ttl(monkeypatch: pytest.MonkeyPatch) -> Non
 
 def test_worker_env_drops_the_key_connection(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("AIRFLOW_CONN_OTHER", "generic://a")
+    monkeypatch.setenv(CONN_ENV, KEY)
     env = worker_env(ValidatorSettings())
     assert CONN_ENV not in env
-    assert "AIRFLOW_CONN_OTHER" in env
+    assert "AIRFLOW_CONN_OTHER" not in env  # connections from the environment: none
 
 
 # --------------------------------------------------------------------------- service
@@ -676,12 +677,17 @@ def test_main_server_scrubs_the_key_from_user_code(monkeypatch: pytest.MonkeyPat
     from autoair._subprocess import user_code_env
 
     monkeypatch.setenv("AIRFLOW_CONN_OTHER", "generic://a")
+    monkeypatch.setenv(CONN_ENV, "generic://:k@")
     env = user_code_env()
     assert CONN_ENV not in env
-    assert "AIRFLOW_CONN_OTHER" in env
-    sections.activate(Settings(validator=ValidatorSettings(secret_conn_id="vkey")))
+    assert "AIRFLOW_CONN_OTHER" not in env
+    # Even passed through on purpose, the key connection stays out.
+    sandbox = SandboxSettings(env_passthrough=["AIRFLOW_CONN_*"])
+    sections.activate(Settings(validator=ValidatorSettings(secret_conn_id="vkey"), sandbox=sandbox))
     monkeypatch.setenv("AIRFLOW_CONN_VKEY", "generic://:k@")
-    assert "AIRFLOW_CONN_VKEY" not in user_code_env()
+    env = user_code_env()
+    assert "AIRFLOW_CONN_VKEY" not in env
+    assert "AIRFLOW_CONN_OTHER" in env
 
 
 def test_cli_refuses_no_auth_on_a_public_bind() -> None:

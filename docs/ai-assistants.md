@@ -100,11 +100,19 @@ Tools that change something outside the run are deferred tools: the agent can ca
 the call runs only after the user who started the run approves it.
 
 **Classification.** Every agent tool has a class, `AgentTool.kind` (`ai/tools.py`): `write`
-for `remember` (stores a memory) and for external MCP tools the server does not mark
-`readOnlyHint: true`; `read` for everything else. The server's annotation decides, never the
-model. The policy (`ai.approvals`, `ai/approvals.py::needs_approval`) selects the tools whose
-calls wait: by class (`classes`, default `["write"]`), by name pattern (`tools`, always wait),
-minus exemptions (`exempt`). `ai.approvals.agents.<developer|admin|troubleshoot>` replaces
+for `remember` (stores a memory) and for external MCP tools an admin has not listed in the
+server's `read_only_tools` (`mcp_client.py::trusted_read_only`; the server's own
+`readOnlyHint` is shown to admins but never trusted); `execute` for tools that run Python on
+the server (`import_python_dag`, `deploy_dry_run`; `ai/toolbox.py`); `read` for everything
+else. Neither the model nor the external server decides. `execute` tools are dropped for
+callers without `code:execute` (`ai/tools.py::executable_tools`, applied after the role
+allow-list in `chat.assistant_tools` and `routers/ai.py::_agent_tools`). The policy
+(`ai.approvals`, `ai/approvals.py::needs_approval`) selects the tools whose calls wait: by
+class (`classes`, default `["write"]`; `write` also gates `execute`, so rules written before
+that class gate it too), by name pattern (`tools`, always wait), minus exemptions (`exempt`).
+`ALWAYS_APPROVE` (`remember`) waits whatever the rule says: a prompt-injected memory would
+reach every later prompt of its scope. The agent's `remember` stores `team` memories only for
+callers with `admin:config` (`dev_tools.MEMORY_ADMIN_PERMISSION`). `ai.approvals.agents.<developer|admin|troubleshoot>` replaces
 `ai.approvals.default` for one agent. With `ai.approvals.enabled=false` the tools that would
 wait are not offered to the model at all. One-shot agent requests that cannot pause
 (`POST /api/ai/ask`) never offer them.
@@ -114,7 +122,10 @@ wait are not offered to the model at all. One-shot agent requests that cannot pa
 output types. The run then ends with `stopped="approval"` and the pending calls
 (`PendingToolCall`: id, tool, class, description, arguments with secret-named fields masked,
 strings scrubbed by `scrub_secrets` and the guardrail pipeline, registered request secrets
-masked, cut to `ai.approvals.max_argument_chars`). Read-only calls of the same model turn run
+masked, cut to `ai.approvals.max_argument_chars`, with `omitted_chars` and
+`arguments_sha256`, the SHA-256 of the canonical JSON of the exact arguments).
+`GET /api/ai/approvals/{id}/calls/{call_id}/arguments` returns a pending call's complete
+arguments from the stored messages, masked the same way but not cut, with the digest. Read-only calls of the same model turn run
 normally. The caller stores a `ToolApproval` document (collection `ai_tool_approvals`, key
 `<user hash>.<id>`): the view, the run's pydantic-ai messages, the request and context needed
 to rebuild the tool set (spec, MCP selections, troubleshooting scope and evidence pack, the
@@ -125,14 +136,19 @@ analysis in `TroubleshootAnalysis.approvals`, with `status="awaiting_approval"`.
 `approval_pending` and `approval_tools`.
 
 **Deciding.** `POST /api/ai/approvals/{id}/stream` with one decision per pending call
-(`{"decisions": [{"id": "<tool call id>", "approved": false, "reason": "…"}]}`):
+(`{"decisions": [{"id": "<tool call id>", "approved": true, "arguments_sha256": "…"}]}`, or
+`"approved": false` with an optional `"reason"`):
 
 1. The approval is looked up under the caller's user key: another user gets 404, so only the
    user who started the run can decide it. The agent's own gate applies again (the admin
    assistant needs `ai:admin` or `admin:panel`; troubleshooting needs `airflow:read` and
    `features.airflow`). No new permission exists for approving.
 2. The decisions are validated (every pending call exactly once, reasons at most
-   `ai.approvals.max_reason_chars`; 422) and the approval is **claimed** with a
+   `ai.approvals.max_reason_chars`; 422). Every approved call must carry the
+   `arguments_sha256` it was shown, and the tool call in the stored messages (what the
+   resumed run executes) must still hash to it (`approvals.check_bound_arguments`); otherwise
+   409, audited as `<feature>:tool_approval_mismatch`, and nothing runs. A call paused by a
+   version without digests can only be denied. The approval is then **claimed** with a
    compare-and-set: `pending` -> `resuming` with the claimer and time. An expired approval is
    stored as `expired` (410, audited as `<feature>:tool_approval_expired`); anything not
    pending is 409. Two replicas receiving the same decision resume the run once.

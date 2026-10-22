@@ -16,12 +16,17 @@ console error.
 ```bash
 eval "$("${CLAUDE_PROJECT_DIR}"/.claude/skills/run-e2e/scripts/private-stack.sh start)"     # private API + vite preview
 node ${CLAUDE_SKILL_DIR}/scripts/shoot.mjs \
-  --modes standalone --standalone-url "$AUTOAIR_DEV_URL/" --airflow-url http://127.0.0.1:9
+  --modes standalone --standalone-url "$AUTOAIR_DEV_URL/" --airflow-url http://127.0.0.1:9 \
+  --ignore 502
 "${CLAUDE_PROJECT_DIR}"/.claude/skills/run-e2e/scripts/private-stack.sh stop
 ```
 
-The private stack builds the current tree into its own folder and runs `autoair serve
---no-auth` with its own state, so nothing shared changes.
+The private stack builds the current tree into its own folder (with the API base that
+`autoair serve` would inject, so the vite preview root works in a browser) and runs `autoair
+serve --no-auth` with its own state, so nothing shared changes. Its Airflow URL is a closed
+port, so Airflow-backed panels answer 502: `--ignore 502` keeps those from failing the run.
+Another agent may run its own stack: set `E2E_RUN_FILE` (and `E2E_STATE`) to paths of your
+own so `start` and `stop` do not touch theirs.
 
 ## Plugin (inside Airflow)
 

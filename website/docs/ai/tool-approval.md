@@ -11,17 +11,22 @@ where it stopped.
 
 ## Which tool calls wait
 
-Every agent tool is either **read-only** or **changes something**:
+Every agent tool is **read-only**, **changes something** or **runs code on the server**:
 
-| Changes something | Read-only |
+| Class | Tools |
 |---|---|
-| `remember` (stores a memory) | Every other built-in tool (catalog, validation, specs, runs and logs, research, settings, audit) |
-| External MCP tools the server does not mark read-only (`readOnlyHint`) | External MCP tools marked `readOnlyHint: true` |
+| changes something (`write`) | `remember` (stores a memory); external MCP tools an administrator has not listed in the server's `read_only_tools` |
+| runs code on the server (`execute`) | `import_python_dag` (imports a Python DAG file) and `deploy_dry_run` (imports the generated file in a sandboxed DagBag) |
+| read-only (`read`) | Every other built-in tool (catalog, validation, specs, runs and logs, research, settings, audit); external MCP tools listed in `read_only_tools` |
 
-The MCP server's annotation decides, never the model. By default only calls that change
-something wait. An administrator can make more tools wait or let specific ones run directly
-([settings](#settings)). Proposals (`propose_spec_change`, `propose_config_snippet`) never need
-approval: they change nothing until you apply them.
+The classification comes from AutoAir and the administrator, never from the model or the
+external MCP server: a server's own `readOnlyHint` is not trusted, because a compromised server
+could mark a destructive tool read-only ([MCP client](/docs/ai/mcp#mcp-client-external-servers-for-autoairs-agents)).
+By default calls that change something or run code wait. `execute` tools are also offered only
+to users with `code:execute`, whatever the tool allow-list says. Every `remember` call waits,
+even when an administrator exempted it. An administrator can make more tools wait or let
+specific ones run directly ([settings](#settings)). Proposals (`propose_spec_change`,
+`propose_config_snippet`) never need approval: they change nothing until you apply them.
 
 ## Deciding
 
@@ -31,8 +36,15 @@ for each call:
 - the tool name and whether it **changes something**;
 - its description;
 - its arguments. Fields named like secrets (`password`, `token`, `api_key`, ...) are shown as
-  `***`, secret-looking values are masked and long values are cut (**Arguments shortened for
-  display; secrets are masked.**).
+  `***`, secret-looking values are masked and long values are cut to
+  `ai.approvals.max_argument_chars`. A cut call says how much is hidden (**N more characters
+  not shown — review the full arguments before approving.**); **Show full arguments** loads
+  everything the call would run with, secrets still masked.
+
+An approval is bound to the exact arguments of the call: the card sends back their SHA-256
+digest, and the run resumes only if the stored call still has exactly those arguments.
+Otherwise the decision is refused (409, audited as `assistant:tool_approval_mismatch`) and
+nothing runs.
 
 Choose **Approve** or **Deny** for each call, optionally with a reason for a denial (**Reason
 (optional, sent to the assistant)**), then **Send decisions**. **Approve all** and **Deny all**
@@ -63,8 +75,9 @@ You still need the permission of the agent itself when you decide: `ai:use`, plu
 
 A decision is accepted once. If the same decision reaches two replicas, or you click twice, the
 run resumes once and the second request is refused (409), so an approved tool runs at most once.
-Every approval, denial and expiry is recorded in the AI audit log (`assistant:tool_approved`,
-`assistant:tool_denied`, `assistant:tool_approval_expired`, and the same with `troubleshoot:`).
+Every approval, denial, expiry and mismatch is recorded in the AI audit log
+(`assistant:tool_approved`, `assistant:tool_denied`, `assistant:tool_approval_expired`,
+`assistant:tool_approval_mismatch`, and the same with `troubleshoot:`).
 
 ## Troubleshooting and Airflow actions
 
@@ -82,9 +95,9 @@ All under `ai.approvals` ([reference](/docs/reference/configuration#aiapprovals)
 | Setting | Default | Effect |
 |---|---|---|
 | `enabled` | `true` | `false`: tools that would need approval are not offered to the agent at all |
-| `default.classes` | `["write"]` | Tool classes whose calls wait (`write`, `read`) |
+| `default.classes` | `["write"]` | Tool classes whose calls wait (`write`, `execute`, `read`); `write` also covers `execute` tools |
 | `default.tools` | `[]` | Tool names (fnmatch) that always wait, e.g. `mcp__jira__*` |
-| `default.exempt` | `[]` | Tool names (fnmatch) that never wait, e.g. `remember` |
+| `default.exempt` | `[]` | Tool names (fnmatch) that never wait, e.g. `mcp__metrics__*`; ignored for `remember` |
 | `agents` | `{}` | A rule per agent (`developer`, `admin`, `troubleshoot`) replacing `default` |
 | `ttl_seconds` | `3600` | Time to decide before the approval expires |
 | `max_pending_per_user` | `20` | A new pending approval beyond this cancels your oldest one |
@@ -99,7 +112,7 @@ ai:
   approvals:
     agents:
       developer:
-        exempt: ["remember"]            # store memories without asking
+        exempt: ["deploy_dry_run"]      # dry runs without asking (users with code:execute)
       troubleshoot:
         classes: ["write"]
         tools: ["mcp__metrics__query"]  # also ask before this read-only tool

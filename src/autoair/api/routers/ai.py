@@ -32,6 +32,7 @@ from pydantic import BaseModel, Field
 
 from autoair.ai.access import (
     ADMIN_PERMISSION,
+    has_permission,
     request_role,
     request_user,
 )
@@ -68,7 +69,7 @@ from autoair.ai.memory import conventions_for
 from autoair.ai.problems import SpecProblem
 from autoair.ai.rag import Hit
 from autoair.ai.toolbox import build_toolbox, gateway_factory_for
-from autoair.ai.tools import AgentTool
+from autoair.ai.tools import AgentTool, executable_tools
 from autoair.ai.tuning import HistoryStats, fetch_history, history_stats
 from autoair.ai.usage import Usage, UsageMeter, track_usage
 from autoair.ai.user_llm import (
@@ -987,8 +988,9 @@ def _agent_tools(
     from autoair.ai.approvals import withdraw_gated
 
     ai = _ai(services)
-    selected: list[AgentTool] = filter_tools(
-        tools, request_role(request), ai.guardrails.tool_allowlist
+    selected: list[AgentTool] = executable_tools(
+        filter_tools(tools, request_role(request), ai.guardrails.tool_allowlist),
+        lambda permission: has_permission(request, permission),
     )
     # A one-shot answer cannot pause for a decision: tools needing approval are not offered.
     return withdraw_gated(selected, ai.approvals, "developer")

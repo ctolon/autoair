@@ -49,6 +49,8 @@ def rbac() -> AuthBackend:
 
 
 def client(tmp_path: Path, auth: AuthBackend | None = None, **settings: object) -> TestClient:
+    if auth is None:  # anonymous callers get iam.anonymous_roles (Viewer by default)
+        settings.setdefault("iam", {"anonymous_roles": ["Admin"]})
     s = Settings(dags_folder=tmp_path, subfolder="", ai={"enabled": False}, **settings)  # type: ignore[arg-type]
     return TestClient(create_app(build_services(s, auth or AuthBackend())))
 
@@ -164,6 +166,7 @@ def test_reset_deploy_target_restores_configured_storage(tmp_path):
         subfolder="",
         ai={"enabled": False},
         storage={"mode": "local", "local_path": str(custom)},  # type: ignore[arg-type]
+        iam={"anonymous_roles": ["Admin"]},  # type: ignore[arg-type]
     )
     services = build_services(s, AuthBackend())
     assert services.configured_storage is not None

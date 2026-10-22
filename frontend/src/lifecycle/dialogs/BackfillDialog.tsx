@@ -42,6 +42,7 @@ export default function BackfillDialog() {
   const [maxActive, setMaxActive] = useState(10);
   const [backwards, setBackwards] = useState(false);
   const [conf, setConf] = useState<Record<string, unknown> | undefined>(undefined);
+  const [confValid, setConfValid] = useState(true);
   const caps = useAirflowCapabilities();
   const [latest, setLatest] = useState<boolean | null>(null);
   const [drain, setDrain] = useState(false);
@@ -68,7 +69,7 @@ export default function BackfillDialog() {
   }
   const fromIso = localInputToIso(from);
   const toIso = localInputToIso(to);
-  const valid = !!fromIso && !!toIso && fromIso <= toIso && maxActive >= 1;
+  const valid = !!fromIso && !!toIso && fromIso <= toIso && maxActive >= 1 && confValid;
   const body = (dry_run: boolean): BackfillRequest => ({
     from_date: fromIso ?? "",
     to_date: toIso ?? "",
@@ -182,6 +183,7 @@ export default function BackfillDialog() {
           value={conf}
           validate={(v) => (v && typeof v === "object" && !Array.isArray(v) ? undefined : t("common.mustBeObject"))}
           onChange={(v) => setConf(v as Record<string, unknown> | undefined)}
+          onValidityChange={setConfValid}
         />
         {preview.data ? (
           <>

@@ -39,6 +39,8 @@ export default function TriggerDialog() {
   const [partitionKey, setPartitionKey] = useState("");
   const [note, setNote] = useState("");
   const [unpause, setUnpause] = useState(true);
+  const [confValid, setConfValid] = useState(true);
+  const confInvalid = raw && !confValid;
   const close = useLifecycle((s) => s.closeDialog);
 
   const trigger = useMutation({
@@ -89,7 +91,7 @@ export default function TriggerDialog() {
             size="sm"
             colorPalette="green"
             loading={trigger.isPending}
-            disabled={dateMode === "specific" && !logicalDate}
+            disabled={(dateMode === "specific" && !logicalDate) || confInvalid}
             onClick={submit}
           >
             <LuPlay /> {t("trigger.button")}
@@ -103,7 +105,14 @@ export default function TriggerDialog() {
             {t("trigger.conf")}
           </Text>
           {hasParams ? (
-            <Switch.Root size="sm" checked={raw} onCheckedChange={(e) => setRaw(e.checked)}>
+            <Switch.Root
+              size="sm"
+              checked={raw}
+              onCheckedChange={(e) => {
+                setRaw(e.checked);
+                setConfValid(true); // the form edits the last valid conf
+              }}
+            >
               <Switch.HiddenInput />
               <Switch.Control />
               <Switch.Label>{t("trigger.rawJson")}</Switch.Label>
@@ -118,6 +127,7 @@ export default function TriggerDialog() {
             value={conf}
             validate={(v) => (v && typeof v === "object" && !Array.isArray(v) ? undefined : t("common.mustBeObject"))}
             onChange={(v) => setConf((v as Record<string, unknown> | undefined) ?? {})}
+            onValidityChange={(valid) => setConfValid(valid)}
           />
         ) : (
           <SchemaForm schema={schema} value={conf} onChange={setConf} />

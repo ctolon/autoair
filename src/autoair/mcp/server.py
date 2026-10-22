@@ -1,8 +1,9 @@
 """AutoAir MCP server (FastMCP): lets MCP clients (Claude Desktop / Code, IDE agents)
 discover operators, author / validate / review / save DAG specs and talk to Airflow.
 
-Run over stdio with ``autoair-mcp`` (or ``autoair-mcp --http --port 8765`` for a
-standalone streamable-HTTP endpoint). Inside the AutoAir web app
+Run over stdio with ``autoair-mcp`` (or ``autoair-mcp --http --port 8765`` for an
+unauthenticated loopback-only streamable-HTTP endpoint whose callers get
+``iam.anonymous_roles``). Inside the AutoAir web app
 :func:`autoair.mcp.http.create_mcp_asgi_app` mounts it behind AutoAir's auth.
 
 Design for LLM clients:
@@ -53,6 +54,7 @@ from autoair.codegen import CodegenError, render
 from autoair.gateway import AirflowError, AirflowGateway, DagStatus
 from autoair.iam import model as P
 from autoair.mcp.git_token import mcp_writer, request_git_token
+from autoair.mcp.iam import caller_may
 from autoair.mcp.models import (
     BlueprintList,
     CodeResult,
@@ -85,7 +87,7 @@ from autoair.mcp.models import (
 from autoair.mcp.store import RepositoryStore, SpecStore, store_for
 from autoair.secret_mask import mask, masking
 from autoair.spec import DagSpec
-from autoair.storage.base import AuthError
+from autoair.storage.base import AuthError, ConflictError, spec_etag
 from autoair.storage.render import TargetRepository
 from autoair.validation import Policy, Problem, policy_from_settings
 
@@ -156,6 +158,14 @@ SpecArg = Annotated[
 ]
 ConfirmArg = Annotated[
     bool, Field(description="Must be true to act; false = dry run. Ask the user first.")
+]
+BaseEtagArg = Annotated[
+    str | None,
+    Field(
+        max_length=128,
+        description="Etag of the stored spec this edit started from (current_etag of the "
+        "dry run): needed to overwrite an existing DAG, refused when someone saved since.",
+    ),
 ]
 UseAiArg = Annotated[
     bool,
@@ -387,14 +397,82 @@ def create_mcp_server(
         on_duplicate="error",
     )
     # Same AutoAir permissions as the REST API for every tool/resource (HTTP callers).
-    from autoair.iam.deps import iam_settings
+    from autoair.iam.deps import direct_push_roles, iam_settings
+    from autoair.iam.proposals import (
+        approvers_for,
+        delete_etag,
+        needs_approval,
+        new_proposal,
+    )
     from autoair.mcp.git_token import mcp_tokens_allowed
-    from autoair.mcp.iam import IamMiddleware
+    from autoair.mcp.iam import DEPLOY_WHEN_LIVE, IamMiddleware, governed_write_mode, http_principal
+    from autoair.storage.git import GitTarget
     from autoair.storage.request_token import git_token_required
+
+    def governance() -> tuple[Any, Any]:
+        """``(principal, mode)`` of a confirmed write, decided like the REST deploy and
+        delete routes: ``mode`` ``"pr"`` opens a pull request (PR mode, or a push turned
+        into one by iam.force_pr_without_direct_push), ``"push"`` goes live on the branch,
+        ``None`` (not a git target) goes live. Over stdio ``(None, None)``: no AutoAir
+        principal, the target's own mode."""
+        principal = http_principal()
+        if principal is None:
+            return None, None
+        svc = services()
+        target = getattr(svc, "target", None)
+        mode = governed_write_mode(
+            iam=iam_settings(svc),
+            target_mode=target.mode if isinstance(target, GitTarget) else None,
+            allowed=principal.can_direct_push(direct_push_roles(svc)),
+        )
+        return principal, mode
+
+    def require_live_deploy(tool: str, principal: Any, mode: Any) -> None:
+        """A write that goes live (not a pull request) needs 'deploy', like REST."""
+        if principal is not None and mode != "pr" and not principal.has(DEPLOY_WHEN_LIVE):
+            raise ToolError(
+                f"missing AutoAir permission {DEPLOY_WHEN_LIVE!r} for {tool}: this write goes "
+                "live (it is not a pull request)"
+            )
+
+    def four_eyes(principal: Any, mode: Any, dag_id: str, key: str) -> list[str] | None:
+        """``None`` when no approval is needed (stdio, a pull request, iam.require_approval
+        off), else the approvals that let ``principal`` put version ``key`` live."""
+        svc = services()
+        if principal is None or not needs_approval(iam_settings(svc), mode):
+            return None
+        store = getattr(svc, "proposals", None)
+        if store is None:
+            raise ToolError(
+                "this write needs an approved version (iam.require_approval), but this "
+                "server keeps no proposals: deploy from the AutoAir UI"
+            )
+        return approvers_for(
+            store,
+            dag_id,
+            key,
+            actor=getattr(principal, "user", None),
+            authors=getattr(svc, "version_authors", None),
+        )
+
+    def record_saved(dag_id: str, etags: list[str], user: str | None) -> None:
+        from autoair.api.routers.specs import record_saver
+
+        record_saver(services(), dag_id, etags, user)
+
+    def audit_propose(principal: Any, dag_id: str, **details: Any) -> None:
+        audit = getattr(services(), "audit", None)
+        if audit is not None:
+            audit.record(
+                "propose",
+                user=getattr(principal, "user", None),
+                dag_id=dag_id,
+                via="mcp",
+                **details,
+            )
 
     mcp.add_middleware(
         IamMiddleware(
-            require_approval=lambda: iam_settings(services()).require_approval,
             feature=lambda name: services().settings.feature(name),
             git_token_required=lambda: git_token_required(services()),
             git_token=request_git_token,
@@ -547,21 +625,44 @@ def create_mcp_server(
         spec: SpecArg,
         import_check: Annotated[
             bool,
-            Field(description="Also render and import the DAG in a sandboxed DagBag (slower)."),
+            Field(
+                description="Deprecated and ignored: this tool only checks statically; "
+                "import the DAG with import_check_dag_spec."
+            ),
         ] = False,
     ) -> ValidationOutcome:
-        """Validate a DagSpec: schema, graph, operator params and organisation policy.
+        """Validate a DagSpec statically (nothing runs): schema, graph, operator params and
+        organisation policy.
 
         Each problem has a JSON-pointer `path` into `spec`, the `node_id` and `field`.
-        Fix every `error` before saving.
+        Fix every `error` before saving. To also import the generated DAG (which runs its
+        top-level code in a sandbox) use import_check_dag_spec.
         """
+        svc = services()
+        check = check_spec(spec, catalog=svc.catalog, registry=svc.registry, policy=policy())
+        return ValidationOutcome(
+            ok=check.ok,
+            problems=check.problems,
+            note=(
+                "import_check is deprecated and was ignored: validate_dag_spec only checks "
+                "statically; call import_check_dag_spec to import the DAG"
+                if import_check
+                else None
+            ),
+        )
+
+    @mcp.tool(title="Import-check DAG spec", annotations=RUNS_CODE, tags={"specs"})
+    def import_check_dag_spec(spec: SpecArg) -> ValidationOutcome:
+        """Validate a DagSpec and import the generated DAG file in a sandboxed DagBag, as
+        Airflow would parse it (slower). Importing runs the file's top-level code, so this
+        needs the 'code:execute' permission; validate_dag_spec checks without running."""
         svc = services()
         check = check_spec(
             spec,
             catalog=svc.catalog,
             registry=svc.registry,
             policy=policy(),
-            import_check=import_check,
+            import_check=True,
         )
         return ValidationOutcome(
             ok=check.ok,
@@ -652,14 +753,16 @@ def create_mcp_server(
                 "user agreed to: the save stops when the DAG file changed since.",
             ),
         ] = None,
+        base_etag: BaseEtagArg = None,
     ) -> SaveResult:
         """Validate and save a DagSpec, writing the DAG file to the deploy target (Airflow's
         DAG folder, object storage or git); overwrites an AutoAir DAG with the same dag_id.
 
         Without `confirm=true` this is a dry run that only validates and says whether it
-        would create or overwrite. Ask the user before confirming.
+        would create or overwrite. Ask the user before confirming. Overwriting needs
+        `base_etag`: the `current_etag` the dry run returns.
         """
-        return save_spec(spec, confirm, expected_target_sha)
+        return save_spec(spec, confirm, expected_target_sha, base_etag)
 
     @mcp.tool(title="Preview DAG file", annotations=RUNS_CODE, tags={"specs"})
     def preview_dag_source(
@@ -740,11 +843,13 @@ def create_mcp_server(
         confirm: ConfirmArg = False,
         display_name: Annotated[str | None, Field(max_length=500)] = None,
         tags: Annotated[list[str] | None, Field(max_length=50)] = None,
+        base_etag: BaseEtagArg = None,
     ) -> SaveResult:
         """Validate and save a raw code DAG: a hand-written Airflow DAG file deployed as
         written (syntax, lint, secret, policy and import checks; no spec rules). Updates an
         existing raw code DAG with this dag_id (keeping its team and environments); refuses
-        to replace a visual (spec-backed) DAG. Without `confirm=true` this is a dry run."""
+        to replace a visual (spec-backed) DAG. Without `confirm=true` this is a dry run;
+        updating needs `base_etag` (the dry run's `current_etag`)."""
         try:
             current = spec_store().get(dag_id)
         except Exception:
@@ -764,7 +869,7 @@ def create_mcp_server(
             data["display_name"] = display_name
         if tags is not None:
             data["tags"] = tags
-        return save_spec(data, confirm)
+        return save_spec(data, confirm, base_etag=base_etag)
 
     def preserved_problems(parsed: DagSpec, plan: Any) -> list[SpecProblem] | None:
         """Errors of a patched / kept hand-written file (policy rules on its hand-written
@@ -796,7 +901,10 @@ def create_mcp_server(
         return None if report.ok else with_paths(parsed, report.problems)
 
     def save_spec(
-        spec: Mapping[str, Any], confirm: bool, expected_target_sha: str | None = None
+        spec: Mapping[str, Any],
+        confirm: bool,
+        expected_target_sha: str | None = None,
+        base_etag: str | None = None,
     ) -> SaveResult:
         writes_allowed()
         svc = services()
@@ -815,6 +923,19 @@ def create_mcp_server(
         except Exception:
             stored = None
         exists = stored is not None
+        current_etag = spec_etag(stored) if stored is not None else None
+        from autoair.api.source_plans import SOURCE_CODE_DETAIL, changes_source_code
+
+        if changes_source_code(parsed, stored) and not caller_may(P.CODE_RAW):
+            # Like PUT /specs: new hand-written code in the spec is arbitrary Python that a
+            # later deploy may write as the DAG file.
+            return SaveResult(
+                saved=False,
+                dry_run=not confirm,
+                problems=check.problems,
+                current_etag=current_etag,
+                message=SOURCE_CODE_DETAIL + "; nothing was written",
+            )
         # A raw code DAG replacing its own code (the caller sent all of it): like the REST
         # deploy, the kept file may be replaced without deploy:overwrite_ejected, and only
         # while it is unchanged since AutoAir wrote it (no force over MCP).
@@ -842,17 +963,37 @@ def create_mcp_server(
                 source=summary,
                 message="validation of the DAG file failed; nothing was written",
             )
+        principal, mode = governance()
+        etag = spec_etag(parsed)
         if not confirm:
             verb = "overwrite the existing" if exists else "create a new"
             how = f" ({plan.message})" if plan is not None else ""
+            etag_hint = f" and base_etag={current_etag!r}" if exists else ""
             return SaveResult(
                 saved=False,
                 dry_run=True,
                 problems=check.problems,
                 source=summary,
-                message=f"validation passed; call again with confirm=true to {verb} "
-                f"DAG {parsed.dag_id!r}{how}",
+                current_etag=current_etag,
+                message=f"validation passed; call again with confirm=true{etag_hint} to {verb} "
+                f"DAG {parsed.dag_id!r}{how}{landing_note(principal, mode, parsed.dag_id, etag)}",
             )
+        stale = etag_refusal(parsed.dag_id, current_etag, base_etag, exists)
+        if stale is not None:
+            return SaveResult(
+                saved=False,
+                dry_run=False,
+                problems=check.problems,
+                current_etag=current_etag,
+                message=stale,
+            )
+        approvals = four_eyes(principal, mode, parsed.dag_id, etag)
+        if approvals is not None and not approvals:
+            return propose_save(principal, parsed, etag, base_etag, check.problems)
+        require_live_deploy("save_dag_spec", principal, mode)
+        proposals = getattr(svc, "proposals", None)
+        pending = proposals.get(parsed.dag_id, etag) if approvals and proposals else None
+        saver = pending.author if pending is not None else saving_user(principal)
         source: str | None = None
         if parsed.output_mode == "python":
             source, problems = render_problems(parsed)
@@ -896,13 +1037,28 @@ def create_mcp_server(
                     message="validation of the DAG file failed; nothing was written",
                 )
             store = RepositoryStore(TargetRepository(writer)) if writer is not None else target
+            saved_spec = parsed
             try:
                 if plan is not None and plan.action in ("preserve", "unchanged"):
-                    location = preserve_write(svc, writer, parsed, plan)
+                    location = preserve_write(svc, writer, parsed, plan, base_etag, mode)
+                    saved_spec = plan.stored_spec or parsed
                 elif raw_edit and not custom_store() and (writer or getattr(svc, "target", None)):
-                    location = raw_write(svc, writer, parsed, source)
+                    location = raw_write(svc, writer, parsed, source, base_etag, mode)
+                elif isinstance(store, RepositoryStore):
+                    location = store.save(
+                        parsed, source, base_etag=base_etag, author=saver, mode=mode
+                    )
                 else:
                     location = store.save(parsed, source)
+            except ConflictError as exc:
+                now = exc.current.etag if exc.current is not None else None
+                return SaveResult(
+                    saved=False,
+                    dry_run=False,
+                    problems=check.problems,
+                    current_etag=now,
+                    message=mask(f"{exc}; reload the spec (current etag {now}) and retry"),
+                )
             except AuthError as exc:
                 raise ToolError(_git_failure(parsed.dag_id, exc, raw)) from None
             except Exception as exc:
@@ -912,15 +1068,136 @@ def create_mcp_server(
             if writer is not None:
                 _audit_mcp_write(svc, "deploy", parsed.dag_id, writer, location=str(location))
             location = mask(str(location)) if raw is not None else location
+        if not custom_store():
+            record_saved(parsed.dag_id, [etag, spec_etag(saved_spec)], saver)
+        if pending is not None and proposals is not None:  # the approved proposal is deployed
+            proposals.delete(parsed.dag_id, etag)
         retriever_for(svc).invalidate()
+        as_pr = lands_as_pr(mode)
         return SaveResult(
             saved=True,
             dry_run=False,
             location=location,
             problems=check.problems,
             source=_source_summary(plan) if plan is not None else None,
-            message=f"saved to {location}; Airflow picks it up on the next DAG bundle parse",
+            etag=spec_etag(saved_spec),
+            status="pr_opened" if as_pr else "saved",
+            message=(
+                f"saved to a pull request ({location}); the DAG goes live once it is merged"
+                if as_pr
+                else f"saved to {location}; Airflow picks it up on the next DAG bundle parse"
+            ),
         )
+
+    def saving_user(principal: Any) -> str | None:
+        """Who saves: the HTTP caller (``None``: anonymous), over stdio the local user."""
+        return getattr(principal, "user", None) if principal is not None else current_user()
+
+    def lands_as_pr(mode: Any) -> bool:
+        if mode is not None:
+            return bool(mode == "pr")
+        target = getattr(services(), "target", None)
+        return isinstance(target, GitTarget) and target.mode == "pr"
+
+    def landing_note(principal: Any, mode: Any, dag_id: str, key: str) -> str:
+        """How a confirmed write would land (dry runs)."""
+        if lands_as_pr(mode):
+            return "; it opens a pull request"
+        try:
+            approvals = four_eyes(principal, mode, dag_id, key)
+        except ToolError:
+            return ""
+        if approvals is not None and not approvals:
+            return (
+                "; it needs another user's approval (iam.require_approval), so it is stored "
+                "as a proposal"
+            )
+        return ""
+
+    def propose_save(
+        principal: Any,
+        parsed: DagSpec,
+        etag: str,
+        base_etag: str | None,
+        problems: list[SpecProblem],
+    ) -> SaveResult:
+        """Store ``parsed`` as a deploy proposal (four-eyes), like PUT /specs: nothing is
+        written; another user approves it and someone holding 'deploy' deploys it."""
+        from autoair.api.source_plans import writes_client_code
+
+        svc = services()
+        store = svc.proposals
+        assert store is not None  # four_eyes refused the write without a proposal store
+        existing = store.get(parsed.dag_id, etag)
+        if existing is not None:  # the same version is already proposed: keep its author
+            return SaveResult(
+                saved=False,
+                dry_run=False,
+                problems=problems,
+                status="pending_approval",
+                proposal_etag=etag,
+                message=f"this version is already proposed (by {existing.author or 'unknown'}) "
+                "and awaits an approval by another reviewer in AutoAir",
+            )
+        target = getattr(svc, "target", None)
+        if (
+            not principal.has(P.CODE_RAW)
+            and target is not None
+            and writes_client_code(svc, parsed, target, None)
+        ):
+            return SaveResult(
+                saved=False,
+                dry_run=False,
+                problems=problems,
+                message="this proposal would write the DAG's hand-written Python file, which "
+                "needs the AutoAir permission 'code:raw'; switch the source policy to "
+                "'generate' to propose the generated file instead",
+            )
+        store.save(
+            new_proposal(
+                parsed,
+                etag,
+                author=getattr(principal, "user", None),
+                message=None,
+                base_etag=base_etag,
+                environment=None,
+                force=False,
+                direct_push=None,
+            )
+        )
+        audit_propose(principal, parsed.dag_id, etag=etag, base_etag=base_etag)
+        return SaveResult(
+            saved=False,
+            dry_run=False,
+            problems=problems,
+            status="pending_approval",
+            proposal_etag=etag,
+            message="this version needs an approval by another user (iam.require_approval): "
+            "stored as a deploy proposal; once approved in AutoAir, anyone holding 'deploy' "
+            "can deploy it",
+        )
+
+    def etag_refusal(
+        dag_id: str, current: str | None, base_etag: str | None, exists: bool
+    ) -> str | None:
+        """Why a confirmed save may not go ahead (optimistic locking), else None."""
+        if base_etag:
+            if current is None:
+                return f"DAG {dag_id!r} was deleted since it was loaded; save it without base_etag"
+            if base_etag != current:
+                return (
+                    f"DAG {dag_id!r} was changed by someone else since it was loaded: read it "
+                    f"again (get_dag_spec), merge your edit and save with base_etag={current!r}"
+                )
+            return None
+        settings = getattr(services(), "settings", None)
+        required = settings.storage.require_base_etag if settings is not None else True
+        if exists and required:
+            return (
+                f"DAG {dag_id!r} already exists: to overwrite it, call again with "
+                f"base_etag={current!r} (the etag of the spec your edit started from)"
+            )
+        return None
 
     def source_plan(svc: Any, parsed: DagSpec, target: Any, *, soft: bool = False) -> Any:
         """The source plan of writing ``parsed`` to ``target`` (None: a custom store, an
@@ -944,11 +1221,20 @@ def create_mcp_server(
                 return None
             raise ToolError(mask(f"cannot plan the DAG file of {parsed.dag_id!r}: {exc}")) from None
 
-    def preserve_write(svc: Any, writer: Any, parsed: DagSpec, plan: Any) -> str:
+    def preserve_write(
+        svc: Any,
+        writer: Any,
+        parsed: DagSpec,
+        plan: Any,
+        base_etag: str | None = None,
+        mode: Any = None,
+    ) -> str:
         """Write the patched (or unchanged hand-written) file of a preserve plan."""
         target_obj = writer if writer is not None else svc.target
         name = f"{parsed.dag_id}.py"
-        kwargs: dict[str, Any] = {}
+        kwargs: dict[str, Any] = {"base_etag": base_etag}
+        if mode is not None:
+            kwargs["mode"] = mode
         if plan.expected_sha is not None:
             kwargs["expected"] = {name: plan.expected_sha}
         if plan.hand_written or plan.overwrite:
@@ -959,36 +1245,79 @@ def create_mcp_server(
         result = target_obj.save(plan.stored_spec or parsed, {name: plan.source}, **kwargs)
         return str(result.path)
 
-    def raw_write(svc: Any, writer: Any, parsed: DagSpec, source: str | None) -> str:
+    def raw_write(
+        svc: Any,
+        writer: Any,
+        parsed: DagSpec,
+        source: str | None,
+        base_etag: str | None = None,
+        mode: Any = None,
+    ) -> str:
         """Write a raw code DAG over its own earlier code (``allow_hand_written``)."""
         from autoair.storage import render_dag_files
 
         target_obj = writer if writer is not None else svc.target
         files = render_dag_files(parsed, python_source=source)
-        result = target_obj.save(parsed, files, allow_hand_written=True)
+        extra: dict[str, Any] = {"mode": mode} if mode is not None else {}
+        result = target_obj.save(
+            parsed, files, base_etag=base_etag, allow_hand_written=True, **extra
+        )
         return str(result.path)
 
     @mcp.tool(title="Delete DAG spec", annotations=DESTRUCTIVE, tags={"specs", "write"})
-    def delete_dag_spec(dag_id: str, confirm: ConfirmArg = False) -> DeleteOutcome:
-        """Delete a saved AutoAir DAG (spec and generated file). Requires `confirm=true`."""
+    def delete_dag_spec(
+        dag_id: str, confirm: ConfirmArg = False, base_etag: BaseEtagArg = None
+    ) -> DeleteOutcome:
+        """Delete a saved AutoAir DAG (spec and generated file). Requires `confirm=true` and
+        `base_etag`: the `current_etag` the dry run returns (the version you mean to delete)."""
         writes_allowed()
         target = spec_store()
+        try:
+            stored = target.get(dag_id)
+        except Exception:
+            stored = None
+        current = spec_etag(stored) if stored is not None else None
         if not confirm:
-            exists = target.get(dag_id) is not None
             return DeleteOutcome(
                 deleted=False,
+                current_etag=current,
                 message=(
-                    f"dry run: call again with confirm=true to delete {dag_id!r}"
-                    if exists
+                    f"dry run: call again with confirm=true and base_etag={current!r} to delete "
+                    f"{dag_id!r}"
+                    if current is not None
                     else f"no AutoAir spec for {dag_id!r}"
                 ),
             )
+        refusal = delete_refusal(dag_id, current, base_etag)
+        if refusal is not None:
+            return DeleteOutcome(deleted=False, current_etag=current, message=refusal)
+        principal, mode = governance()
+        key: str | None = None
+        approvals: list[str] | None = None
+        if stored is not None:
+            key = delete_etag(stored)
+            approvals = four_eyes(principal, mode, dag_id, key)
+            if approvals is not None and not approvals:
+                return propose_delete(principal, stored, key, current)
+        require_live_deploy("delete_dag_spec", principal, mode)
         raw = request_git_token()  # storage.git.mcp_request_token (autoair.mcp.git_token)
         with masking(raw):
             writer = mcp_writer(services(), raw)
             store = RepositoryStore(TargetRepository(writer)) if writer is not None else target
             try:
-                deleted = store.delete(dag_id)
+                if isinstance(store, RepositoryStore):
+                    deleted = store.delete(
+                        dag_id, base_etag=base_etag, author=saving_user(principal), mode=mode
+                    )
+                else:
+                    deleted = store.delete(dag_id)
+            except ConflictError as exc:
+                now = exc.current.etag if exc.current is not None else None
+                return DeleteOutcome(
+                    deleted=False,
+                    current_etag=now,
+                    message=mask(f"{exc}; reload the spec (current etag {now}) and retry"),
+                )
             except AuthError as exc:
                 raise ToolError(_git_failure(dag_id, exc, raw)) from None
             except Exception as exc:
@@ -997,10 +1326,75 @@ def create_mcp_server(
                 raise ToolError(mask(f"could not delete {dag_id!r}: {exc}")) from None
             if writer is not None and deleted:
                 _audit_mcp_write(services(), "delete", dag_id, writer)
+        proposals = getattr(services(), "proposals", None)
+        if deleted and approvals and key is not None and proposals is not None:
+            proposals.delete(dag_id, key)  # the approved delete proposal is executed
         retriever_for(services()).invalidate()
+        if not deleted:
+            return DeleteOutcome(deleted=False, message=f"no AutoAir spec for {dag_id!r}")
+        if lands_as_pr(mode):
+            return DeleteOutcome(
+                deleted=True,
+                status="pr_opened",
+                message="a pull request removes the DAG; it stays live until the pull request "
+                "is merged",
+            )
+        return DeleteOutcome(deleted=True, status="deleted", message="deleted")
+
+    def propose_delete(
+        principal: Any, stored: DagSpec, key: str, current: str | None
+    ) -> DeleteOutcome:
+        """Store a delete proposal of ``stored`` (four-eyes), like DELETE /specs/{dag_id}."""
+        store = services().proposals
+        assert store is not None  # four_eyes refused the write without a proposal store
+        dag_id = stored.dag_id
+        existing = store.get(dag_id, key)
+        if existing is None:
+            store.save(
+                new_proposal(
+                    stored,
+                    key,
+                    author=getattr(principal, "user", None),
+                    message=None,
+                    base_etag=current,
+                    environment=None,
+                    force=False,
+                    direct_push=None,
+                    action="delete",
+                )
+            )
+            audit_propose(principal, dag_id, etag=key, base_etag=current, proposal="delete")
+        by = f" (by {existing.author or 'unknown'})" if existing is not None else ""
         return DeleteOutcome(
-            deleted=deleted, message="deleted" if deleted else f"no AutoAir spec for {dag_id!r}"
+            deleted=False,
+            current_etag=current,
+            status="pending_approval",
+            proposal_etag=key,
+            message=f"deleting this DAG needs an approval by another user "
+            f"(iam.require_approval): stored as a delete proposal{by}; once approved in "
+            "AutoAir, anyone holding 'deploy' and 'spec:delete' can execute it",
         )
+
+    def delete_refusal(dag_id: str, current: str | None, base_etag: str | None) -> str | None:
+        """Why a confirmed delete may not go ahead (optimistic locking), else None."""
+        if current is None:
+            return None  # nothing to delete: reported as such
+        if base_etag:
+            if base_etag != current:
+                return (
+                    f"DAG {dag_id!r} was changed by someone else since it was loaded: read it "
+                    f"again (get_dag_spec) and delete with base_etag={current!r} only if it "
+                    "should still go"
+                )
+            return None
+        settings = getattr(services(), "settings", None)
+        required = settings.storage.require_base_etag if settings is not None else True
+        if required:
+            return (
+                f"deleting DAG {dag_id!r} needs base_etag={current!r} (the etag of the spec "
+                "you mean to delete): call again with it"
+            )
+        return None
 
     # ------------------------------------------------------------ operator templates
 
@@ -1228,7 +1622,7 @@ def create_mcp_server(
             )
         return DeleteOutcome(deleted=deleted, message="deleted" if deleted else "already gone")
 
-    @mcp.tool(title="Import a Python DAG file", annotations=LLM_TOOL, tags={"specs"})
+    @mcp.tool(title="Import a Python DAG file", annotations=RUNS_CODE, tags={"specs"})
     def import_python_dag(
         source: Annotated[
             str,
@@ -1567,10 +1961,14 @@ def create_mcp_server(
         tags: Annotated[list[str], Field(max_length=10)] = [],  # noqa: B006
     ) -> MemoryOutcome:
         """Store a convention/preference the user stated, so future sessions (and AutoAir's
-        own AI features) follow it. Never store secrets. Duplicates are ignored."""
+        own AI features) follow it. Never store secrets. Duplicates are ignored. Global and
+        team memories need admin:config; anyone may store their own (scope user)."""
         svc = services()
         user = current_user()
         owner = {"global": None, "team": svc.settings.team, "user": user}[scope]
+        if scope != "user" and not caller_may(P.ADMIN_CONFIG):
+            # the IAM middleware refuses this already; kept for servers built without it
+            return MemoryOutcome(ok=False, message=f"a {scope} memory needs admin:config")
         try:
             item = memory_for(svc).add(
                 text, scope=scope, owner=owner, kind=kind, tags=tags, created_by=user
@@ -1592,8 +1990,14 @@ def create_mcp_server(
     def forget(
         memory_id: Annotated[str, Field(description="id from list_memories.")],
     ) -> MemoryOutcome:
-        """Delete a memory (e.g. an outdated convention)."""
-        deleted = memory_for(services()).delete(memory_id)
+        """Delete a memory (e.g. an outdated convention): your own personal memories; global
+        and team memories need admin:config."""
+        try:
+            deleted = memory_for(services()).delete(
+                memory_id, user=current_user(), admin=caller_may(P.ADMIN_CONFIG)
+            )
+        except MemoryError as exc:
+            return MemoryOutcome(ok=False, message=str(exc))
         return MemoryOutcome(ok=deleted, message="deleted" if deleted else "no such memory")
 
     # ------------------------------------------------------------------ resources
@@ -1927,7 +2331,7 @@ def create_mcp_server(
         return (
             f"The AutoAir DAG {dag_id!r} fails"
             + (f" with:\n```\n{error}\n```\n" if error else ".\n")
-            + "1. get_dag_spec and validate_dag_spec(import_check=true).\n"
+            + "1. get_dag_spec, validate_dag_spec and import_check_dag_spec.\n"
             "2. Find the root cause (one mistake often causes several errors); read the "
             "operator schema of the failing node with get_operator_schema.\n"
             "3. Fix it with apply_spec_patch until validation and the import check pass "
@@ -2036,19 +2440,25 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--path", default="/mcp", help="HTTP endpoint path (default /mcp)")
     args = parser.parse_args(argv)
 
-    server = create_mcp_server(_build_default_services)
     if args.http:
-        server.run(
-            "http",
-            show_banner=False,
+        # No authentication: loopback only, anonymous callers (iam.anonymous_roles) and
+        # Host/Origin checks against DNS rebinding, like `autoair mcp-serve --http --no-auth`.
+        from autoair.net.loopback import refuse_public_bind
+
+        refused = refuse_public_bind(args.host, "autoair mcp --http")
+        if refused:
+            parser.exit(2, refused + "\n")
+        import uvicorn
+
+        from autoair.mcp.http import create_local_http_app
+
+        uvicorn.run(
+            create_local_http_app(_build_default_services(), path=args.path),
             host=args.host,
             port=args.port,
-            path=args.path,
-            stateless_http=True,
-            json_response=True,
         )
     else:
-        server.run("stdio", show_banner=False)
+        create_mcp_server(_build_default_services).run("stdio", show_banner=False)
 
 
 if __name__ == "__main__":  # pragma: no cover

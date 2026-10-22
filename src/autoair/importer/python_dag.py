@@ -591,16 +591,27 @@ def _callable_value(
     return {"$type": "function", "source": source}
 
 
-def _xcom_or_value(value: Any, ids: dict[str, str], warnings: list[str], task_id: str) -> Any:
-    kind = type(value).__name__
-    if kind in ("PlainXComArg", "XComArg"):
+def _with_xcoms(value: Any, ids: dict[str, str]) -> tuple[bool, Any]:
+    """``_jsonable`` that also converts XCom references nested in lists and dicts
+    (``env={"ROWS": t.output}``)."""
+    if type(value).__name__ in ("PlainXComArg", "XComArg"):
         op: Any = getattr(value, "operator", None)
         key = getattr(value, "key", None)
         ref: dict[str, Any] = {"$type": "xcom", "node": ids.get(op.task_id, op.task_id)}
         if key and key != "return_value":
             ref["key"] = key
-        return ref
-    ok, converted = _jsonable(value)
+        return True, ref
+    if isinstance(value, (list, tuple)):
+        items = [_with_xcoms(v, ids) for v in value]
+        return all(ok for ok, _ in items), [v for _, v in items]
+    if isinstance(value, dict) and all(isinstance(k, str) for k in value):
+        pairs = {k: _with_xcoms(v, ids) for k, v in value.items()}
+        return all(ok for ok, _ in pairs.values()), {k: v for k, (_, v) in pairs.items()}
+    return _jsonable(value)
+
+
+def _xcom_or_value(value: Any, ids: dict[str, str], warnings: list[str], task_id: str) -> Any:
+    ok, converted = _with_xcoms(value, ids)
     if not ok:
         warnings.append(f"{task_id}: value of type {type(value).__name__} dropped")
         return None
@@ -664,6 +675,212 @@ def _same(a: Any, b: Any) -> bool:
         return False
 
 
+def _edge_label(dag: Any, upstream: Any, downstream: Any) -> str | None:
+    """The ``Label`` of an edge (``a >> Label("x") >> b``), kept in ``dag.edge_info``. An
+    edge from or to a task group is recorded under the group's join id
+    (``<group>.downstream_join_id`` / ``<group>.upstream_join_id``)."""
+    sources = [upstream.task_id] + [
+        getattr(g, "downstream_join_id", None) for g in _group_chain(upstream)
+    ]
+    targets = [downstream.task_id] + [
+        getattr(g, "upstream_join_id", None) for g in _group_chain(downstream)
+    ]
+    for src in sources:
+        for dst in targets:
+            if not src or not dst:
+                continue
+            try:
+                info = dag.get_edge_info(src, dst)
+            except (AttributeError, KeyError, TypeError):
+                return None
+            label = info.get("label") if isinstance(info, dict) else None
+            if isinstance(label, str) and label:
+                return label[:200]
+    return None
+
+
+def _passed_kwargs(t: Any, is_mapped: bool) -> dict[str, Any] | None:
+    """The constructor arguments ``t`` was created with (``partial()`` kwargs for a mapped
+    task): what the code passes plus values merged in from ``default_args``. None when the
+    operator does not record them."""
+    if is_mapped:
+        return dict(getattr(t, "partial_kwargs", {}) or {})
+    passed = getattr(t, "_BaseOperator__init_kwargs", None)
+    return dict(passed) if isinstance(passed, dict) else None
+
+
+def _seconds_of(value: Any, what: str, warnings: list[str], *, positive: bool) -> float | None:
+    """A duration argument (``timedelta`` or seconds) as seconds for the spec, or None with a
+    warning when the generated ``datetime.timedelta(seconds=...)`` could not hold it."""
+    import math
+
+    from autoair.codegen.context import MAX_TIMEDELTA_SECONDS
+
+    if hasattr(value, "total_seconds"):
+        seconds = float(value.total_seconds())
+    elif isinstance(value, (int, float)) and not isinstance(value, bool):
+        seconds = float(value)
+    else:
+        warnings.append(f"{what}: value of type {type(value).__name__} dropped")
+        return None
+    if not math.isfinite(seconds) or seconds < 0 or (positive and seconds == 0):
+        warnings.append(f"{what}: duration {value!r} is not a valid timeout/delay; not imported")
+        return None
+    if seconds > MAX_TIMEDELTA_SECONDS:
+        # timedelta.max as a float rounds up past the limit: keep whole seconds.
+        seconds = float(min(math.floor(seconds), MAX_TIMEDELTA_SECONDS))
+    return seconds
+
+
+# BaseOperator arguments the spec has no field for (anything else is imported or structural).
+_UNSUPPORTED_TASK_ARGS = (
+    "email",
+    "email_on_retry",
+    "email_on_failure",
+    "max_retry_delay",
+    "do_xcom_push",
+    "wait_for_downstream",
+    "wait_for_past_depends_before_skipping",
+    "ignore_first_depends_on_past",
+    "start_date",
+    "end_date",
+    "run_as_user",
+    "resources",
+    "sla",
+    "max_active_tis_per_dag",
+    "params",
+    "doc",
+    "doc_json",
+    "doc_yaml",
+    "doc_rst",
+    "pre_execute",
+    "post_execute",
+    "render_template_as_native_obj",
+    "logger_name",
+    "allow_nested_operators",
+    "retry_policy",
+)
+_TASK_CALLBACKS = (
+    "on_execute_callback",
+    "on_failure_callback",
+    "on_retry_callback",
+    "on_skipped_callback",
+    "on_success_callback",
+)
+
+
+def _task_settings(
+    t: Any, dag: Any, passed: dict[str, Any] | None, warnings: list[str]
+) -> dict[str, Any]:
+    """Task-level BaseOperator settings of ``t`` as spec node fields.
+
+    With recorded constructor arguments an argument counts as written when it was passed and
+    differs from the DAG's ``default_args`` (``retries=0`` against ``default_args`` retries=3
+    is an override); without them, an attribute differing from the default."""
+    import datetime
+
+    from airflow.configuration import conf as _conf
+
+    da = dict(getattr(dag, "default_args", None) or {})
+    missing = object()
+    retry_default = _conf.getfloat("core", "default_task_retry_delay", fallback=300.0)
+    # Airflow's own defaults: a value equal to one is not an argument the code wrote, unless
+    # it overrides default_args. (A mapped task's partial() kwargs list every default.)
+    airflow_defaults: dict[str, Any] = {
+        "pool": "default_pool",
+        "queue": "default",
+        "owner": "airflow",
+        "priority_weight": 1,
+        "retries": 0,
+        "pool_slots": 1,
+        "depends_on_past": False,
+        "task_display_name": t.task_id,
+        "retry_delay": datetime.timedelta(seconds=retry_default),
+        "do_xcom_push": True,
+        "email_on_retry": True,
+        "email_on_failure": True,
+        "wait_for_downstream": False,
+        "wait_for_past_depends_before_skipping": False,
+        "ignore_first_depends_on_past": False,
+        "allow_nested_operators": True,
+    }
+    dag_params = getattr(dag, "params", None)
+    with contextlib.suppress(KeyError, TypeError, ValueError):
+        airflow_defaults["params"] = {k: dag_params[k] for k in dag_params} if dag_params else {}
+
+    def written(attr: str) -> tuple[bool, Any]:
+        if passed is not None:
+            if attr not in passed:
+                return False, None
+            val = passed[attr]
+        else:
+            val = getattr(t, attr, None)
+        if attr in da:
+            return not _same(val, da[attr]), val
+        return val is not None and not _same(val, airflow_defaults.get(attr, missing)), val
+
+    out: dict[str, Any] = {}
+    for attr in _COMMON:
+        val = getattr(t, attr, None)
+        if attr in da:
+            # An explicit value equal to Airflow's default still overrides default_args.
+            if val is None or _same(val, da[attr]):
+                continue
+        else:
+            if val is None or _same(val, airflow_defaults.get(attr, missing)):
+                continue
+            if attr == "weight_rule" and str(val).lower().endswith("downstream"):
+                continue
+        ok, conv = _jsonable(val)
+        if ok:
+            out[attr] = str(conv) if attr == "weight_rule" else conv
+    for attr, field in (
+        ("retry_delay", "retry_delay_seconds"),
+        ("execution_timeout", "execution_timeout_seconds"),
+    ):
+        is_written, val = written(attr)
+        if not is_written or val is None:
+            continue
+        seconds = _seconds_of(
+            val, f"{t.task_id}: {attr}", warnings, positive=attr == "execution_timeout"
+        )
+        if seconds is not None:
+            out[field] = seconds
+    is_written, val = written("executor")
+    if is_written and isinstance(val, str) and val:
+        out["executor"] = val
+    is_written, val = written("executor_config")
+    if is_written and val:
+        ok, conv = _jsonable(val)
+        if ok and isinstance(conv, dict):
+            out["executor_config"] = conv
+        else:
+            warnings.append(f"{t.task_id}: executor_config is not plain data; not imported")
+    is_written, val = written("retry_exponential_backoff")
+    if is_written and val:
+        if isinstance(val, bool):
+            # Before Airflow 3.2 the flag means backoff with base 2; from 3.2 the argument
+            # is the multiplier itself (True == 1).
+            from autoair._compat import airflow_version
+
+            out["retry_exponential_backoff"] = (
+                2.0 if (airflow_version() or (3, 2, 0)) < (3, 2, 0) else 1.0
+            )
+        elif isinstance(val, (int, float)):
+            out["retry_exponential_backoff"] = float(val)
+    inlets = [_asset(i) for i in getattr(t, "inlets", []) or [] if type(i).__name__ == "Asset"]
+    if inlets:
+        out["inlets"] = inlets
+    if passed is not None:
+        for attr in _UNSUPPORTED_TASK_ARGS:
+            is_written, val = written(attr)
+            if is_written and val not in (None, {}, [], ""):
+                warnings.append(f"{t.task_id}: argument {attr} is not imported")
+        if any(written(cb)[0] and written(cb)[1] for cb in _TASK_CALLBACKS):
+            warnings.append(f"{t.task_id}: task callbacks are not imported")
+    return out
+
+
 def _operator_params(
     t: Any,
     op_cls: type | None,
@@ -686,20 +903,19 @@ def _operator_params(
     is_mapped = op_cls is not type(t)
     expanded: set[str] = set()
     if is_mapped:
-        passed: dict[str, Any] | None = dict(getattr(t, "partial_kwargs", {}) or {})
         value = getattr(getattr(t, "expand_input", None), "value", None)
         if isinstance(value, dict):
             expanded = set(value)
-    else:
-        passed = getattr(t, "_BaseOperator__init_kwargs", None)
-        passed = dict(passed) if isinstance(passed, dict) else None
+    passed = _passed_kwargs(t, is_mapped)
     dag_defaults = dict(getattr(dag, "default_args", None) or {})
     names: dict[str, Any] = {}  # name -> signature default
     for klass in op_cls.__mro__ if op_cls is not None else ():
         if klass is BaseOperator or not isinstance(klass, type):
             break
         if not issubclass(klass, BaseOperator):
-            break
+            # A mixin listed before the operator base (``class Op(Mixin, BashOperator)``):
+            # the operator classes after it still define constructor arguments.
+            continue
         init = klass.__dict__.get("__init__")
         if init is None:
             continue
@@ -734,6 +950,32 @@ def _operator_params(
         if converted is not None:
             op_params[name] = converted
     return op_params
+
+
+# JSON Schema keyword of a Param -> DagParam field.
+_PARAM_SCHEMA_KEYS = {
+    "type": "type",
+    "title": "title",
+    "description": "description",
+    "description_md": "description_md",
+    "section": "section",
+    "format": "format",
+    "enum": "enum",
+    "values_display": "values_display",
+    "examples": "examples",
+    "minimum": "minimum",
+    "maximum": "maximum",
+    "minLength": "min_length",
+    "maxLength": "max_length",
+    "pattern": "pattern",
+    "items": "items",
+    "const": "const",
+}
+# DAG arguments imported only when they differ from Airflow's default.
+_DAG_DEFAULTS: dict[str, Any] = {
+    "fail_fast": False,
+    "render_template_as_native_obj": False,
+}
 
 
 def _convert_dag(dag: Any, warnings: list[str]) -> dict[str, Any]:
@@ -849,38 +1091,19 @@ def _convert_dag(dag: Any, warnings: list[str]) -> dict[str, Any]:
                 op_cls = None  # deserialized mapped operator: no class to inspect
             node["kind"] = "operator"
             node["operator"] = f"{module}.{real_cls_name}"
+            if module.startswith("unusual_prefix_"):  # the DagBag's name for the DAG file
+                warnings.append(
+                    f"{t.task_id}: operator class {real_cls_name} is defined in the DAG file; "
+                    "move it to an importable module (the generated DAG cannot import it)"
+                )
             node["params"] = _operator_params(t, op_cls, dag, base_params, ids, warnings)
         if mapping is not None:
             node["mapping"] = mapping
         # A MappedOperator exposes the same task attributes (from partial()).
-        for attr in _COMMON:
-            val = getattr(t, attr, None)
-            default = dag.default_args.get(attr) if dag.default_args else None
-            if val is None or val == default:
-                continue
-            if attr == "pool" and val == "default_pool":
-                continue
-            if attr == "queue" and val == "default":
-                continue
-            if attr == "owner" and val == "airflow":
-                continue
-            if attr in ("priority_weight",) and val == 1:
-                continue
-            if attr == "weight_rule" and str(val).lower().endswith("downstream"):
-                continue
-            if attr == "retries" and val == 0:
-                continue
-            if attr == "pool_slots" and val == 1:
-                continue
-            if attr == "depends_on_past" and val is False:
-                continue
-            if attr == "task_display_name" and val == t.task_id:
-                continue
-            ok, conv = _jsonable(val)
-            if ok:
-                node[attr] = str(conv) if attr == "weight_rule" else conv
+        node.update(_task_settings(t, dag, _passed_kwargs(t, is_mapped), warnings))
         tr = str(getattr(t, "trigger_rule", "all_success")).split(".")[-1].lower()
-        if tr != "all_success":
+        teardown_rule = getattr(t, "is_teardown", False) and tr == "all_done_setup_success"
+        if tr != "all_success" and not teardown_rule:  # as_teardown() sets the latter
             node["trigger_rule"] = tr
         if getattr(t, "is_setup", False):
             node["is_setup"] = True
@@ -901,7 +1124,11 @@ def _convert_dag(dag: Any, warnings: list[str]) -> dict[str, Any]:
             if pair[0] == pair[1] or pair in seen_edges:
                 continue  # inside one blueprint step, or a step's many roots/leaves
             seen_edges.add(pair)
-            edges.append({"source": pair[0], "target": pair[1]})
+            edge: dict[str, Any] = {"source": pair[0], "target": pair[1]}
+            label = _edge_label(dag, dag.get_task(up), t)
+            if label:
+                edge["label"] = label
+            edges.append(edge)
 
     spec: dict[str, Any] = {
         "dag_id": dag.dag_id,
@@ -922,6 +1149,28 @@ def _convert_dag(dag: Any, warnings: list[str]) -> dict[str, Any]:
         val = getattr(dag, attr, None)
         if val not in (None, "") and val != conf_defaults.get(attr):
             spec[attr] = val
+    for attr in (
+        "is_paused_upon_creation",
+        "fail_fast",
+        "max_consecutive_failed_dag_runs",
+        "render_template_as_native_obj",
+    ):
+        val = getattr(dag, attr, None)
+        if attr == "max_consecutive_failed_dag_runs":
+            default: Any = _conf.getint(
+                "core", "max_consecutive_failed_dag_runs_per_dag", fallback=0
+            )
+        else:
+            default = _DAG_DEFAULTS.get(attr)
+        if isinstance(val, (bool, int)) and val != default:
+            spec[attr] = val
+    owner_links = getattr(dag, "owner_links", None)
+    if isinstance(owner_links, dict) and owner_links:
+        spec["owner_links"] = {str(k): str(v) for k, v in owner_links.items()}
+    if getattr(dag, "dagrun_timeout", None) is not None:
+        seconds = _seconds_of(dag.dagrun_timeout, "dagrun_timeout", warnings, positive=True)
+        if seconds is not None:
+            spec["dagrun_timeout_seconds"] = seconds
     # DAG timezone: from start_date's tzinfo (Airflow's own rule); dates become wall clock.
     tz = getattr(getattr(dag, "timezone", None), "name", None)
     if tz and tz not in ("UTC", "Etc/UTC"):
@@ -941,23 +1190,16 @@ def _convert_dag(dag: Any, warnings: list[str]) -> dict[str, Any]:
         raw = dag.params.get_param(name) if hasattr(dag.params, "get_param") else param
         default = getattr(raw, "value", raw)
         ok, default = _jsonable(default)
+        if not ok:
+            warnings.append(f"param {name}: default of type {type(default).__name__} dropped")
         schema = dict(getattr(raw, "schema", {}) or {})
+        # Param(description=...) is kept on the Param, not in its schema.
+        if getattr(raw, "description", None) and "description" not in schema:
+            schema["description"] = raw.description
         param_entry: dict[str, Any] = {"default": default if ok else None}
-        for key in (
-            "type",
-            "title",
-            "description",
-            "format",
-            "enum",
-            "minimum",
-            "maximum",
-            "examples",
-            "section",
-            "description_md",
-            "values_display",
-        ):
+        for key, field in _PARAM_SCHEMA_KEYS.items():
             if key in schema:
-                param_entry[key] = schema[key]
+                param_entry[field] = schema[key]
         dag_params[name] = param_entry
     if dag_params:
         spec["params"] = dag_params
@@ -978,8 +1220,12 @@ def _convert_dag(dag: Any, warnings: list[str]) -> dict[str, Any]:
         ("retry_delay", "retry_delay_seconds"),
         ("execution_timeout", "execution_timeout_seconds"),
     ):
-        if key in da and hasattr(da[key], "total_seconds"):
-            default_args[field] = da[key].total_seconds()
+        if da.get(key) is not None:
+            seconds = _seconds_of(
+                da[key], f"default_args {key}", warnings, positive=key == "execution_timeout"
+            )
+            if seconds is not None:
+                default_args[field] = seconds
     if default_args:
         spec["default_args"] = default_args
     if getattr(dag, "deadline", None):

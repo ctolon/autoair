@@ -1,6 +1,9 @@
 // @vitest-environment jsdom
-import { fireEvent, screen, within } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+const sdk = vi.hoisted(() => ({ getToolCallArguments: vi.fn() }));
+vi.mock("../api/gen/sdk.gen", () => sdk);
 
 import type { ChatMessage, ToolApprovalView } from "../api/gen/types.gen";
 import en from "../i18n/locales/en/ai.json";
@@ -75,7 +78,76 @@ describe("approval helpers", () => {
   });
 });
 
+const DIGEST = "a".repeat(64);
+
 describe("ToolApprovalCard", () => {
+  beforeEach(() => sdk.getToolCallArguments.mockReset());
+
+  it("binds an approval to the digest of the arguments shown", () => {
+    const calls = approval({ calls: [{ id: "t1", tool: "run", kind: "execute", arguments_sha256: DIGEST }] }).calls;
+    expect(decisionsFor(calls, { t1: { approved: true, reason: "" } })).toEqual([
+      { id: "t1", approved: true, arguments_sha256: DIGEST },
+    ]);
+    // a denial runs nothing: no digest needed
+    expect(decisionsFor(calls, { t1: { approved: false, reason: "" } })).toEqual([{ id: "t1", approved: false }]);
+    expect(en.approval.kind.execute).toBeTruthy();
+    expect(tr.approval.kind.execute).toBeTruthy();
+  });
+
+  it("marks cut arguments and loads the full ones before approving", async () => {
+    sdk.getToolCallArguments.mockResolvedValue({
+      data: {
+        id: "t1",
+        tool: "import_python_dag",
+        arguments: { source: "x".repeat(900) + "TAIL" },
+        arguments_sha256: DIGEST,
+      },
+    });
+    const cut = approval({
+      calls: [
+        {
+          id: "t1",
+          tool: "import_python_dag",
+          kind: "execute",
+          arguments: { source: "x".repeat(100) + "…" },
+          truncated: true,
+          omitted_chars: 804,
+          arguments_sha256: DIGEST,
+        },
+      ],
+    });
+    renderWithProviders(<ToolApprovalCard approval={cut} onSubmit={vi.fn()} />);
+    const marker = screen.getByTestId("tool-approval-truncated");
+    expect(marker.textContent).toContain("804");
+    expect(screen.getByTestId("tool-approval-arguments").textContent).not.toContain("TAIL");
+    fireEvent.click(screen.getByTestId("tool-approval-show-full"));
+    await waitFor(() => expect(screen.getByTestId("tool-approval-arguments").textContent).toContain("TAIL"));
+    expect(sdk.getToolCallArguments).toHaveBeenCalledWith(
+      expect.objectContaining({ path: { approval_id: "ap1", call_id: "t1" } }),
+    );
+    expect(screen.queryByTestId("tool-approval-mismatch")).toBeNull();
+    fireEvent.click(screen.getByTestId("tool-approval-show-short"));
+    expect(screen.getByTestId("tool-approval-arguments").textContent).not.toContain("TAIL");
+  });
+
+  it("warns when the full arguments do not match the approval, and survives a failed load", async () => {
+    sdk.getToolCallArguments.mockResolvedValueOnce({
+      data: { id: "t1", tool: "t", arguments: {}, arguments_sha256: "b".repeat(64) },
+    });
+    const cut = approval({
+      calls: [{ id: "t1", tool: "t", arguments: {}, truncated: true, arguments_sha256: DIGEST }],
+    });
+    const view = renderWithProviders(<ToolApprovalCard approval={cut} onSubmit={vi.fn()} />);
+    fireEvent.click(screen.getByTestId("tool-approval-show-full"));
+    await waitFor(() => expect(screen.getByTestId("tool-approval-mismatch")).toBeTruthy());
+    view.unmount();
+    sdk.getToolCallArguments.mockRejectedValueOnce(new Error("404"));
+    renderWithProviders(<ToolApprovalCard approval={cut} onSubmit={vi.fn()} />);
+    fireEvent.click(screen.getByTestId("tool-approval-show-full"));
+    await waitFor(() => expect(screen.getByText(en.approval.fullFailed)).toBeTruthy());
+    expect(screen.getByTestId("tool-approval-card")).toBeTruthy();
+  });
+
   it("sends one decision per call after the user chose", () => {
     const onSubmit = vi.fn();
     renderWithProviders(<ToolApprovalCard approval={approval()} onSubmit={onSubmit} />);

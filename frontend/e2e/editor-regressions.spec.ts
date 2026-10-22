@@ -11,7 +11,7 @@ import { DAG_ID, SPEC, prepare } from "./visual/fixtures";
  * against a throw-away `autoair serve --no-auth` (Airflow REST mocked by the fixtures):
  *
  *   npx vite build --mode standalone --outDir /tmp/aa-dist
- *   autoair serve --no-auth --port 8880 --dags-folder /tmp/aa-dags &
+ *   AUTOAIR_IAM__ANONYMOUS_ROLES='["Admin"]' autoair serve --no-auth --port 8880 --dags-folder /tmp/aa-dags &
  *   AUTOAIR_API_PORT=8880 npx vite preview --mode standalone --outDir /tmp/aa-dist --port 8881 &
  *   AUTOAIR_E2E_URL=http://127.0.0.1:8881 npx playwright test e2e/editor-regressions.spec.ts
  */

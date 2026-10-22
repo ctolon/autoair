@@ -69,8 +69,9 @@ def test_codegen_validate_deploy_roundtrip(tmp_path, simple_spec_data):
     assert client.get("/api/specs/simple").json()["spec"]["nodes"][1]["params"] == {
         "bash_command": "echo hi"
     }
-    response = client.delete("/api/specs/simple")
-    assert response.json() == {"deleted": True}
+    response = client.delete("/api/specs/simple", headers={"If-Match": res["etag"]})
+    assert response.json()["deleted"] is True
+    assert response.json()["status"] == "deleted"
 
 
 def test_deploy_refuses_invalid_spec(tmp_path, simple_spec_data):

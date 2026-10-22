@@ -130,7 +130,8 @@ MATRIX: list[tuple[str, str, Any, tuple[str, ...]]] = [
     ("GET", "/api/vcs/status", None, (P.SPEC_READ,)),
     ("POST", "/api/vcs/diff", {}, (P.SPEC_READ,)),
     ("POST", "/api/vcs/x/promote", {}, (P.PROMOTE,)),
-    ("POST", "/api/runner/test-task", {}, (P.RUN_TEST,)),
+    ("POST", "/api/runner/test-task", {}, (P.RUN_TEST, P.CODE_EXECUTE)),
+    ("POST", "/api/runner/test-dag", {}, (P.RUN_TEST, P.CODE_EXECUTE)),
     ("POST", "/api/collab/x/ticket", None, (P.SPEC_WRITE,)),
     ("GET", "/api/deploy-target", None, (P.BUILDER_USE,)),
     ("PUT", "/api/deploy-target", {}, (P.ADMIN_DEPLOY_TARGET,)),
@@ -247,22 +248,51 @@ def test_expired_token_is_rejected_before_asking_airflow(tmp_path: Path) -> None
 
 
 # --------------------------------------------------------------------------- default behaviour
-def test_default_strategy_keeps_pre_iam_behaviour(tmp_path: Path) -> None:
-    """No IAM config: standalone users may do everything they could before, except the
-    new direct push (deny by default)."""
+def test_default_strategy_standalone_grants_only_viewer(tmp_path: Path) -> None:
+    """No IAM config, standalone: Airflow's DAG/configuration permissions cannot be checked,
+    so an Airflow Viewer (or anyone with a valid token) gets the Authenticated baseline plus
+    Viewer — never the Author/Deployer/Admin roles of unverifiable checks."""
     s = Settings(dags_folder=tmp_path, subfolder="", ai={"enabled": False}, airflow_url=AIRFLOW)  # type: ignore[call-arg]
     verifier = TokenVerifier(AIRFLOW, transport=httpx2.MockTransport(airflow_ok))
     c = make_client(build_services(s, bearer_passthrough(verifier)))
-    headers = {"Authorization": f"Bearer {jwt(sub='bob')}"}
+    headers = {"Authorization": f"Bearer {jwt(sub='bob', role='Viewer')}"}
     me = c.get("/api/me", headers=headers).json()
     assert me["user"] == "bob"
     assert me["auth"] == "bearer"
     assert me["strategies"] == ["airflow_permissions"]
-    assert set(me["permissions"]) == P.ALL_PERMISSIONS - {P.DEPLOY_DIRECT_PUSH}
+    assert me["roles"] == ["Authenticated", "Viewer"]
+    assert set(me["permissions"]) == set(P.BUILTIN_ROLES[P.AUTHENTICATED]) | set(
+        P.BUILTIN_ROLES[P.VIEWER]
+    )
+    for perm in (P.ADMIN_CONFIG, P.SPEC_WRITE, P.DEPLOY, P.CODE_EXECUTE, P.ADMIN_DEPLOY_TARGET):
+        assert perm not in me["permissions"], perm
     assert me["deploy"]["direct_push"] is False
-    deployed = c.put("/api/specs/simple", json={"spec": SIMPLE}, headers=headers)
-    assert deployed.status_code == 200, deployed.text
-    assert deployed.json()["deployed"] is True
+    denied = c.put("/api/specs/simple", json={"spec": SIMPLE}, headers=headers)
+    assert denied.status_code == 403, denied.text
+    assert c.put("/api/deploy-target", json={}, headers=headers).status_code == 403
+
+
+def test_standalone_role_mapping_still_grants_configured_roles(tmp_path: Path) -> None:
+    """The verified token's role claim (role_mapping), alone or combined with
+    airflow_permissions, still grants what the mapping says."""
+    for strategies in (["role_mapping"], ["airflow_permissions", "role_mapping"]):
+        s = Settings(  # type: ignore[call-arg]
+            dags_folder=tmp_path / "-".join(strategies),
+            subfolder="",
+            ai={"enabled": False},
+            airflow_url=AIRFLOW,
+            iam=IamSettings(strategies=strategies),  # type: ignore[arg-type]
+        )
+        verifier = TokenVerifier(AIRFLOW, transport=httpx2.MockTransport(airflow_ok))
+        c = make_client(build_services(s, bearer_passthrough(verifier)))
+        admin = {"Authorization": f"Bearer {jwt(sub='ada', role='Admin')}"}
+        viewer = {"Authorization": f"Bearer {jwt(sub='vic', role='Viewer')}"}
+        assert P.ADMIN_CONFIG in c.get("/api/me", headers=admin).json()["permissions"]
+        perms = set(c.get("/api/me", headers=viewer).json()["permissions"])
+        assert P.SPEC_READ in perms
+        assert not perms & {P.SPEC_WRITE, P.DEPLOY, P.ADMIN_CONFIG, P.CODE_EXECUTE}, strategies
+        deployed = c.put("/api/specs/simple", json={"spec": SIMPLE}, headers=admin)
+        assert deployed.status_code == 200, deployed.text
 
 
 def current_user(request: Request) -> str:
@@ -456,12 +486,14 @@ def test_push_mode_can_force_prs(tmp_path: Path, git_repo: Path) -> None:
     forced = deploy(c, "Deployer")
     assert forced.status_code == 200, forced.text
     assert forced.json()["branch"] == "autoair/simple"
+    etag = forced.json()["etag"]  # later saves overwrite it: they send the loaded etag
     # authors only ever open PRs, even when the PR is forced on them
-    assert deploy(c, "Author").json()["branch"] == "autoair/simple"
-    admin = deploy(c, "Admin")
-    assert admin.json()["branch"] == "main"
+    assert deploy(c, "Author", base_etag=etag).json()["branch"] == "autoair/simple"
+    admin = deploy(c, "Admin")  # main has no spec yet: a create needs no etag
+    assert admin.json()["branch"] == "main", admin.text
     # anybody may ask for a PR instead of a push
-    assert deploy(c, "Admin", direct_push=False).json()["branch"] == "autoair/simple"
+    pr = deploy(c, "Admin", direct_push=False, base_etag=etag)
+    assert pr.json()["branch"] == "autoair/simple", pr.text
 
 
 def test_push_mode_default_needs_deploy(tmp_path: Path, git_repo: Path) -> None:
@@ -672,3 +704,23 @@ def test_login_can_be_disabled(tmp_path: Path) -> None:
     c = make_client(make_services(tmp_path, iam={"login_enabled": False}))
     assert c.post("/api/auth/login", json={"username": "a", "password": "b"}).status_code == 404
     assert c.get("/api/me", headers=as_role("Viewer")).json()["login_enabled"] is False
+
+
+def test_test_runs_need_code_execute(tmp_path: Path) -> None:
+    """Test runs execute the DAG's Python on the server: run:test alone is not enough."""
+    services = make_services(
+        tmp_path,
+        iam={
+            "roles": {
+                "Tester": ["builder:use", "spec:read", "run:test"],
+                "Runner": ["builder:use", "spec:read", "run:test", "code:execute"],
+            }
+        },
+    )
+    c = make_client(services)
+    for path in ("/api/runner/test-task", "/api/runner/test-dag"):
+        denied = c.post(path, json={}, headers=as_role("Tester"))
+        assert denied.status_code == 403, (path, denied.text)
+        assert "code:execute" in denied.json()["detail"]
+        allowed = c.post(path, json={}, headers=as_role("Runner"))
+        assert allowed.status_code == 422, (path, allowed.text)  # past the gate: invalid body

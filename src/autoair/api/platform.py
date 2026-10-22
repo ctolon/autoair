@@ -278,13 +278,17 @@ def install_api(api: FastAPI, services: Services) -> None:
 
 
 def install_app(app: FastAPI, services: Services) -> None:
-    """Middlewares of the outer app (standalone/local server; plugin mode: limits only)."""
+    """Middlewares of the outer app (standalone/local server; plugin mode: CSRF and limits)."""
     from autoair.iam.sso import CsrfMiddleware
 
     settings = services.settings
     server = settings.server
     standalone = settings.mode != "plugin"
-    cookie_sessions = settings.mode == "standalone" and settings.sso.enabled
+    # Plugin mode: Airflow >= 3.1 authenticates requests without a bearer header by its
+    # ``_token`` cookie, which is SameSite=Lax like the standalone SSO cookie.
+    cookie_sessions = settings.mode == "plugin" or (
+        settings.mode == "standalone" and settings.sso.enabled
+    )
     if cookie_sessions and settings.sso.require_csrf_header:
         app.add_middleware(CsrfMiddleware, allowed_origins=list(settings.cors_origins))
     if settings.cors_origins:

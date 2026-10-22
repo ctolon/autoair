@@ -50,6 +50,7 @@ from autoair.storage.base import (
     check_overwrite,
     is_owned,
     main_file,
+    parse_state,
     serialize_spec,
     sha256_text,
     source_sha,
@@ -429,7 +430,10 @@ class GitTarget:
                 base = self.provider.head(target)
                 if base is None:
                     raise StorageError(f"branch {target!r} does not exist")
-                self.provider.reset_branch(branch, base)
+                try:
+                    self.provider.reset_branch(branch, base, expect=head)
+                except ConflictError:
+                    raise _Retry from None  # pushed to meanwhile: decide again
                 return base, None
             return head, pr
         base = self.provider.head(target)
@@ -469,7 +473,15 @@ class GitTarget:
         current = self._read_spec(head, dag_id) if head else None
         if base_etag is not None and (current is None or current.etag != base_etag):
             raise ConflictError(current)
-        state = self._read_state(head, dag_id) if head else None
+        state = (
+            parse_state(
+                self._read(head, self._state_path(dag_id)),
+                self._describe(branch, self._state_path(dag_id)),
+                dag_id,
+            )
+            if head
+            else None
+        )
         recorded = state.files if state else {}
         hashes = {name: sha256_text(content) for name, content in files.items()}
         changes: dict[str, str | None] = {}
@@ -488,6 +500,7 @@ class GitTarget:
                 hashes[name],
                 force,
                 expected.get(name),
+                unknown=state is None,
             )
             changes[path] = content
         olds = list(recorded) or ([f"{dag_id}.py"] if spec is None else [])
@@ -509,7 +522,14 @@ class GitTarget:
             if not is_owned(existing):
                 log.warning("leaving %s in place: it is not owned by AutoAir", path)
                 continue
-            check_overwrite(self._describe(branch, path), existing, recorded.get(name), None, force)
+            check_overwrite(
+                self._describe(branch, path),
+                existing,
+                recorded.get(name),
+                None,
+                force,
+                unknown=state is None,
+            )
             changes[path] = None
         if hand_written is not None:
             kept = hand_written

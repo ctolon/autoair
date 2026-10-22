@@ -36,8 +36,11 @@ sits behind authentication.
 | `autoair mcp-serve --http` | `http://<host>:8766/mcp/` | Bearer token verified against Airflow (`--no-auth` for local experiments) |
 | `autoair mcp-serve`, `autoair mcp`, `autoair-mcp` | stdio | The local user; Airflow calls use `AUTOAIR_AIRFLOW_TOKEN` |
 
-`autoair mcp --http` and `autoair-mcp --http` also exist for local, **unauthenticated** use; prefer
-`autoair mcp-serve --http` for anything shared. `AUTOAIR_FEATURES__MCP=false` unmounts `/mcp` from the
+`autoair mcp --http` and `autoair-mcp --http` also exist for local, **unauthenticated** use: like
+`mcp-serve --http --no-auth` they refuse a non-loopback `--host`, answer only requests whose `Host`
+(and `Origin`, when sent) names a loopback address or the host of `server.public_url`, and give every
+caller `iam.anonymous_roles` (default Viewer, read-only). Prefer `autoair mcp-serve --http` for
+anything shared. `AUTOAIR_FEATURES__MCP=false` unmounts `/mcp` from the
 server and the AI service.
 
 ```bash
@@ -157,11 +160,12 @@ limits (paging with `offset` → `next_offset`, log tails, truncated code).
 | Group | Tool | AutoAir permission |
 |---|---|---|
 | Catalog | `search_knowledge` (ranked search over operators, guides, saved DAGs, templates), `list_operators`, `get_operator_schema`, `get_dagspec_schema`, `list_node_kinds`, `list_notifiers` | `builder:use` |
-| Specs | `validate_dag_spec` (+ `code:execute` with `import_check`), `apply_spec_patch` (JSON-patch edits addressed by node id), `generate_code` | `builder:use` |
+| Specs | `validate_dag_spec` (static checks only; nothing runs), `apply_spec_patch` (JSON-patch edits addressed by node id), `generate_code` | `builder:use` |
+| Specs | `import_check_dag_spec`: validate and import the generated DAG in a sandboxed DagBag (runs its top-level code) | `builder:use` + `code:execute` |
 | Specs | `list_dags` (filter `document_type`: `spec` or `raw`), `get_dag_spec`, `get_dag_code` (the DAG file: a raw code DAG's code or a visual DAG's generated file, with `document_type`) | `spec:read` |
-| Specs | `save_dag_spec` (confirm) | `spec:write` + `deploy` (+ `code:raw` for a spec with `raw_code`) |
-| Specs | `save_raw_dag_code` (confirm): save a [raw code DAG](/docs/user-guide/code-mode#raw-code-dags); updates an existing raw code DAG (keeping its team and environments) without `deploy:overwrite_ejected`, as long as its file is unchanged since AutoAir wrote it (MCP has no overwrite, so a file changed outside AutoAir is refused); refuses to replace a visual DAG | `spec:write` + `deploy` + `code:raw` |
-| Specs | `delete_dag_spec` (confirm) | `spec:delete` |
+| Specs | `save_dag_spec` (confirm) | `spec:write`; + `deploy` when the save goes live (not a pull request or a proposal); + `code:raw` for a spec with `raw_code` or new or changed `source.code` |
+| Specs | `save_raw_dag_code` (confirm): save a [raw code DAG](/docs/user-guide/code-mode#raw-code-dags); updates an existing raw code DAG (keeping its team and environments) without `deploy:overwrite_ejected`, as long as its file is unchanged since AutoAir wrote it (MCP has no overwrite, so a file changed outside AutoAir is refused); refuses to replace a visual DAG | `spec:write` + `code:raw`; + `deploy` when the save goes live |
+| Specs | `delete_dag_spec` (confirm) | `spec:delete`; + `deploy` when the delete goes live |
 | Specs | `import_python_dag` | `spec:write` + `code:execute` |
 | [Operator templates](/docs/user-guide/operator-templates#mcp) | `list_operator_templates`, `get_operator_template` (a version and the history) | `builder:use` (+ `features.templates`) |
 | [Operator templates](/docs/user-guide/operator-templates#mcp) | `save_operator_template` (confirm; validated, needs the `etag` as `if_match` to publish a new version), `delete_operator_template` (confirm) | `template:write` (+ `features.templates`) |
@@ -171,7 +175,7 @@ limits (paging with `offset` → `next_offset`, log tails, truncated code).
 | Analysis | `optimize_dag_parameters` (from run history) | `ai:use` + `airflow:read` |
 | Server-side LLM | `generate_dag_from_prompt`, `fix_dag_spec`, `write_code` | `ai:use` |
 | Research | `search_installed_docs`, `read_source`, `list_installed_packages`, `get_package_info`, `fetch_doc` (online research only) | `ai:use` |
-| Memory | `list_memories`, `remember`, `forget` | `ai:use` |
+| Memory | `list_memories`, `remember`, `forget` | `ai:use`; `remember` with scope `global` or `team` + `admin:config` |
 | [Knowledge base](/docs/ai/knowledge-base#mcp) | `kb_search`, `kb_sources`, `kb_status` (work without the AI extra) | `ai:use` (+ `features.kb`) |
 
 The server-side LLM tools need AutoAir's own model ([Providers](/docs/ai/providers)); the analysis tools
@@ -202,8 +206,19 @@ documents, including admin overrides), `autoair://memory`. DAG and template reso
 - **Confirmation.** `save_dag_spec`, `save_raw_dag_code`, `delete_dag_spec` and `trigger_dag` act only with
   `confirm=true`; without it they dry-run and describe what would happen.
   `AUTOAIR_AI__MCP__ALLOW_WRITES=false` refuses them entirely (read-only server).
-- **Four-eyes approval.** When `iam.require_approval` is on, `save_dag_spec` and `save_raw_dag_code` are refused (*deploys need
-  an approved version*): agents propose changes through the UI and PR flow instead.
+- **Etags.** Overwriting a DAG with `save_dag_spec` / `save_raw_dag_code` and deleting one with
+  `delete_dag_spec` need `base_etag`, the `current_etag` the dry run returns; without it, or when
+  the DAG changed since, nothing happens and the result carries `current_etag`
+  (`storage.require_base_etag=false` drops the requirement).
+- **Governance.** Confirmed writes over HTTP follow the REST deploy and delete rules. On a PR-mode
+  git target, or when `iam.force_pr_without_direct_push` applies to the caller, they open a pull
+  request (`status: pr_opened`). With `iam.require_approval` on, a write that would go live without
+  another user's approval of that exact version is stored as a deploy or delete proposal
+  (`status: pending_approval`, `proposal_etag`), as over REST; reviewers approve it in the AutoAir
+  UI, and calling the tool again afterwards puts it live. Nobody's approval of a version they saved
+  or proposed themselves counts. Over stdio writes land in the target's own mode.
+- **Import check.** `validate_dag_spec` never runs code (its old `import_check` argument is ignored
+  and the result's `note` says so); `import_check_dag_spec` imports the DAG and needs `code:execute`.
 - **Airflow data.** Airflow calls use the caller's credentials. Connection and variable values and run
   `conf` are never returned.
 - **Code execution.** `import_python_dag` executes the file in an isolated subprocess without
@@ -219,6 +234,12 @@ scopes: `global`, `team` (the server's `team` setting) and `user` (the JWT's `pr
 `username` or `sub` over HTTP; `AUTOAIR_MCP_USER` or the OS user over stdio). Text that looks like a
 credential is rejected. Memories are also injected into the prompts of AutoAir's own AI features, so
 "warehouse loads use `snowflake_prod`" applies in the editor and in every MCP client.
+
+Global and team memories reach every user's prompts, so over HTTP only callers with `admin:config`
+may add them (`remember` with `scope` `global` or `team`) or delete them (`forget`). Everyone with
+`ai:use` may add personal memories (`scope: user`) and delete their own; `forget` refuses another
+user's memory. Over stdio the local user manages every scope. AutoAir's own assistants ask for your
+[approval](/docs/ai/tool-approval) before every `remember` call.
 
 ## MCP client: external servers for AutoAir's agents
 
@@ -248,6 +269,7 @@ Per server:
 | `command`, `args`, `env` | – | stdio only; `env` values are secrets |
 | `headers` | `{}` | HTTP headers such as `Authorization` (secrets) |
 | `tools` | `["*"]` | Tools agents may call (fnmatch over the server's tool names) |
+| `read_only_tools` | `[]` | Tools you vouch only read (fnmatch): they run without [approval](/docs/ai/tool-approval) and the admin assistant may use them. Every other tool needs approval |
 | `timeout_seconds` | 30 | One tool call |
 | `enabled` | `true` | Offer this server |
 | `agents` | `["troubleshoot"]` | Agents that may attach it: `troubleshoot`, `developer`, `admin` |
@@ -261,6 +283,7 @@ ai:
         url: https://grafana.example.com/mcp
         headers: { Authorization: "Bearer ..." }
         tools: ["query_*", "get_dashboard"]
+        read_only_tools: ["query_*", "get_dashboard"]
         agents: [troubleshoot]
       - name: runbooks
         transport: stdio
@@ -297,13 +320,22 @@ Tool results are truncated to `max_output_chars` (12000), scrubbed by the guardr
 untrusted data. Each call is bounded by the server's `timeout_seconds`. TLS options come from the
 outbound TLS configuration (client name `mcp`).
 
+**Server annotations are not trusted.** A server's own `readOnlyHint` is a claim of that server: a
+compromised or malicious server could mark a destructive tool read-only to skip the approval. So an
+external tool counts as read-only only when an administrator lists it in the server's
+`read_only_tools`; every other call waits for the user's [approval](/docs/ai/tool-approval).
+**Test connection** in the **MCP servers** tab shows which tools are read-only (`read_only`) and,
+for information, which ones the server marks read-only (`hinted_read_only`). Upgrading from 0.2.2:
+tools that ran without approval because the server marked them `readOnlyHint: true` now wait until
+you add them to `read_only_tools`.
+
 ### Which agents attach external tools
 
 | Agent (`agents` value) | Admin panel label | How servers are attached | Which tools |
 |---|---|---|---|
 | `troubleshoot` | **Troubleshooting** | The servers the user selects in the troubleshooting dialog (`ai.troubleshoot.allow_external_mcp`) | The server's `tools` allow-list, minus the tools the user leaves out |
 | `developer` | **Developer** | Every chat turn of the developer assistant (`ai.assistants.developer.allow_external_mcp`) | The server's `tools` allow-list, then the caller's role in `ai.guardrails.tool_allowlist` and `ai.assistants.developer.tools` |
-| `admin` | **Admin** | Every chat turn of the admin assistant (`ai.assistants.admin.allow_external_mcp`) | The server's `tools` allow-list, then `ai.assistants.admin.tools`, and only tools the server marks read-only |
+| `admin` | **Admin** | Every chat turn of the admin assistant (`ai.assistants.admin.allow_external_mcp`) | The server's `tools` allow-list, then `ai.assistants.admin.tools`, and only tools listed in the server's `read_only_tools` |
 
 ### Chat assistants
 
@@ -326,9 +358,9 @@ scoped to them at the start of each turn and disconnect after the answer. The to
   server's tools for the admin assistant (`GET /api/ai/mcp/servers/{name}/tools?agent=admin`) needs
   `ai:admin` or `admin:panel`; for troubleshooting it needs `airflow:read`.
 - **Read-only admin assistant.** The admin assistant's own tools are read-only, and so are the
-  external tools it gets: only tools the server marks read-only (MCP tool annotation
-  `readOnlyHint: true`) are attached. A status note reports the others:
-  `<server>: N tool(s) not attached (not marked read-only; the admin assistant only uses read-only tools)`.
+  external tools it gets: only tools listed in the server's `read_only_tools` are attached (the
+  server's `readOnlyHint` is not trusted). A status note reports the others:
+  `<server>: N tool(s) not attached (not in the server's read_only_tools; the admin assistant only uses read-only tools)`.
 - Unreachable servers do not fail the turn: a status note reads
   `MCP server '<name>' unavailable: <error>`.
 

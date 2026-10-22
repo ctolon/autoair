@@ -38,11 +38,36 @@ export function setToken(token: string | null): void {
   }
 }
 
+/** Prefix of `autoair local`'s per-run tokens (`LOCAL_TOKEN_PREFIX` in src/autoair/server.py). */
+const LOCAL_TOKEN_PREFIX = "autoair-local-";
+
+/**
+ * `autoair local --open` opens the UI with `#token=<per-run token>`: keep it for this tab and
+ * drop it from the address bar (a fragment never reaches a server or its logs). Only tokens of
+ * that shape are taken, so a crafted link cannot sign the user in with someone else's token.
+ */
+export function adoptFragmentToken(): void {
+  try {
+    const params = new URLSearchParams(window.location.hash.replace(/^#/, ""));
+    const token = params.get("token");
+    if (token === null) return;
+    if (token.startsWith(LOCAL_TOKEN_PREFIX)) setToken(token);
+    params.delete("token");
+    const url = new URL(window.location.href);
+    const rest = params.toString();
+    url.hash = rest ? `#${rest}` : "";
+    window.history.replaceState(window.history.state, "", url.toString());
+  } catch {
+    /* sandboxed / non-standard location */
+  }
+}
+
 let configured = false;
 
 export function configureClient(): void {
   if (configured) return;
   configured = true;
+  adoptFragmentToken();
   // Inside Airflow the `_token` cookie authenticates us; standalone uses a bearer token.
   client.setConfig({ baseUrl: resolveApiBase(), credentials: "include", throwOnError: true });
   client.interceptors.request.use((request) => {

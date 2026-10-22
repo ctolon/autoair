@@ -561,7 +561,11 @@ class Settings(AutoAirBaseSettings):
         "[api_auth] jwt_secret; set it when standalone runs several replicas).",
     )
     collab_ticket_ttl: int = Field(
-        default=600, ge=10, le=86400, description="Seconds a collaboration ticket is valid."
+        default=60,
+        ge=10,
+        le=86400,
+        description="Seconds a collaboration ticket is valid. A ticket opens one connection "
+        "(single use); the browser asks for a new one before every (re)connect.",
     )
     collab_max_rooms: int = Field(default=500, ge=1, description="Live editing rooms per process.")
     collab: CollabSettings = Field(

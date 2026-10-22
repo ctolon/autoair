@@ -141,7 +141,7 @@ autoair ai-serve --host 0.0.0.0 --port 8790
 
 ### `autoair validator-serve`
 
-Run the validator service: DagBag import checks of untrusted DAG code in sandboxed worker processes (`POST /v1/check`, `/health`, `/ready`, `/metrics`). Point the main server at it with `AUTOAIR_VALIDATOR__URL=http://HOST:PORT`; both sides share an HMAC key, the password of the Airflow connection `validator.secret_conn_id`, given to this service as `AIRFLOW_CONN_<CONN_ID>`. See [Validator service](/docs/deployment/validator-service).
+Run the validator service: DagBag import checks and task/DAG test runs of untrusted DAG code in sandboxed worker processes (`POST /v1/check`, `POST /v1/run`, `/health`, `/ready`, `/metrics`). Point the main server at it with `AUTOAIR_VALIDATOR__URL=http://HOST:PORT`; both sides share an HMAC key, the password of the Airflow connection `validator.secret_conn_id`, given to this service as `AIRFLOW_CONN_<CONN_ID>`. See [Validator service](/docs/deployment/validator-service).
 
 | Option | Default | Description |
 |---|---|---|

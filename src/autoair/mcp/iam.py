@@ -18,6 +18,14 @@ reads it from the ``X-AutoAir-Git-Token`` header of the MCP request
 (:mod:`autoair.mcp.git_token`); with it off such a header is refused. When the git target
 *requires* a request token, :data:`GIT_WRITE_TOOLS` without one are refused over every
 transport (stdio has no header) — dry runs (``confirm=false``) still answer.
+
+Deploy governance (:mod:`autoair.iam.proposals`): a confirmed MCP write over HTTP follows the
+same rules as the REST deploy and delete routes (:func:`governed_write_mode` and the
+four-eyes helpers). It opens a pull request where REST would (the target is in PR mode, or
+``iam.force_pr_without_direct_push`` turns the caller's pushes into pull requests); a write
+that goes live needs ``deploy``, and with ``iam.require_approval`` another user's approval of
+that exact version, else the tool stores a deploy (or delete) proposal like REST does. Over
+stdio no AutoAir principal applies and writes land in the target's own mode.
 """
 
 from __future__ import annotations
@@ -29,6 +37,8 @@ from fastmcp.exceptions import ResourceError, ToolError
 from fastmcp.server.middleware import CallNext, Middleware, MiddlewareContext
 
 from autoair.iam import model as P
+from autoair.iam.config import IamSettings
+from autoair.iam.proposals import GitWriteMode, write_mode
 from autoair.secret_mask import masking
 
 PRINCIPAL_ATTR = "autoair_principal"
@@ -45,6 +55,8 @@ TOOL_PERMISSIONS: Mapping[str, tuple[str, ...]] = {
     "list_blueprints": (P.BUILDER_USE,),
     "search_knowledge": (P.BUILDER_USE,),
     "validate_dag_spec": (P.BUILDER_USE,),
+    # renders and imports (executes) the generated DAG in a sandboxed DagBag
+    "import_check_dag_spec": (P.BUILDER_USE, P.CODE_EXECUTE),
     "apply_spec_patch": (P.BUILDER_USE,),
     "generate_code": (P.BUILDER_USE,),
     # deterministic rules (no LLM unless use_ai, which adds ai:use / features.ai: _extra)
@@ -53,12 +65,15 @@ TOOL_PERMISSIONS: Mapping[str, tuple[str, ...]] = {
     # stored specs
     "list_dags": (P.SPEC_READ,),
     "get_dag_spec": (P.SPEC_READ,),
-    "save_dag_spec": (P.SPEC_WRITE, P.DEPLOY),
+    # Like PUT /specs: a pull request or a proposal needs spec:write only; a write that goes
+    # live also needs deploy (checked in the tool: DEPLOY_WHEN_LIVE).
+    "save_dag_spec": (P.SPEC_WRITE,),
     # what save_dag_spec would write (REST: POST /specs/{dag_id}/source-preview); preserve
     # previews import the DAG file, which the plan refuses without code:execute
     "preview_dag_source": (P.SPEC_WRITE,),
     "get_dag_code": (P.SPEC_READ,),
-    "save_raw_dag_code": (P.SPEC_WRITE, P.DEPLOY, P.CODE_RAW),
+    "save_raw_dag_code": (P.SPEC_WRITE, P.CODE_RAW),
+    # like DELETE /specs/{dag_id}: going live also needs deploy (DEPLOY_WHEN_LIVE)
     "delete_dag_spec": (P.SPEC_DELETE,),
     "import_python_dag": (P.SPEC_WRITE, P.CODE_EXECUTE),
     # operator templates (the REST API's /templates routes)
@@ -100,6 +115,10 @@ _UNKNOWN = (P.ADMIN_CONFIG,)
 
 #: Tools that write to the deploy target (refused when git writes need a request token).
 GIT_WRITE_TOOLS = frozenset({"save_dag_spec", "save_raw_dag_code", "delete_dag_spec"})
+
+#: Permission a write of :data:`GIT_WRITE_TOOLS` needs on top of ``TOOL_PERMISSIONS`` when
+#: it goes live (not a pull request, not a proposal), checked by the tool.
+DEPLOY_WHEN_LIVE = P.DEPLOY
 
 #: Tools whose rules run without AI; their ``use_ai=true`` LLM pass needs AI.
 RULE_TOOLS = frozenset({"review_dag_spec", "scan_dag_leaks"})
@@ -184,13 +203,25 @@ def _raw_spec(tool: str, args: Mapping[str, Any]) -> bool:
 
 def _extra(tool: str, arguments: Mapping[str, Any] | None) -> tuple[str, ...]:
     args = arguments or {}
-    if tool == "validate_dag_spec" and args.get("import_check"):
-        return (P.CODE_EXECUTE,)  # imports (executes) the generated DAG
     if _raw_spec(tool, args):
         return (P.CODE_RAW,)  # arbitrary Python, like save_raw_dag_code
     if tool in RULE_TOOLS and args.get("use_ai"):
         return (P.AI_USE,)
+    if tool == "remember" and args.get("scope", "user") != "user":
+        # global and team memories reach every user's prompts (forget checks the stored
+        # memory's scope and owner in the tool: see caller_may)
+        return (P.ADMIN_CONFIG,)
     return ()
+
+
+def caller_may(permission: str) -> bool:
+    """Whether the MCP caller holds ``permission``: over stdio (a local process of the user
+    who started it, no AutoAir principal) always; over HTTP per the resolved principal."""
+    principal = _principal()
+    if principal is _LOCAL:
+        return True
+    has = getattr(principal, "has", None)
+    return bool(callable(has) and has(permission))
 
 
 def required_features(tool: str, arguments: Mapping[str, Any] | None = None) -> tuple[str, ...]:
@@ -199,6 +230,23 @@ def required_features(tool: str, arguments: Mapping[str, Any] | None = None) -> 
     if tool in RULE_TOOLS and args.get("use_ai"):
         extra = (*extra, *_AI)
     return tuple(TOOL_FEATURES.get(tool, ())) + extra
+
+
+def governed_write_mode(
+    *, iam: IamSettings, target_mode: GitWriteMode | None, allowed: bool
+) -> GitWriteMode | None:
+    """How a confirmed MCP write lands, like the REST deploy and delete routes
+    (:func:`~autoair.iam.proposals.write_mode`, no ``direct_push`` request flag):
+    ``"pr"``, ``"push"`` or ``None`` (not a git target). ``allowed``: the caller holds
+    ``deploy:direct_push``."""
+    return write_mode(target_mode, direct_push=None, allowed=allowed, iam=iam)
+
+
+def http_principal() -> Any:
+    """The HTTP caller's principal; ``None`` over stdio (a local process of the user who
+    started it: no AutoAir governance applies)."""
+    principal = _principal()
+    return None if principal is _LOCAL else principal
 
 
 def required_permissions(tool: str, arguments: Mapping[str, Any] | None = None) -> tuple[str, ...]:
@@ -211,7 +259,6 @@ class IamMiddleware(Middleware):
     def __init__(
         self,
         *,
-        require_approval: Callable[[], bool] = lambda: False,
         feature: Callable[[str], bool] = lambda _name: True,
         git_token_required: Callable[[], bool] = lambda: False,
         git_token: Callable[[], str | None] = lambda: None,
@@ -224,9 +271,6 @@ class IamMiddleware(Middleware):
         # The X-AutoAir-Git-Token header of the MCP request and storage.git.mcp_request_token.
         self.git_token = git_token
         self.git_token_allowed = git_token_allowed
-        # With four-eyes approval, going live needs a reviewed version: MCP saves are refused
-        # (agents propose through the UI/PR flow instead). Read lazily (settings may change).
-        self.require_approval = require_approval
 
     async def on_call_tool(
         self, context: MiddlewareContext[Any], call_next: CallNext[Any, Any]
@@ -266,11 +310,6 @@ class IamMiddleware(Middleware):
             missing = [p for p in wanted if not principal.has(p)]
             if missing:
                 raise ToolError(f"missing AutoAir permission {missing[0]!r} for {name}")
-            if name in ("save_dag_spec", "save_raw_dag_code") and self.require_approval():
-                raise ToolError(
-                    "deploys need an approved version (iam.require_approval): "
-                    "propose the change in the AutoAir UI for review"
-                )
         with masking(token):  # logs of the tool call never show the token
             return await call_next(context)
 
@@ -302,11 +341,14 @@ class IamMiddleware(Middleware):
 
 
 __all__ = [
+    "DEPLOY_WHEN_LIVE",
     "GIT_WRITE_TOOLS",
     "RAW_CODE_FEATURES",
     "TOOL_FEATURES",
     "TOOL_PERMISSIONS",
     "IamMiddleware",
+    "governed_write_mode",
+    "http_principal",
     "required_features",
     "required_permissions",
 ]

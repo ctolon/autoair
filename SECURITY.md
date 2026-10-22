@@ -7,8 +7,8 @@ next release.
 
 | Version | Supported |
 | --- | --- |
-| 0.1.x | yes |
-| < 0.1 | no |
+| 0.2.x | yes |
+| < 0.2 | no |
 
 ## Reporting a vulnerability
 

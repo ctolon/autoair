@@ -67,8 +67,11 @@ write, the deploy stops and asks you to preview again.
 Preserve needs the `code:execute` permission, because the round trip runs the file's code (in
 the same sandbox as an import). When the written file is the hand-written code sent with the
 spec (step 1, after an import or a code-mode edit), the deploy also needs `code:raw`: that file
-is arbitrary Python, like a raw code DAG. Without it the deploy stops and offers to switch the
-DAG to **Generate**.
+is arbitrary Python, like a raw code DAG. Saving a spec whose hand-written code (`source.code`)
+is new or differs from the stored one needs `code:raw` whatever the source policy, because a
+later deploy may write that code: without it the save is refused (403) before anything is
+written, and applying edited code in the code mode is refused too. To deploy the generated file
+instead, save the DAG with the source policy **Generate** and without the hand-written code.
 
 A deploy of a DAG whose file is unchanged writes the hand-written file as it is. The first
 deploy of an imported DAG therefore writes exactly the file you imported.

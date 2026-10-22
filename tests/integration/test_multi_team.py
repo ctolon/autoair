@@ -49,8 +49,9 @@ def test_team_targets_and_prefix_policy(tmp_path):
     listed = [s["dag_id"] for s in client.get("/api/specs").json()]
     assert listed == ["shared_dag", "team_a_orders"]
     assert client.get("/api/specs/team_a_orders").json()["spec"]["team"] == "team_a"
-    response = client.delete("/api/specs/team_a_orders")
-    assert response.json() == {"deleted": True}
+    response = client.delete("/api/specs/team_a_orders", headers={"If-Match": ok["etag"]})
+    assert response.json()["deleted"] is True
+    assert response.json()["status"] == "deleted"
     assert not (team_dir / "team_a_orders.py").exists()
 
 

@@ -194,3 +194,89 @@ def test_a_reply_for_another_check_is_refused(tmp_path):
         assert result.dag_ids == []
         assert "invalid reply" in result.import_errors[0]
         assert p.submit(DAG.format(dag_id="after_forged"), "after.py", 60).ok
+
+
+# --------------------------------------------------------------------------- local sandbox
+
+PROC_PROBE = """
+import os
+from airflow.sdk import DAG
+
+with open(f"/proc/{os.getppid()}/environ", "rb") as fh:
+    fh.read()
+
+with DAG("proc_probe", schedule=None):
+    pass
+"""
+
+CFG_PROBE = """
+from airflow.configuration import conf
+from airflow.sdk import DAG
+
+fernet = conf.get("core", "fernet_key", fallback="")
+with DAG("cfg_" + ("fernet" if fernet else "nofernet"), schedule=None):
+    pass
+"""
+
+
+@pytest.fixture
+def local_pool(tmp_path, monkeypatch):
+    """The local pool's sandbox (no validator) over an AIRFLOW_HOME whose airflow.cfg holds
+    a Fernet key."""
+    from autoair.validation.pool import local_pool_sandbox
+
+    home = tmp_path / "airflow"
+    (home / "dags").mkdir(parents=True)
+    (home / "airflow.cfg").write_text(
+        f"[core]\nfernet_key = {'k' * 43}=\ndags_folder = {home / 'dags'}\n", encoding="utf-8"
+    )
+    monkeypatch.setenv("AIRFLOW_HOME", str(home))
+    monkeypatch.setenv("AIRFLOW_CONFIG", str(home / "airflow.cfg"))
+    monkeypatch.delenv("AIRFLOW__CORE__FERNET_KEY", raising=False)
+    sandbox = local_pool_sandbox()
+    assert sandbox.profile == "run"
+    assert sandbox.sanitize_airflow_config
+    assert sandbox.process_isolation == "off"
+    p = DagBagPool(1, sandbox=sandbox)
+    yield p, home
+    p.shutdown()
+
+
+def test_local_pool_denies_reading_the_parents_proc_entries(local_pool):
+    pool, _ = local_pool
+    probe = pool.submit(PROC_PROBE, "proc_probe.py", 60)
+    assert not probe.ok
+    assert "not allowed during an AutoAir test run" in probe.import_errors[0]
+    normal = pool.submit(DAG.format(dag_id="normal_after_probe"), "normal.py", 60)
+    assert normal.ok, normal.import_errors
+    assert normal.dag_ids == ["normal_after_probe"]
+
+
+def test_local_pool_reads_a_secret_free_airflow_cfg(local_pool):
+    pool, home = local_pool
+    result = pool.submit(CFG_PROBE, "cfg_probe.py", 60)
+    assert result.ok, result.import_errors
+    assert result.dag_ids == ["cfg_nofernet"]
+    # the DAG folder is read-only: a check cannot plant a file Airflow would parse
+    plant = pool.submit(
+        MARK + f"open({str(home / 'dags' / 'planted.py')!r}, 'w').write('x = 1')\n",
+        "plant.py",
+        60,
+    )
+    assert not plant.ok
+    assert not (home / "dags" / "planted.py").exists()
+    # files elsewhere still import (a deployed DAG checked by path)
+    deployed = home / "dags" / "deployed.py"
+    deployed.write_text(DAG.format(dag_id="deployed"), encoding="utf-8")
+    assert pool.submit_file(deployed, 60).ok
+
+
+def test_singleton_pool_is_sandboxed():
+    shutdown_pool()
+    try:
+        pool = get_pool()
+        assert pool.sandbox is not None
+        assert pool.sandbox.profile == "run"
+        assert dagbag_check.check_source(DAG.format(dag_id="boxed"), "boxed.py").ok
+    finally:
+        shutdown_pool()

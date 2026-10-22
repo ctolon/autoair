@@ -29,11 +29,15 @@ uv sync
 uv run autoair local --open
 ```
 
-The command prints where it listens and where it writes:
+The command prints where it writes and a sign-in link with a random access token created for this run:
 
 ```text
-AutoAir (local mode): http://127.0.0.1:8765/ui/ — DAGs in dags
+AutoAir (local mode): DAGs in dags
+Open http://127.0.0.1:8765/ui/#token=autoair-local-...
+(this per-run link signs you in; keep it to yourself)
 ```
+
+`--open` opens that link. The UI keeps the token for the browser tab and removes it from the address bar; the token sits in the URL fragment, which the browser never sends to a server. The holder of the token gets `local.roles` (default `["Admin"]`: edit, validate, deploy). Other programs and web pages on your machine cannot use the API without it. After a restart the old link no longer works: open the new one.
 
 :::warning
 `uvx autoair local` without extras does not start: the core package has no HTTP server. The command exits with code 1 and says which extras to install: "`autoair local` needs an HTTP server, which comes with the 'standalone' extra (uvicorn). Install it with: pip install 'autoair[standalone,airflow]'", followed by the `uvx --from 'autoair[standalone,airflow]' autoair local --open` form. Without Airflow or providers installed, the palette shows no operators.
@@ -46,11 +50,13 @@ AutoAir (local mode): http://127.0.0.1:8765/ui/ — DAGs in dags
 | `--dags-folder PATH` | (sets `AUTOAIR_DAGS_FOLDER`) | `./dags` | Folder the spec and generated files are written to. Local mode writes directly into it (no `autoair/` sub-folder). |
 | `--host HOST` | | `127.0.0.1` | Bind address. Keep it on loopback. |
 | `--port PORT` | | `8765` | Port. |
-| `--token TOKEN` | `AUTOAIR_LOCAL__TOKEN` | unset | Require this access token. The sign-in page shows "This local server requires an access token (autoair local --token)." API clients send `Authorization: Bearer <token>`. |
+| `--token TOKEN` | `AUTOAIR_LOCAL__TOKEN` | a random token per run | Require this access token instead of a generated one. The sign-in page shows "This local server requires an access token (autoair local --token)." API clients send `Authorization: Bearer <token>`. |
+| `--no-token` | | off | Serve without authentication (loopback only). Visitors get `iam.anonymous_roles`, default `["Viewer"]` (read-only); set `AUTOAIR_IAM__ANONYMOUS_ROLES='["Admin"]'` to let them edit and deploy. Requests whose `Host` or `Origin` is not a loopback address (or the host of `server.public_url`) get `403`. |
+| (config only) | `AUTOAIR_LOCAL__ROLES` | `["Admin"]` | AutoAir roles of the token holder; never `deploy:direct_push`. |
 | `--open` / `--no-open` | `AUTOAIR_LOCAL__OPEN_BROWSER` | off | Open the UI in the default browser once `/api/health` answers. |
 | `--config FILE`, `-c FILE` | `AUTOAIR_CONFIG_FILE` | none | Configuration file (YAML, JSON, INI, Python); repeatable. |
 
-Binding anything other than a loopback address requires a token:
+Binding anything other than a loopback address requires a token you set yourself:
 
 ```bash
 autoair local --host 0.0.0.0 --token "$(openssl rand -hex 16)"
@@ -104,7 +110,8 @@ Local mode does not talk to Airflow. To run what you built, point an Airflow at 
 
 ## Security notes
 
-- Without a token, anyone who can reach the port has full rights (there are no users and no roles). Keep the default loopback bind on shared machines.
+- Anyone holding the token has `local.roles` (default Admin). Do not share the sign-in link; with `--token` keep the token secret.
+- With `--no-token`, anyone who can reach the loopback port has `iam.anonymous_roles` (default Viewer). Other users of a shared machine can reach it.
 - Python task bodies and inline functions are imported by the `DagBag` check in a subprocess on your machine. Do not deploy specs from untrusted sources without reviewing them.
 
 ## Related

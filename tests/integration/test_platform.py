@@ -27,8 +27,13 @@ from autoair.server import ServeOptions, build_app, local_preset, settings_for, 
 def client(tmp_path: Path, **extra: Any) -> TestClient:
     overrides = local_preset(dags_folder=tmp_path / "dags")
     overrides.update(ai={"enabled": False}, import_check_on_deploy=False, **extra)
+    token = "autoair-local-test"
+    overrides.setdefault("local", {}).setdefault("token", token)
     options = ServeOptions(overrides=overrides, local=True)
-    return TestClient(build_app(options, settings_for(options)), raise_server_exceptions=False)
+    c = TestClient(build_app(options, settings_for(options)), raise_server_exceptions=False)
+    if overrides["local"]["token"] == token:
+        c.headers["Authorization"] = f"Bearer {token}"
+    return c
 
 
 SPEC = {

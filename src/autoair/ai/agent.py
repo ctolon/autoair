@@ -67,7 +67,14 @@ from pydantic_ai.tools import (
 from pydantic_ai.usage import UsageLimits
 
 from autoair.ai import prompts
-from autoair.ai.approvals import PendingToolCall, ToolDecision, parse_arguments, redact_arguments
+from autoair.ai.approvals import (
+    PendingToolCall,
+    ToolDecision,
+    arguments_digest,
+    omitted_chars,
+    parse_arguments,
+    redact_arguments,
+)
 from autoair.ai.assist import _RawFinding, _RawFindings, to_findings
 from autoair.ai.events import (
     Emit,
@@ -458,6 +465,9 @@ def pending_calls(task: AgentTask, requests: DeferredToolRequests) -> list[Pendi
                 description=(tool.description if tool is not None else "")[:300],
                 arguments=arguments,
                 truncated=cut,
+                omitted_chars=omitted_chars(part.args, arguments, scrub) if cut else 0,
+                # what the user approves is bound to these exact arguments
+                arguments_sha256=arguments_digest(part.args),
             )
         )
     return out

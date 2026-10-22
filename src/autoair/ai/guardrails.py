@@ -238,12 +238,16 @@ _UNTRUSTED_TAG_START = re.compile(r"</?\s*untrusted-data", re.IGNORECASE)
 
 
 def strip_untrusted_tags(text: str) -> str:
-    r"""Replace every ``</?untrusted-data …>`` tag with ``[tag removed]``.
+    r"""Replace every ``</?untrusted-data …>`` tag with ``[tag removed]``, and every tag
+    start that no ``>`` closes with ``[tag removed]`` too.
 
-    Same matches as ``re.sub(r"</?\s*untrusted-data[^>]*>", ...)``, but in linear time: that
-    pattern rescans to the end of the text from every unclosed tag start, so a document of
-    repeated ``<untrusted-data`` without ``>`` takes quadratic time. Once no ``>`` follows a
-    tag start, none follows any later one either, so the scan stops there.
+    A complete tag gets the same match as ``re.sub(r"</?\s*untrusted-data[^>]*>", ...)``, but
+    in linear time: that pattern rescans to the end of the text from every unclosed tag
+    start, so a document of repeated ``<untrusted-data`` without ``>`` takes quadratic time.
+    Once no ``>`` follows a tag start, none follows any later one either, so from there on
+    only the tag starts themselves are replaced. They must not survive: the model reads
+    ``</untrusted-data id="…"`` as the end of the block even without its ``>``, and the text
+    after it would escape the wrapper.
     """
     parts: list[str] = []
     pos = 0
@@ -254,7 +258,7 @@ def strip_untrusted_tags(text: str) -> str:
         parts.append(text[pos : match.start()])
         parts.append("[tag removed]")
         pos = close + 1
-    parts.append(text[pos:])
+    parts.append(_UNTRUSTED_TAG_START.sub("[tag removed]", text[pos:]))
     return "".join(parts)
 
 

@@ -37,6 +37,7 @@ type Draft = {
   transport: "http" | "sse";
   url: string;
   tools: string;
+  readOnlyTools: string;
   headers: Array<{ key: string; value: string }>;
   timeout: number;
   enabled: boolean;
@@ -50,12 +51,19 @@ function draftOf(view: McpServerView | null): Draft {
     transport: view?.transport === "sse" ? "sse" : "http",
     url: view?.url ?? "https://",
     tools: (view?.tools ?? ["*"]).join(", "),
+    readOnlyTools: (view?.read_only_tools ?? []).join(", "),
     headers: (view?.headers ?? []).map((key) => ({ key, value: MASK })),
     timeout: view?.timeout_seconds ?? 30,
     enabled: view?.enabled ?? true,
     agents: (view?.agents as Agent[] | undefined) ?? ["troubleshoot"],
   };
 }
+
+const splitNames = (text: string) =>
+  text
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
 
 function ServerForm({ initial, onDone }: { initial: McpServerView | null; onDone: () => void }) {
   const { t } = useTranslation("admin");
@@ -73,10 +81,8 @@ function ServerForm({ initial, onDone }: { initial: McpServerView | null; onDone
           description: d.description,
           transport: d.transport,
           url: d.url,
-          tools: d.tools
-            .split(",")
-            .map((s) => s.trim())
-            .filter(Boolean),
+          tools: splitNames(d.tools),
+          read_only_tools: splitNames(d.readOnlyTools),
           headers: {
             ...Object.fromEntries(d.headers.filter((h) => h.key.trim()).map((h) => [h.key.trim(), h.value])),
             ...Object.fromEntries(removed.map((h) => [h, ""])),
@@ -128,6 +134,16 @@ function ServerForm({ initial, onDone }: { initial: McpServerView | null; onDone
           <Field.Label>{t("mcp.tools")}</Field.Label>
           <Input size="sm" value={d.tools} onChange={(e) => setD({ ...d, tools: e.target.value })} />
           <Field.HelperText>{t("mcp.toolsHelp")}</Field.HelperText>
+        </Field.Root>
+        <Field.Root>
+          <Field.Label>{t("mcp.readOnlyTools")}</Field.Label>
+          <Input
+            size="sm"
+            value={d.readOnlyTools}
+            onChange={(e) => setD({ ...d, readOnlyTools: e.target.value })}
+            data-testid="admin-mcp-read-only-tools"
+          />
+          <Field.HelperText>{t("mcp.readOnlyToolsHelp")}</Field.HelperText>
         </Field.Root>
         <Field.Root>
           <Field.Label>{t("mcp.timeout")}</Field.Label>
@@ -316,6 +332,7 @@ export function McpServersTab({ canWrite }: { canWrite: boolean }) {
                                 title={tool.description}
                               >
                                 {tool.name}
+                                {tool.read_only ? ` · ${t("mcp.readOnly")}` : ""}
                               </Badge>
                             ))}
                           </HStack>

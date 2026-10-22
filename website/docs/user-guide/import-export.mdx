@@ -44,7 +44,7 @@ Opening a DAG id that exists in Airflow but not in AutoAir, for example through 
 
 ## Import Python DAGs
 
-The Python importer runs the file with Airflow's DagBag **in a sandboxed subprocess on the AutoAir server**, then reverse-engineers each DAG object it defines. This recovers operators and their arguments, `@task` functions with their source, task groups, dependencies, schedule, params and task settings. Because importing executes the file, it requires:
+The Python importer runs the file with Airflow's DagBag **in a sandboxed subprocess on the AutoAir server**, then reverse-engineers each DAG object it defines. This recovers operators and their arguments (including those of operator base classes and XCom references nested in lists and dictionaries), `@task` functions with their source, task groups, dependencies and their `Label`s, schedule, params with their schema keywords, DAG settings (`dagrun_timeout`, `is_paused_upon_creation`, `fail_fast`, `max_consecutive_failed_dag_runs`, `render_template_as_native_obj`, `owner_links`) and task settings (`retries`, `retry_delay`, `execution_timeout`, `retry_exponential_backoff`, `executor`, `executor_config`, `inlets` and the others the inspector shows). A task argument that overrides `default_args` is kept even when it equals Airflow's default (`retries=0` against `default_args={"retries": 3}`). Because importing executes the file, it requires:
 
 - the permission `code:execute` (Author, Admin),
 - `allow_python_code` (`AUTOAIR_ALLOW_PYTHON_CODE`, `features.python_code`). Otherwise the import is refused with "importing Python DAGs executes their code and is disabled by policy (allow_python_code)",
@@ -67,30 +67,36 @@ The importer reports what it could not convert as warnings on the DAG. Common on
 | "&lt;task&gt;: source of the python callable is unavailable" | The function's source could not be found, for example when it is built dynamically. |
 | "timetable X is not supported; imported without schedule" | Custom timetables. Choose a schedule in the builder. |
 | "unsupported asset condition …" | Complex asset expressions. Rebuild the condition in the schedule editor. |
-| "deadline alerts are not imported" / "DAG callbacks are not imported" | Re-add them under [callbacks, retries and deadlines](/docs/user-guide/callbacks-retries-deadlines). |
+| "deadline alerts are not imported" / "DAG callbacks are not imported" / "&lt;task&gt;: task callbacks are not imported" | Re-add them under [callbacks, retries and deadlines](/docs/user-guide/callbacks-retries-deadlines). |
+| "&lt;task&gt;: argument X is not imported" | A task argument the spec has no field for, such as `email`, `do_xcom_push`, `max_retry_delay`, `wait_for_downstream`, task-level `params` or `retry_policy`. Set it again in the inspector where it has a field, or keep the DAG as [code](/docs/user-guide/code-mode). |
+| "&lt;task&gt;: operator class X is defined in the DAG file; move it to an importable module …" | The task is imported, but the generated DAG cannot import a class that only exists in the original file. Move the class to a module on the DAG folder's path. |
+| "&lt;task&gt;: retry_delay: duration … is not a valid timeout/delay; not imported" | A negative, infinite or not-a-number duration. Durations larger than `datetime.timedelta` holds are imported as its largest whole number of seconds. |
 
-A converted DAG that fails AutoAir's validation is reported as **not importable** with "converted spec is invalid: …". Dynamic DAG factories (loops that create many DAGs) import as the individual DAGs they produced at parse time. The loop itself is lost.
+Edges from or to a task group are imported as edges between the group's tasks, with the same dependencies and label. A converted DAG that fails AutoAir's validation is reported as **not importable** with "converted spec is invalid: …". Dynamic DAG factories (loops that create many DAGs) import as the individual DAGs they produced at parse time. The loop itself is lost.
 
 ## Airflow native YAML DAGs
 
 AutoAir reads and writes Airflow's native YAML DAG format (Airflow 3.4, AIP-85, schema `https://airflow.apache.org/schemas/dag/2026-10-30.json`). YAML import does not execute code and does not need `code:execute`.
 
-Import warnings include "`run:` stub tasks are imported as EmptyOperator" and "timetable X imported as no schedule". A document without `dag_id` is rejected ("not an Airflow YAML Dag document (missing dag_id)").
+Import warnings include "`run:` stub tasks are imported as EmptyOperator", "timetable X imported as no schedule", "timetable arguments X are not imported", "default_args X are not imported" (files with a top-level `default_args` mapping, which older AutoAir versions wrote) and "X 'value' is not a duration AutoAir reads; dropped". A document without `dag_id` is rejected ("not an Airflow YAML Dag document (missing dag_id)").
 
 **Export** (**File → Export → Airflow YAML DAG**, or the **Airflow YAML** tab of the Code panel) is refused for anything YAML cannot express. The toast reads "N constructs cannot be expressed in Airflow YAML", and the list includes:
 
 - Python tasks, inline functions, script files and Python references
 - Non-operator nodes, dynamic task mapping, setup/teardown, retry policies, task callbacks, asset inlets and outlets
 - Every schedule except none, a preset and a plain cron expression: multi-cron, interval, cron with an interval, events, asset, asset-or-time, asset-and-time, partitioned cron and partitioned asset schedules
-- DAG callbacks, deadlines, `owner_links`, and `retry_delay` / `execution_timeout` in default arguments
+- DAG callbacks, deadlines, `owner_links` and OpenLineage enable/disable
+- Durations that are not a whole number of seconds (`retry_delay`, `execution_timeout`, `dagrun_timeout`), and `timedelta` values of operator arguments other than `response_timeout` of `HITLOperator` and `execution_delta` of the external task sensor and marker
 
-Exports that succeed can still warn: "task groups are flattened: YAML Dags have no task groups (task ids keep the group prefix)", "edge label 'x' is dropped", and "param schemas (type, enum, ...) are dropped; only defaults are kept". A DAG whose **output** setting is **Airflow YAML DAG** is deployed as YAML. Its settings note says "Task groups and Python tasks aren't supported in YAML."
+Durations are written as Airflow's duration strings (`retry_delay: 5m`, `dagrun_timeout: 2h`), which Airflow's YAML importer parses for arguments typed `timedelta`. YAML DAGs have no `default_args`: the DAG's default arguments are exported as a task template named `default_args` that every task `extends`, and task values still override them. Start and end dates are written with their UTC offset and the DAG timezone as the schedule's timetable `timezone`; importing such a file restores the DAG timezone.
+
+Exports that succeed can still warn: "task groups are flattened: YAML Dags have no task groups (task ids keep the group prefix)", "edge label 'x' is dropped", "param schemas (type, enum, ...) are dropped; only defaults are kept" and "the DAG timezone 'X' is dropped: YAML Dags take it from start_date (set a start date)". A DAG whose **output** setting is **Airflow YAML DAG** is deployed as YAML. Its settings note says "Task groups and Python tasks aren't supported in YAML."
 
 The **Airflow YAML** tab of the Code panel is editable: **Apply YAML to canvas** imports your edits as unsaved changes ("YAML applied to the canvas (unsaved)").
 
 ## dag-factory YAML
 
-**File → Export → dag-factory YAML** writes `<dag_id>.dag-factory.yaml` for teams that use astronomer/dag-factory 1.0 or later ("One-way export for teams using astronomer/dag-factory."). It is lossy, and the toast counts the warnings: XCom references and Python references become plain strings, inline functions and files are dropped, asset schedules become a flat list, edges between groups are not exported, and Python tasks and custom nodes are skipped. AutoAir cannot import dag-factory files.
+**File → Export → dag-factory YAML** writes `<dag_id>.dag-factory.yaml` for teams that use astronomer/dag-factory 1.0 or later ("One-way export for teams using astronomer/dag-factory."). It is lossy, and the toast counts the warnings: XCom references and Python references become plain strings, inline functions and files are dropped, asset schedules become a flat list, and Python tasks, custom nodes and blueprint steps are skipped with their dependencies. Every other setting the file does not carry is a warning too: edge labels, DAG settings such as `params`, `dagrun_timeout`, callbacks, deadlines and `owner_links`, schedules other than none, preset, cron, interval and asset schedules, a cron schedule's timezone, data intervals or `run_immediately`, and per task setup/teardown, callbacks, retry policies, asset inlets and outlets and `expand_kwargs` mappings. Edges from or to a task group are exported as dependencies of the group's tasks, and disabled tasks are left out as in the Python output. AutoAir cannot import dag-factory files.
 
 ## Export
 

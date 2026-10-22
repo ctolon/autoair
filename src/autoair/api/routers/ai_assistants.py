@@ -26,7 +26,7 @@ import asyncio
 import logging
 from typing import Annotated, Any, Literal
 
-from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi import APIRouter, HTTPException, Path, Query, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
@@ -36,10 +36,12 @@ from autoair.ai.approvals import (
     ApprovalBusy,
     ApprovalExpired,
     ApprovalNotFound,
+    ArgumentsMismatch,
     ToolApproval,
     ToolApprovalView,
     ToolDecision,
     approval_store_for,
+    full_arguments,
     gated_tools,
     new_approval,
     refresh_views,
@@ -564,6 +566,44 @@ async def get_tool_approval(
     return approval.view()
 
 
+class ToolCallArguments(BaseModel):
+    """A pending call's complete arguments (secrets masked, nothing cut)."""
+
+    id: str
+    tool: str
+    arguments: Any = None
+    arguments_sha256: str = Field(description="Send it back with an approval of the call.")
+
+
+@router.get(
+    "/approvals/{approval_id}/calls/{call_id}/arguments",
+    operation_id="getToolCallArguments",
+)
+async def get_tool_call_arguments(
+    approval_id: str,
+    call_id: Annotated[str, Path(max_length=200)],
+    request: Request,
+    services: ServicesDep,
+) -> ToolCallArguments:
+    """Everything a pending call would run with, for review before approving it: the card
+    cuts long arguments (``ai.approvals.max_argument_chars``); secrets stay masked here."""
+    from autoair.ai.guardrails import pipeline_for
+
+    user = _user(request, services)
+    approval = await asyncio.to_thread(_approval_or_404, services, user, approval_id)
+    pipeline = pipeline_for(services)
+
+    def scrub(text: str) -> str:
+        return pipeline.sanitize(scrub_secrets(text))
+
+    try:
+        value, digest = await asyncio.to_thread(full_arguments, approval, call_id, scrub)
+    except ApprovalNotFound as exc:
+        raise HTTPException(status_code=404, detail="no such pending tool call") from exc
+    call = next(c for c in approval.calls if c.id == call_id)
+    return ToolCallArguments(id=call_id, tool=call.tool, arguments=value, arguments_sha256=digest)
+
+
 def _ensure_agent(request: Request, services: Any, approval: ToolApproval) -> None:
     """The caller may still use the agent of ``approval`` (checked again on resume)."""
     ai = _ai(services)
@@ -668,6 +708,16 @@ async def resume_tool_approval(
         )
         raise HTTPException(status_code=410, detail=str(exc)) from exc
     except ApprovalBusy as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ArgumentsMismatch as exc:
+        await asyncio.to_thread(
+            _audit_decision,
+            request,
+            services,
+            f"{feature}:tool_approval_mismatch",
+            model=approval.model,
+            detail={"approval_id": approval_id, "agent": approval.agent, **approval.ref},
+        )
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc

@@ -1,4 +1,5 @@
-"""AutoAir capabilities exposed to the agent as typed, read-only tools."""
+"""AutoAir capabilities exposed to the agent as typed tools; they change nothing, but two
+run Python on the server (``kind="execute"``: approval and ``code:execute`` apply)."""
 
 from __future__ import annotations
 
@@ -94,7 +95,7 @@ def build_toolbox(
     *,
     gateway_factory: GatewayFactory | None = None,
 ) -> list[AgentTool]:
-    """Read-only tools over ``services`` (Airflow tools only with a gateway factory)."""
+    """Tools over ``services`` (Airflow tools only with a gateway factory)."""
     settings = services.settings
     policy = policy_from_settings(settings)
 
@@ -225,6 +226,8 @@ def build_toolbox(
             "sandboxed DagBag) without writing anything. Slower; use before proposing.",
             SpecInput,
             dry_run,
+            # the DagBag import runs the generated file's top-level code
+            kind="execute",
         ),
         AgentTool(
             "get_saved_spec",
@@ -241,6 +244,7 @@ def build_toolbox(
                 "isolated subprocess). Only for source the user provided.",
                 ImportInput,
                 import_dag,
+                kind="execute",
             )
         )
     if gateway_factory is not None:

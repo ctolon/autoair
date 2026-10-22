@@ -300,6 +300,14 @@ class Marketplace:
         return MarketplaceListing(sources=statuses, entries=entries)
 
     def install(self, source_name: str, entry_id: str) -> TemplateInput:
+        """:meth:`fetch` the entry and save it to the template store."""
+        tpl = self.fetch(source_name, entry_id)
+        self.templates.save(tpl)
+        return tpl
+
+    def fetch(self, source_name: str, entry_id: str) -> TemplateInput:
+        """The entry's template, downloaded and checked against the signed index (not saved:
+        callers check who may save it first)."""
         source = self.sources.get(source_name)
         if source is None:
             raise MarketplaceError(f"unknown marketplace source {source_name!r}")
@@ -324,6 +332,4 @@ class Marketplace:
         if tpl.id != entry.id or tpl.kind != entry.kind:
             raise MarketplaceError(f"{entry_id!r}: payload id/kind does not match the index")
         tags = [*tpl.tags, f"marketplace:{source_name}"]
-        tpl = tpl.model_copy(update={"tags": list(dict.fromkeys(tags))})
-        self.templates.save(tpl)
-        return tpl
+        return tpl.model_copy(update={"tags": list(dict.fromkeys(tags))})

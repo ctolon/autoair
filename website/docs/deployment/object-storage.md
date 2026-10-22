@@ -19,9 +19,9 @@ For each deploy AutoAir writes, under `storage.object_url`:
 | `.autoair/history/<dag_id>/...` | Saved versions (at most `storage.history_limit`, default 100) with the deploy message |
 | `.autoair/state/...` | Ownership markers used to detect hand-edited ("ejected") files |
 
-Writes are atomic per object, not across objects. Because the spec is written first and the DAG file last, a bundle refresh between the two writes sees the old DAG file with the new spec; the next refresh sees both.
+Each object is written whole (one PUT; on a `file://` URL a temporary file renamed into place), but there is no transaction across objects. The spec is written first, then the DAG file, the history entry and the state record, so a bundle refresh between two writes can see the new spec with the old DAG file; the next refresh sees both. When a write fails, AutoAir restores the objects it already wrote, so the spec, its etag and the history do not advance without the DAG file.
 
-Optimistic locking (etags) is enforced inside one AutoAir process only: plain object stores have no compare-and-swap. Two replicas saving the **same DAG** at the same instant can overwrite each other. Collaboration (live co-editing) and the deploy-time conflict check cover normal use; if several replicas serve many concurrent editors of the same DAGs, a git target is the safer choice.
+Writers of one DAG are serialised by a write lease kept in AutoAir's state backend (collection `object_deploy_locks`): a save takes it, checks `base_etag` and the ownership records, writes, and releases it. A second replica that loaded the same version waits for the lease and then gets a conflict (409) instead of overwriting the first save. The lease is shared by every replica only on a SQL backend (`database.backend=sqlite` on a shared file, or `postgresql`); with the default `file` backend it is shared by the processes of one host. `storage.object_lock_seconds` (300) is how long a lease lasts, so a replica that dies while writing blocks that DAG at most that long; `storage.object_lock_wait_seconds` (30) is how long a save waits for it.
 
 After a deploy AutoAir does not request a reparse (it does that only for the `local` target); Airflow picks the change up on the bundle's next refresh.
 

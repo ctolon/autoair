@@ -56,6 +56,7 @@ from autoair.spec import (
 from autoair.spec.models import AssetRef
 from autoair.telemetry import span
 from autoair.validation.blueprints import blueprint_problems
+from autoair.validation.codegen_limits import duration_problems, function_name_problems
 from autoair.validation.dagbag_check import (
     ImportCheckResult,
     ImportCheckUnavailable,
@@ -278,6 +279,7 @@ def _validate(
         )
     problems: list[Problem] = []
     problems += _structure(spec)
+    problems += duration_problems(spec) + function_name_problems(spec)
     problems += _graph(spec)
     problems += _nodes(spec, catalog, registry, policy)
     problems += _schedule(spec)
@@ -294,6 +296,7 @@ def _validate(
     problems += shell_problems(spec)
     problems += llm_problems(spec)
     problems += _versions(spec, target_version or airflow_version())
+    problems += _backoff_multipliers(spec, target_version or airflow_version())
     if templates is not None:
         problems += template_problems(spec, templates)
     problems += _organisation_rules(spec, policy, environment, target_version, context)
@@ -1404,12 +1407,79 @@ def _python_refs(spec: DagSpec, policy: Policy) -> list[Problem]:
 _SECRET_ASSIGN = re.compile(DEFAULT_SENSITIVE_ASSIGNMENT)
 
 
+# Values that stand for a secret instead of being one: placeholders, references and
+# environment variable names. A dict entry with such a value is not reported.
+_PLACEHOLDER_VALUE = re.compile(
+    r"(?i)(?:[x*#._-]+|<[^>]*>|\$\w+|%\(\w+\)s|(?:change|replace)[_-]?me|your[\w-]*|"
+    r"placeholder|redacted|dummy|example[\w-]*|todo|tbd|fixme|null|none|undefined|"
+    r"secret|password|passwd|token|api[_-]?key|(?:env|var|conn|vault)[:.].*)"
+)
+# An environment variable's name (GITHUB_TOKEN), not a key: AWS-style ids such as
+# AKIA... have no underscore and are still reported.
+_ENV_NAME = re.compile(r"[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+")
+
+
+def secret_dict_entries(code: str, policy: Policy = DEFAULT_POLICY) -> list[tuple[int, str]]:
+    """``(line, key)`` of dict entries in ``code`` whose key names a secret and whose value
+    is a literal that looks like one: ``{"token": "..."}``, ``dict(password="...")``.
+
+    Assignment patterns over the text miss these (``"key": "value"`` has no ``=``). Only a
+    plain string literal of at least six characters without whitespace or braces counts, so
+    Jinja (``{{ conn.x.password }}``), format placeholders, environment lookups, variable
+    references, empty strings and obvious placeholders (``<token>``, ``changeme``,
+    ``MY_TOKEN``) are not reported. Code that does not parse yields nothing (syntax checks
+    report it)."""
+    import ast
+    import textwrap
+
+    try:
+        tree = ast.parse(textwrap.dedent(code))
+    except (SyntaxError, ValueError):
+        return []
+
+    def secret_key(key: str) -> bool:
+        return _matches(policy.secret_param_patterns, key, re.I) and not _matches(
+            policy.secret_param_exclude_patterns, key, re.I
+        )
+
+    def looks_secret(value: ast.expr | None) -> bool:
+        if not isinstance(value, ast.Constant) or not isinstance(value.value, str):
+            return False
+        text = value.value
+        if len(text) < 6 or any(c.isspace() or c in "{}" for c in text):
+            return False
+        return not (_PLACEHOLDER_VALUE.fullmatch(text) or _ENV_NAME.fullmatch(text))
+
+    found: list[tuple[int, str]] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Dict):
+            for key, value in zip(node.keys, node.values, strict=True):
+                if (
+                    isinstance(key, ast.Constant)
+                    and isinstance(key.value, str)
+                    and secret_key(key.value)
+                    and looks_secret(value)
+                ):
+                    found.append((key.lineno, key.value))
+        elif (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id == "dict"
+        ):
+            for kw in node.keywords:
+                if kw.arg and secret_key(kw.arg) and looks_secret(kw.value):
+                    found.append((kw.value.lineno, kw.arg))
+    return sorted(set(found))
+
+
 def _hardcoded_secrets(spec: DagSpec, policy: Policy = DEFAULT_POLICY) -> list[Problem]:
     """Literal passwords/tokens in DAG files are readable by everyone with repo access."""
     problems: list[Problem] = []
 
     def assigns_secret(text: str) -> bool:
-        return _matches(policy.secret_assignment_patterns, text)
+        return _matches(policy.secret_assignment_patterns, text) or bool(
+            secret_dict_entries(text, policy)
+        )
 
     def secret_key(key: str) -> bool:
         return _matches(policy.secret_param_patterns, key, re.I) and not _matches(
@@ -1639,6 +1709,37 @@ def _versions(spec: DagSpec, version: tuple[int, int, int] | None) -> list[Probl
     ]
 
 
+# Airflow 3.2 made retry_exponential_backoff a multiplier; before, it is a bool whose backoff
+# doubles the delay. Code generated for those versions writes ``value > 0``.
+_BACKOFF_MULTIPLIER_SINCE = (3, 2, 0)
+_PRE_MULTIPLIER_BASE = 2.0
+
+
+def _backoff_multipliers(spec: DagSpec, version: tuple[int, int, int] | None) -> list[Problem]:
+    """Warn where a backoff multiplier is silently replaced by Airflow's fixed doubling."""
+    if version is None or version >= _BACKOFF_MULTIPLIER_SINCE:
+        return []
+    problems: list[Problem] = []
+    for n in spec.task_nodes():
+        value = getattr(n, "retry_exponential_backoff", None)
+        if value is None or value == 0 or value == _PRE_MULTIPLIER_BASE:
+            continue
+        problems.append(
+            _err(
+                "airflow_version",
+                f"a retry backoff multiplier of {value:g} needs Airflow ≥ "
+                f"{format_version(_BACKOFF_MULTIPLIER_SINCE)} (target is "
+                f"{format_version(version)}): before it the setting is on/off, so the "
+                "generated DAG uses exponential backoff with base 2. Set it to 2, or target "
+                "Airflow 3.2+.",
+                n.id,
+                "retry_exponential_backoff",
+                severity="warning",
+            )
+        )
+    return problems
+
+
 def _custom(n: CustomNode, registry: HandlerRegistry) -> list[Problem]:
     if n.handler not in registry:
         return [
@@ -1669,6 +1770,7 @@ __all__ = [
     "TemplateLookup",
     "ValidationReport",
     "effective_task_id",
+    "secret_dict_entries",
     "template_field_value",
     "template_problems",
     "validate_spec",

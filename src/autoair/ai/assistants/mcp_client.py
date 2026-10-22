@@ -46,6 +46,10 @@ class McpServerView(BaseModel):
     url: str | None = None
     command: str | None = None
     tools: list[str] = Field(default_factory=list)
+    read_only_tools: list[str] = Field(
+        default_factory=list,
+        description="Tools an admin vouches only read (run without approval).",
+    )
     headers: list[str] = Field(default_factory=list, description="Names of the set headers.")
     timeout_seconds: float = 30
     enabled: bool = True
@@ -64,6 +68,12 @@ class McpServerInput(BaseModel):
     transport: Literal["http", "sse"] = "http"
     url: str = Field(pattern=r"^https?://", max_length=2_000)
     tools: list[str] = Field(default_factory=lambda: ["*"], max_length=200)
+    read_only_tools: list[str] = Field(
+        default_factory=list,
+        max_length=200,
+        description="Tools (fnmatch) an admin vouches only read: they run without approval "
+        "and the admin assistant may use them. The server's readOnlyHint is not trusted.",
+    )
     headers: dict[str, str | None] = Field(
         default_factory=dict,
         description="Header values; null or '***' keeps the stored value, '' removes it.",
@@ -77,6 +87,14 @@ class McpToolInfo(BaseModel):
     name: str
     description: str = ""
     allowed: bool = True
+    read_only: bool = Field(
+        default=False,
+        description="Listed in the server's read_only_tools (runs without approval).",
+    )
+    hinted_read_only: bool = Field(
+        default=False,
+        description="The server marks it read-only (readOnlyHint; informational, not trusted).",
+    )
 
 
 class McpSelection(BaseModel):
@@ -130,6 +148,7 @@ class McpServerStore:
                 transport=data.get("transport", "http"),
                 url=data.get("url"),
                 tools=data.get("tools", ["*"]),
+                read_only_tools=data.get("read_only_tools", []),
                 headers=headers,
                 timeout_seconds=data.get("timeout_seconds", 30),
                 enabled=data.get("enabled", True),
@@ -159,6 +178,7 @@ class McpServerStore:
             "transport": body.transport,
             "url": body.url,
             "tools": body.tools,
+            "read_only_tools": body.read_only_tools,
             "headers": headers,
             "timeout_seconds": body.timeout_seconds,
             "enabled": body.enabled,
@@ -207,6 +227,7 @@ def _view(
         url=cfg.url,
         command=cfg.command,
         tools=list(cfg.tools),
+        read_only_tools=list(cfg.read_only_tools),
         headers=sorted(cfg.headers),
         timeout_seconds=cfg.timeout_seconds,
         enabled=cfg.enabled,
@@ -318,6 +339,8 @@ async def list_server_tools(services: Any, server: McpServerConfig) -> list[McpT
             name=t.name,
             description=(t.description or "")[:500],
             allowed=tool_allowed(server, t.name),
+            read_only=trusted_read_only(server, t.name),
+            hinted_read_only=read_only_tool(t),
         )
         for t in tools
     ]
@@ -343,8 +366,17 @@ def _result_text(result: Any, limit: int) -> str:
     return text
 
 
+def trusted_read_only(server: McpServerConfig, tool: str) -> bool:
+    """Whether an admin listed ``tool`` in the server's ``read_only_tools``. Only this makes
+    an external tool a ``read`` tool: the server's own ``readOnlyHint`` is a claim of the
+    server, and a compromised or malicious one could mark a destructive tool read-only to
+    skip the approval."""
+    return any(fnmatch.fnmatchcase(tool, p) for p in server.read_only_tools)
+
+
 def read_only_tool(tool: Any) -> bool:
-    """Whether the server marks ``tool`` read-only (MCP ``annotations.readOnlyHint``)."""
+    """Whether the server marks ``tool`` read-only (MCP ``annotations.readOnlyHint``).
+    Informational only (shown to admins); see :func:`trusted_read_only`."""
     annotations = getattr(tool, "annotations", None)
     if isinstance(annotations, dict):
         hint = annotations.get("readOnlyHint", annotations.get("read_only_hint"))
@@ -371,7 +403,8 @@ async def attach_mcp_tools(
     """Connect to the selected servers for the duration of a run.
 
     Only servers scoped to ``agent`` and tools of their allow-list are attached; with
-    ``read_only`` (the admin assistant) only tools the server marks read-only.
+    ``read_only`` (the admin assistant) only tools an admin listed in the server's
+    ``read_only_tools``.
     Yields (agent tools, notes); a server that cannot be reached is reported in the notes
     instead of failing the run."""
     mc = ai_settings_of(services.settings).mcp_client
@@ -397,7 +430,7 @@ async def attach_mcp_tools(
                     continue
                 if wanted is not None and t.name not in wanted:
                     continue
-                if read_only and not read_only_tool(t):
+                if read_only and not trusted_read_only(server, t.name):
                     writable += 1
                     continue
                 if count >= mc.max_tools_per_server:
@@ -407,8 +440,8 @@ async def attach_mcp_tools(
                 tools.append(_wrap(client, server, t, mc.max_output_chars))
             if writable:
                 notes.append(
-                    f"{server.name}: {writable} tool(s) not attached (not marked read-only; "
-                    f"the {agent} assistant only uses read-only tools)"
+                    f"{server.name}: {writable} tool(s) not attached (not in the server's "
+                    f"read_only_tools; the {agent} assistant only uses read-only tools)"
                 )
         yield tools, notes
 
@@ -436,8 +469,8 @@ def _wrap(client: Any, server: McpServerConfig, tool: Any, limit: int) -> AgentT
         _AnyArgs,
         handler,
         schema=schema,
-        # Unannotated tools count as writes: the server, not the model, vouches for reads.
-        kind="read" if read_only_tool(tool) else "write",
+        # Only an admin vouches for reads: the server's readOnlyHint is not trusted.
+        kind="read" if trusted_read_only(server, remote) else "write",
     )
 
 
@@ -458,4 +491,5 @@ __all__ = [
     "server_store_for",
     "server_views",
     "servers_for",
+    "trusted_read_only",
 ]

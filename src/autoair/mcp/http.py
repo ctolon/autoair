@@ -119,3 +119,33 @@ def create_mcp_asgi_app(
         return _ASGIResponse(handler)
 
     return app
+
+
+def create_local_http_app(services: Any, *, path: str = "/mcp") -> ASGIApp:
+    """``autoair mcp --http`` / ``autoair-mcp --http``: the MCP server over streamable HTTP
+    without authentication, for local use.
+
+    Like ``autoair mcp-serve --http --no-auth``: every caller is anonymous and gets
+    ``iam.anonymous_roles`` (default Viewer), and :class:`~autoair.net.loopback.LoopbackGuard`
+    answers only requests whose ``Host``/``Origin`` name loopback (or
+    ``server.public_url``), so a web page cannot reach the port through DNS rebinding. The
+    caller refuses non-loopback binds (:func:`~autoair.net.loopback.refuse_public_bind`).
+    """
+    from autoair.auth import AuthBackend
+    from autoair.net.loopback import LoopbackGuard, public_hosts
+
+    prefix = "/" + path.strip("/")
+    root = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
+    # AuthBackend() authenticates nobody: the principal resolver grants the anonymous roles
+    root.mount(prefix, create_mcp_asgi_app(services, auth=AuthBackend()))
+
+    async def app(scope: Scope, receive: Receive, send: Send) -> None:
+        # Clients configured with ".../mcp" (FastMCP's own transport answered it) are served
+        # in place instead of being redirected to ".../mcp/".
+        if scope["type"] == "http" and scope.get("path") == prefix:
+            scope = {**scope, "path": prefix + "/", "raw_path": (prefix + "/").encode()}
+        await root(scope, receive, send)
+
+    settings = getattr(services, "settings", None)
+    server = getattr(settings, "server", None)
+    return LoopbackGuard(app, extra_hosts=public_hosts(getattr(server, "public_url", None)))

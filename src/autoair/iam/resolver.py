@@ -4,7 +4,9 @@ The three strategies (union of those configured in ``iam.strategies``):
 
 ``airflow_permissions``
     AutoAir roles follow Airflow's standard permissions: DAG read, DAG edit (for the
-    request's ``dag_id`` when there is one) and configuration edit. The default.
+    request's ``dag_id`` when there is one) and configuration edit. The default. A
+    permission AutoAir cannot ask Airflow about (standalone mode) grants only
+    ``airflow_permission_roles.unverified`` (Viewer), never its own roles.
 ``role_mapping``
     Airflow role names (FAB ``user.roles``, SimpleAuthManager ``user.role``, or the verified
     token's role claim in standalone mode) map to AutoAir roles.
@@ -53,6 +55,8 @@ class Identity:
     custom_view: CustomViewCheck | None = None
     display_name: str | None = None
     email: str | None = None
+    # ``autoair local`` token holder: these roles instead of the strategies (no Airflow).
+    fixed_roles: list[str] | None = None
 
 
 def _dedupe(items: Iterable[str]) -> list[str]:
@@ -105,18 +109,30 @@ def resolve(
 
     if not identity.authenticated:
         grant(settings.anonymous_roles, trusted=False)
+    elif identity.fixed_roles is not None:
+        # untrusted like the anonymous roles: never direct-push rights by role
+        grant(identity.fixed_roles, trusted=False)
+        grant(settings.default_roles, trusted=True)
     else:
         if "airflow_permissions" in strategies:
             apr = settings.airflow_permission_roles
             grant(apr.authenticated, trusted=True)
+            unverifiable = False
             for check, granted_roles in (
                 ("dag_read", apr.dag_read),
                 ("dag_edit", apr.dag_edit),
                 ("configuration_edit", apr.configuration_edit),
             ):
                 granted, verified = identity.checks.get(check, (False, False))
-                if granted:
-                    grant(granted_roles, trusted=verified)
+                # A check nobody could ask Airflow (no dependency: standalone) "passes"
+                # vacuously; it must never grant its roles, or every Airflow Viewer
+                # would become an AutoAir Admin.
+                if not verified:
+                    unverifiable = True
+                elif granted:
+                    grant(granted_roles, trusted=True)
+            if unverifiable:
+                grant(apr.unverified, trusted=False)
         if "role_mapping" in strategies:
             grant(map_airflow_roles(identity.airflow_roles, settings, table), trusted=True)
         if "custom_view" in strategies and identity.custom_view is not None:

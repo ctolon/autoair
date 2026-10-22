@@ -36,8 +36,8 @@ def client(tmp_path: Path, **settings: Any) -> TestClient:
     return make_client(make_services(tmp_path, import_check_on_deploy=False, **settings))
 
 
-def deploy(c: TestClient, role: str, spec: dict[str, Any] = RAW) -> Any:
-    return c.put(f"/api/specs/{spec['dag_id']}", json={"spec": spec}, headers=as_role(role))
+def deploy(c: TestClient, role: str, spec: dict[str, Any] = RAW, **body: Any) -> Any:
+    return c.put(f"/api/specs/{spec['dag_id']}", json={"spec": spec, **body}, headers=as_role(role))
 
 
 def test_raw_deploy_needs_code_raw(tmp_path: Path) -> None:
@@ -69,7 +69,7 @@ def test_raw_deploy_writes_the_code_as_written(tmp_path: Path) -> None:
     assert stored["spec"]["raw_code"] == CODE
     # A second version: history and a diff of the code field.
     changed = {**RAW, "raw_code": CODE.replace("pass", "print('hi')")}
-    assert deploy(c, "Admin", changed).json()["deployed"]
+    assert deploy(c, "Admin", changed, base_etag=body["etag"]).json()["deployed"]
     history = c.get("/api/vcs/raw_api/history", headers=as_role("Viewer")).json()
     assert len(history) == 2
     diff = c.get(

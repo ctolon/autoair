@@ -35,7 +35,7 @@ flowchart TB
 | How AutoAir checks it | Airflow's `get_user` dependency on every route (the auth manager decodes and validates the JWT) | `TokenVerifier`: `GET {airflow}/api/v2/dags?limit=1` with the token, cached for `AUTOAIR_AUTH_CACHE_TTL` seconds (never past the token's `exp`) |
 | How the user gets a token | Airflow's login | The Airflow UI session cookie on the same host, the username/password form (`POST /api/auth/login`), or a pasted token. See [SSO and sessions](/docs/admin/sso) |
 | Proxied Airflow calls | The caller's cookie or bearer is forwarded, so Airflow enforces its RBAC | Same |
-| No authentication | Not available | `autoair serve --no-auth` (development only; see [Anonymous access](#anonymous-access)) |
+| No authentication | Not available | `autoair serve --no-auth` (development only, loopback only; see [Anonymous access](#anonymous-access)) |
 
 Standalone rejects a token whose `exp` has passed without asking Airflow (`401 Airflow token expired`); the UI then shows the sign-in panel again.
 
@@ -54,7 +54,7 @@ Each permission has an Airflow custom-view equivalent used by the `custom_view` 
 | `spec:delete` | Delete a spec and its DAG files | `can_delete` on `AutoAir Specs` |
 | `code:execute` | Run DAG code on the AutoAir server: import check (`/validate?import_check=true`), Python and Airflow DAG import, applying the code mode | `can_create` on `AutoAir Code Execution` |
 | `code:raw` | Save raw code DAGs: hand-written DAG files deployed as written (arbitrary Python). Also needs `features.code_editor` and `features.python_code`. See [Raw code DAGs](/docs/user-guide/code-mode#raw-code-dags) | `can_edit` on `AutoAir Raw Code` |
-| `run:test` | Test a task or DAG from the builder | `can_create` on `AutoAir Test Runs` |
+| `run:test` | Test a task or DAG from the builder (also needs `code:execute`: a test run executes the DAG code on the AutoAir server) | `can_create` on `AutoAir Test Runs` |
 | `catalog:refresh` | Rebuild the operator catalog | `can_create` on `AutoAir Catalog` |
 | `ai:use` | All AI assistant routes | `can_create` on `AutoAir AI` |
 | `review` | Approve, request changes on, or comment a spec version | `can_create` on `AutoAir Reviews` |
@@ -118,7 +118,7 @@ In the UI, the user menu shows the caller's roles as chips; hovering a chip list
 
 `deploy:direct_push` is in **no** role definition. It goes to the roles in `AUTOAIR_IAM__DIRECT_PUSH_ROLES` (default `["Admin"]`). A deploy target can override that list with `AUTOAIR_STORAGE__GIT__DIRECT_PUSH_ROLES` (or the same field in `team_storage`): unset (the default) means `iam.direct_push_roles` applies, `[]` means nobody. Set `iam.direct_push_roles` to `[]` to forbid direct pushes everywhere, except for users granted the permission explicitly.
 
-`deploy:direct_push` only ever comes from a **trusted** grant: a role from a verified Airflow check or a verified role claim, an explicit `"deploy:direct_push"` in a custom role held through such a grant, or the Airflow custom view. It is never granted by a wildcard (`"*"`, `"deploy*"`), never through unverified roles (standalone `airflow_permissions`), and never to anonymous users (`--no-auth`).
+`deploy:direct_push` only ever comes from a **trusted** grant: a role from a verified Airflow check or a verified role claim, an explicit `"deploy:direct_push"` in a custom role held through such a grant, or the Airflow custom view. It is never granted by a wildcard (`"*"`, `"deploy*"`), never through unverified roles (standalone `airflow_permissions`, `local.roles`), and never to anonymous users (`--no-auth`).
 
 ### Custom roles
 
@@ -149,9 +149,10 @@ AutoAir roles are derived from Airflow's standard permissions, evaluated for the
 | DAG read | `AUTOAIR_IAM__AIRFLOW_PERMISSION_ROLES__DAG_READ` | Viewer |
 | DAG edit | `AUTOAIR_IAM__AIRFLOW_PERMISSION_ROLES__DAG_EDIT` | Author, Reviewer, Deployer, Operator, TemplateManager |
 | Configuration edit | `AUTOAIR_IAM__AIRFLOW_PERMISSION_ROLES__CONFIGURATION_EDIT` | Admin (plugin mode only) |
+| a permission AutoAir cannot check | `AUTOAIR_IAM__AIRFLOW_PERMISSION_ROLES__UNVERIFIED` | Viewer |
 
 :::warning Standalone mode
-Standalone AutoAir cannot ask Airflow these questions. With `airflow_permissions`, every signed-in user gets all the roles above, **including Admin**. These roles are *unverified*, so they never unlock direct push, and Airflow still enforces its RBAC on every proxied call. To get real roles in standalone mode, use `role_mapping` **alone**. Combined with `airflow_permissions` (for example `["airflow_permissions", "role_mapping"]`), the union still gives every user every role, so the mapping restricts nothing; AutoAir logs a warning at start-up for that combination.
+Standalone AutoAir cannot ask Airflow about DAG or configuration permissions; it only verifies the token. A permission that cannot be checked never grants its own roles: with `airflow_permissions` every signed-in user gets `Authenticated` plus `airflow_permission_roles.unverified` (default Viewer), whatever their Airflow role. To grant more, use `role_mapping` (the verified token's role claim), alone or together with `airflow_permissions`, or `iam.default_roles`. Up to 0.2.2 every standalone user got every role, including Admin.
 :::
 
 ### `role_mapping`: Airflow role names to AutoAir roles
@@ -209,7 +210,7 @@ AUTOAIR_IAM__STRATEGIES='["custom_view"]'   # or '["role_mapping"]', or both
 | | Plugin mode | Standalone |
 |---|---|---|
 | Identity | Airflow's `get_user` (auth manager) | Token or cookie verified against Airflow's API |
-| `airflow_permissions` | Real per-DAG and configuration checks | Every signed-in user gets every role (unverified) |
+| `airflow_permissions` | Real per-DAG and configuration checks | `Authenticated` baseline plus `airflow_permission_roles.unverified` (default Viewer) |
 | `role_mapping` | FAB `user.roles`, SimpleAuthManager `user.role` | JWT claims (`iam.roles_claims`); not available with FAB tokens |
 | `custom_view` | Supported (FAB, Keycloak, AWS) | Not available |
 | Direct push from `airflow_permissions` | Admin via configuration edit | Never (unverified roles) |
@@ -235,15 +236,23 @@ The flag cannot raise anyone's privileges: `direct_push: true` without the permi
 With `AUTOAIR_IAM__REQUIRE_APPROVAL=true`, a deploy that **goes live** needs an approval of that exact spec version (its etag) by **another** user holding `review`. On local, object and git push targets saving *is* deploying, so an unapproved deploy becomes a **deploy proposal** instead of being written:
 
 1. `PUT /api/specs/{dag_id}` (needs `spec:write`; an Author may propose without `deploy`) validates the spec, stores it as a proposal and answers **202**: `{"deployed": false, "status": "pending_approval", "proposal_etag": "<etag>", "report": {...}, "message": "..."}`. Nothing is written. Proposing the same version again keeps the first proposal and its author. A spec that fails validation is not stored (`status: "invalid"`).
-2. Reviewers find it with `GET /api/specs/{dag_id}/proposals` (needs `spec:read`) and read it with `GET /api/specs/{dag_id}/proposals/{etag}`: the proposed `spec`, the stored spec now (`current_spec`/`current_etag`, the diff base), `stale` (the stored spec changed since the author's `base_etag`), `reviews`, `approved_by`, `changes_requested_by`, `approved`.
+2. Reviewers find it with `GET /api/specs/{dag_id}/proposals` (needs `spec:read`) and read it with `GET /api/specs/{dag_id}/proposals/{etag}`: the proposed `spec`, the stored spec now (`current_spec`/`current_etag`, the diff base), `stale` (the stored spec changed since the author's `base_etag`, or the DAG exists and the proposal records no `base_etag`), `reviews`, `approved_by`, `changes_requested_by`, `approved`.
 3. `POST /api/specs/{dag_id}/reviews` with `{"etag": "<proposal etag>", "verdict": "approve" | "request_changes" | "comment", "comment": "..."}` (needs `review`). The proposal's author cannot approve it (`403`).
 4. `POST /api/specs/{dag_id}/proposals/{etag}/deploy` (needs `deploy`; optional body `{"force": false, "message": "..."}`) deploys it once a user other than its author approved it. Anyone holding `deploy` may do this, **including the author**. The proposal is then removed and the `deploy` audit record carries `approved_by` and `proposed_by`.
 
+A proposal applies only to the version it was made from. Approving (step 3), deploying (step 4) or executing a delete proposal answers **409** with a message naming both etags when the stored spec changed since the proposal was made; propose again from the current version. A proposal without a `base_etag` (made for a DAG that did not exist yet, or stored by AutoAir 0.2.2 or earlier) is refused the same way once the DAG exists.
+
 A direct `PUT` of a version that already has an approval (by someone other than the deployer, or than the author of the pending proposal of that version) deploys immediately (`deploy` needed). Each reviewer's latest verdict counts, so a later `request_changes` withdraws an approval. Reviews of stored versions (not proposals) are accepted too; self-approvals of those do not count.
+
+AutoAir records who saved each stored spec version (every deploy, pull request and MCP save; for a deployed proposal, the proposal's author). With `require_approval` on, nobody can approve a version they saved themselves (`403`), and an approval by the saver never counts towards putting that version live, whoever deploys it. The saver of a version is the first user who saved that exact content. A version saved anonymously (no user name, e.g. `--no-auth`) can never satisfy four-eyes. Versions saved before AutoAir 0.2.3 have no record (unknown saver): for them the deploying user counts as the author, as before. The records are kept per DAG (the newest 200 versions) in the shared state: the `documents` table with a SQL backend (collection `spec_version_authors`), else files next to the proposals (`<proposals URL>-authors`), so every replica applies the same rule.
 
 Proposals and reviews live in their own store: `AUTOAIR_IAM__PROPOSALS_URL` (any fsspec URL, default `<state>/proposals`) with the file backend, or the `proposals` and `reviews` tables with a SQL backend ([Database](/docs/admin/database)). They are not kept in the audit trail, so checking an approval never scans the audit log (reviews are still audited). They expire after `AUTOAIR_IAM__PROPOSAL_TTL_SECONDS` (7 days); a deployed proposal is removed at once. The admin panel's **Approvals** tab lists pending proposals and recent reviews.
 
 Pull requests are exempt: on git targets in PR mode the pull request *is* the proposal and its review happens in the git host. A direct push (`direct_push: true`) goes live, so it follows the rule above (a proposal deployed later keeps its `direct_push` request, and the deploying user then needs `deploy:direct_push`). With `REQUIRE_APPROVAL=false` none of this applies. The user-facing flow is described in [Reviews and approvals](/docs/user-guide/reviews-and-approvals).
+
+Deletes are governed like deploys. A delete that goes live (local folder, object storage, or a git push) needs `deploy` as well as `spec:delete`. With `iam.require_approval` it needs another user's approval of the deletion. Without one it is stored as a delete proposal (HTTP 202, `status: pending_approval`, `proposal_etag` = `delete-<etag of the stored spec>`). A reviewer approves that etag with `POST /specs/{dag_id}/reviews`; then anyone holding `spec:delete` and `deploy`, the author included, executes it with `POST /specs/{dag_id}/proposals/{etag}/delete`, which answers `409` if the DAG changed in the meantime. On git targets in PR mode, and for users whom `iam.force_pr_without_direct_push` routes to pull requests, a delete opens a pull request that removes the file (`status: pr_opened`); the DAG stays live until the PR is merged.
+
+MCP writes over HTTP (`save_dag_spec`, `save_raw_dag_code`, `delete_dag_spec`) follow the same rules as `PUT` and `DELETE /specs/{id}`. On a PR-mode target, or when `force_pr_without_direct_push` applies to the caller, a confirmed write opens a pull request (`status: pr_opened`; `spec:write`, or `spec:delete`, is enough). A write that goes live needs `deploy`, and with `require_approval` on it needs another user's approval of that exact version; without one the tool stores a deploy or delete proposal exactly like REST (`status: pending_approval`, `proposal_etag`), which reviewers approve and deploy in the UI or through the proposal routes. Calling the tool again after the approval puts the version live. Over stdio there is no AutoAir principal: writes land in the target's own mode.
 
 ## Import check on deploy and `code:execute`
 
@@ -255,25 +264,31 @@ The trade-off: a Deployer without `code:execute` cannot run code on the AutoAir 
 
 `AUTOAIR_FEATURES__IAM=false` turns AutoAir's own authorization layer off. AutoAir then behaves as it did before it had roles:
 
-* every signed-in user gets the **`Authenticated` baseline** plus the roles Airflow's standard permissions grant (the built-in `airflow_permissions` defaults: DAG read to Viewer, DAG edit to Author/Reviewer/Deployer/Operator/TemplateManager, configuration edit to Admin). In standalone mode, where AutoAir cannot ask Airflow about DAG permissions, that is every role; Airflow still enforces its RBAC on every proxied call;
+* every signed-in user gets the **`Authenticated` baseline** plus the roles Airflow's standard permissions grant (the built-in `airflow_permissions` defaults: DAG read to Viewer, DAG edit to Author/Reviewer/Deployer/Operator/TemplateManager, configuration edit to Admin). In standalone mode, where AutoAir cannot ask Airflow about DAG permissions, that is Viewer (`airflow_permission_roles.unverified`); Airflow still enforces its RBAC on every proxied call;
 * `iam.strategies`, `iam.role_mapping`, `iam.role_prefix`, `iam.roles`, `iam.default_roles` and custom views are ignored;
 * no four-eyes approvals (`iam.require_approval` is ignored: deploys go live directly);
 * no direct-push roles and no forced pull requests: **the git target's mode decides** (PR mode always opens a pull request, push mode always pushes; `direct_push=true` is refused);
-* sign-in (`iam.login_*`), denial auditing and `iam.anonymous_roles` (`--no-auth`) keep their configured values; MCP tools follow the same rules.
+* sign-in (`iam.login_*`), denial auditing, `iam.anonymous_roles` (`--no-auth`) and `iam.airflow_permission_roles.unverified` (what standalone users get) keep their configured values, so `unverified` stays configurable with IAM off; MCP tools follow the same rules.
 
 `GET /api/me` still answers, with `"iam_enabled": false` and `strategies: ["airflow_permissions"]`, so the UI shows what the user may do.
 
 ## Anonymous access
 
-* **`autoair serve --no-auth`** disables authentication. Every caller gets `iam.anonymous_roles` (default `["Admin"]`) but never `deploy:direct_push`, and token role claims are never read. Calls AutoAir proxies to Airflow are still subject to Airflow's own authentication. Use it for development only.
-* **`autoair local`** binds `127.0.0.1` without authentication unless `--token` (or `AUTOAIR_LOCAL__TOKEN`) is set; binding another address without a token is refused. See [Local mode](/docs/installation/local).
-* **`autoair mcp-serve --http --no-auth`** and **`autoair ai-serve --no-auth`** behave the same way for the MCP and AI services.
+* **`autoair serve --no-auth`** disables authentication. Every caller gets `iam.anonymous_roles` (default `["Viewer"]`, read-only) but never `deploy:direct_push`, and token role claims are never read. Calls AutoAir proxies to Airflow are still subject to Airflow's own authentication. Use it for development only.
+* **`autoair mcp-serve --http --no-auth`** and **`autoair ai-serve --no-auth`** behave the same way for the MCP and AI services, and so does **`autoair mcp --http`** (also `autoair-mcp --http`), the unauthenticated local MCP endpoint: its callers get `iam.anonymous_roles` (default Viewer) and it serves only on loopback.
+* **`autoair local`** creates a random access token on every start and opens the UI with it (`/ui/#token=...`; the link is also printed), so the local user is signed in with `local.roles` (default `["Admin"]`, never direct push). `--token` (or `AUTOAIR_LOCAL__TOKEN`) sets the token yourself; you paste it on the sign-in page. `--no-token` serves without authentication: visitors get `iam.anonymous_roles`. See [Local mode](/docs/installation/local).
 
-Narrow the anonymous roles when a development server is reachable by others:
+A server without authentication (`--no-auth`, `autoair mcp --http`, `autoair local --no-token`) refuses to bind anything but a loopback address (`127.0.0.1`, `::1`, `localhost`) and answers only requests whose `Host` header, and `Origin` header when the browser sends one, names a loopback address or the host of `server.public_url`. Other requests get `403`; this stops web pages in your own browser from reaching it through DNS rebinding.
+
+To let anonymous callers edit and deploy on a development server (as before 0.2.3):
 
 ```bash
-AUTOAIR_IAM__ANONYMOUS_ROLES='["Viewer"]' autoair serve --no-auth
+AUTOAIR_IAM__ANONYMOUS_ROLES='["Admin"]' autoair serve --no-auth
 ```
+
+## Templates with hand-written code
+
+Templates that hold hand-written DAG code, a raw code DAG (`spec.raw_code`) or a kept Python file (`spec.source.code`), need `code:raw` in addition to `template:write`, both when saved (`POST /templates`) and when installed from a marketplace. Python task bodies in templates are governed by the `allow_python_code` policy, as in specs.
 
 ## What the UI asks: `GET /api/me`
 
@@ -302,7 +317,7 @@ AUTOAIR_IAM__ANONYMOUS_ROLES='["Viewer"]' autoair serve --no-auth
 }
 ```
 
-The frontend hides or disables actions the user lacks: Deploy/Save (`spec:write`, or `deploy` when `default_opens_pr` is false), the "push directly" option (`deploy.direct_push`), Delete (`spec:delete`), Promote (`promote`), Trigger/Backfill/Clear/Pause (`run:trigger` / `run:manage`), test runs (`run:test`), import check and Python import (`code:execute`), new raw code DAGs and **Convert to raw code** (`code:raw`), the AI panel (`ai:use`), template save and marketplace install (`template:write`), icon upload (`icon:write`), the deploy-target dialog (`admin:deploy_target`), the configuration page (`admin:config`), the admin panel (`admin:panel`), the audit tab (`audit:read`) and Approve (`review`). Disabled items explain the missing permission in their tooltip. **The server enforces all of these whatever the UI shows.**
+The frontend hides or disables actions the user lacks: Deploy/Save (`spec:write`, or `deploy` when `default_opens_pr` is false), the "push directly" option (`deploy.direct_push`), Delete (`spec:delete`), Promote (`promote`), Trigger/Backfill/Clear/Pause (`run:trigger` / `run:manage`), test runs (`run:test` and `code:execute`), import check and Python import (`code:execute`), new raw code DAGs and **Convert to raw code** (`code:raw`), the AI panel (`ai:use`), template save and marketplace install (`template:write`), icon upload (`icon:write`), the deploy-target dialog (`admin:deploy_target`), the configuration page (`admin:config`), the admin panel (`admin:panel`), the audit tab (`audit:read`) and Approve (`review`). Disabled items explain the missing permission in their tooltip. **The server enforces all of these whatever the UI shows.**
 
 ## Routes and permissions
 
@@ -332,13 +347,16 @@ Paths are relative to the API base (`/api` standalone, `/autoair/api` in plugin 
 | `POST /specs/{id}/reviews` | `review` | DAG read |
 | `PUT /specs/{id}` | `spec:write` (+ `deploy` if live, + `deploy:direct_push` for `direct_push: true`; with approvals required an unapproved live deploy becomes a proposal, `202`) | DAG edit |
 | `PUT /specs/{id}`, `POST /specs/{id}/deploy-preview` with a raw code DAG (`raw_code` set) | + `code:raw`; `404` while `features.code_editor` or `features.python_code` is off | DAG edit |
-| `DELETE /specs/{id}` | `spec:delete` | DAG edit |
+| `PUT /specs/{id}` storing new or changed hand-written code (`source.code` differs from the stored spec's) | + `code:raw`, whatever the source policy (a later deploy may write that code as the DAG file) | DAG edit |
+| `POST /interchange/python/sync` (code mode apply) | `spec:write` + `code:execute`; + `code:raw` when the applied file differs from the document's `source.code` | |
+| `DELETE /specs/{id}` | `spec:delete` (+ `deploy` when it goes live) | DAG edit |
 | `/vcs/*` (reads, diff, merge) | `spec:read` | DAG read |
 | `POST /vcs/{id}/promote` | `promote` | DAG edit |
-| `POST /runner/test-task`, `/runner/test-dag` | `run:test` | |
-| `POST /collab/{id}/ticket` | `spec:write` | DAG edit |
+| `POST /runner/test-task`, `/runner/test-dag` | `run:test` + `code:execute` | `mode=db` also needs `admin:config` and `runner.allow_db_mode` |
+| `POST /collab/{id}/ticket` | `spec:write` | DAG edit; the ticket is bound to the user and the DAG, valid for one connection and `collab_ticket_ttl` (60 s). Open sessions close after `collab.session_seconds` (300 s) and reconnect with a new ticket, so revoked permissions end co-editing within that time |
+| `POST /lsp/session` | `builder:use` | the ticket names the user (the language-server session runs as that user), opens one WebSocket and expires after 60 s; a used ticket is refused on every replica |
 | `GET /deploy-target` / `PUT`, `POST /test`, `DELETE` | `builder:use` / `admin:deploy_target` | |
-| `GET /marketplace` / `POST /marketplace/install` | `builder:use` / `template:write` | |
+| `GET /marketplace` / `POST /marketplace/install` | `builder:use` / `template:write` | Entries with hand-written code also need `code:raw` |
 | `/config` | `admin:config` | |
 | `GET /admin/*` | `admin:panel` | |
 | `DELETE /admin/templates/{id}` | `admin:panel` + `template:write` | |
@@ -361,12 +379,13 @@ Types and full descriptions are in the configuration reference under [`iam`](/do
 | `AUTOAIR_IAM__AIRFLOW_PERMISSION_ROLES__DAG_READ` | `["Viewer"]` | Roles granted by DAG read (see [above](#airflow_permissions-default)) |
 | `AUTOAIR_IAM__AIRFLOW_PERMISSION_ROLES__DAG_EDIT` | `["Author", "Reviewer", "Deployer", "Operator", "TemplateManager"]` | Roles granted by DAG edit (see [above](#airflow_permissions-default)) |
 | `AUTOAIR_IAM__AIRFLOW_PERMISSION_ROLES__CONFIGURATION_EDIT` | `["Admin"]` | Roles granted by configuration edit (see [above](#airflow_permissions-default)) |
+| `AUTOAIR_IAM__AIRFLOW_PERMISSION_ROLES__UNVERIFIED` | `["Viewer"]` | Roles granted instead of a permission AutoAir cannot check (standalone) |
 | `AUTOAIR_IAM__ROLE_MAPPING` | `{"Admin": ["Admin"], "Op": ["Author", "Reviewer", "Deployer", "Operator", "TemplateManager"], "User": ["Author", "Operator"], "Viewer": ["Viewer"]}` | Airflow role to AutoAir roles |
 | `AUTOAIR_IAM__ROLE_PREFIX` | `"AutoAir "` | `AutoAir <Role>` Airflow roles grant `<Role>` |
 | `AUTOAIR_IAM__ROLES_CLAIMS` | `["role", "roles"]` | Standalone: JWT claims with role names |
 | `AUTOAIR_IAM__ROLES` | `{}` | Custom or overridden roles (wildcards) |
 | `AUTOAIR_IAM__DEFAULT_ROLES` | `[]` | Roles of every signed-in user |
-| `AUTOAIR_IAM__ANONYMOUS_ROLES` | `["Admin"]` | Roles with `--no-auth` (never direct push) |
+| `AUTOAIR_IAM__ANONYMOUS_ROLES` | `["Viewer"]` | Roles with `--no-auth` and `autoair local --no-token` (never direct push) |
 | `AUTOAIR_IAM__CUSTOM_VIEW_PREFIX` | `AutoAir` | Airflow resource name prefix |
 | `AUTOAIR_IAM__DIRECT_PUSH_ROLES` | `["Admin"]` | Roles with `deploy:direct_push` (a target's `storage.git.direct_push_roles` overrides) |
 | `AUTOAIR_IAM__FORCE_PR_WITHOUT_DIRECT_PUSH` | `false` | Push mode: open PRs for users without `deploy:direct_push` |
@@ -411,7 +430,7 @@ iam:
 
 ## Limitations
 
-* The MCP endpoint (`/mcp`) runs its own tools against the services and does not go through these route permissions; see [MCP](/docs/ai/mcp) and `AUTOAIR_AI__MCP__ALLOW_WRITES`.
+* MCP over HTTP (`/mcp`, `autoair mcp-serve --http`, the AI service) resolves the caller with the same strategies, and every tool needs the permission of its REST counterpart (`src/autoair/mcp/iam.py`; unclassified tools need `admin:config`). Over stdio (`autoair mcp`) there is no HTTP caller: the server runs with the rights of the local user who started it. See [MCP](/docs/ai/mcp).
 * Standalone mode cannot evaluate Airflow's per-DAG or configuration permissions locally. Use `role_mapping` with token claims, or plugin mode, for real governance.
 * With the file backend, the sign-in rate limiter is in memory, per process; with a SQL backend it is shared ([Scaling](/docs/admin/scaling)).
 

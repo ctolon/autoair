@@ -128,6 +128,11 @@
     "submitted": "Gönderilme",
     "message": "Mesaj",
     "approvals": "Onaylayanlar",
+    "action": "Değişiklik",
+    "actions": {
+      "deploy": "dağıtım",
+      "delete": "silme"
+    },
     "reviewer": "İnceleyen",
     "verdict": "Karar",
     "comment": "Yorum",
@@ -209,6 +214,9 @@
     "transport": "Aktarım",
     "tools": "İzin verilen araçlar",
     "toolsHelp": "Virgülle ayrılmış adlar veya kalıplar (* = tüm araçlar).",
+    "readOnlyTools": "Salt okunur araçlar (onaysız)",
+    "readOnlyToolsHelp": "Yalnızca okuduğuna kefil olduğunuz araçlar: onaysız çalışırlar ve yönetici asistanı bunları kullanabilir. Sunucunun kendi salt okunur işaretine güvenilmez. Boş = her çağrı onay gerektirir.",
+    "readOnly": "salt okunur",
     "timeout": "Zaman aşımı (sn)",
     "agents": "Ajanlar",
     "agent": {

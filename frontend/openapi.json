@@ -3,7 +3,7 @@
   "info": {
     "title": "AutoAir API",
     "description": "No-code DAG builder for Apache Airflow 3",
-    "version": "0.2.2"
+    "version": "0.2.3"
   },
   "paths": {
     "/auth/config": {
@@ -3613,6 +3613,59 @@
         }
       }
     },
+    "/ai/approvals/{approval_id}/calls/{call_id}/arguments": {
+      "get": {
+        "tags": [
+          "ai"
+        ],
+        "summary": "Get Tool Call Arguments",
+        "description": "Everything a pending call would run with, for review before approving it: the card\ncuts long arguments (``ai.approvals.max_argument_chars``); secrets stay masked here.",
+        "operationId": "getToolCallArguments",
+        "parameters": [
+          {
+            "name": "approval_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Approval Id"
+            }
+          },
+          {
+            "name": "call_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "maxLength": 200,
+              "title": "Call Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ToolCallArguments"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/ai/approvals/{approval_id}/stream": {
       "post": {
         "tags": [
@@ -5159,7 +5212,7 @@
           "templates"
         ],
         "summary": "Save Template",
-        "description": "Create a template, or publish a new version of a saved one (operator templates get\nthe next version number; older versions stay readable under `/versions`).",
+        "description": "Create a template, or publish a new version of a saved one (operator templates get\nthe next version number; older versions stay readable under `/versions`). A template\nwith hand-written DAG code needs `code:raw`.",
         "operationId": "saveTemplate",
         "parameters": [
           {
@@ -5789,6 +5842,9 @@
               }
             }
           },
+          "428": {
+            "description": "The DAG already exists and the request carries no base_etag / If-Match (storage.require_base_etag); the ETag header holds the current etag."
+          },
           "422": {
             "description": "Validation Error",
             "content": {
@@ -5806,6 +5862,7 @@
           "specs"
         ],
         "summary": "Delete Spec",
+        "description": "Delete a DAG (spec and DAG files). Governed like a deploy: on git targets it follows\nthe target's mode and iam.force_pr_without_direct_push (a pull request removes the\nfile), a delete that goes live needs 'deploy', and with iam.require_approval it needs\nanother user's approval first (else it is stored as a delete proposal, HTTP 202).",
         "operationId": "deleteSpec",
         "parameters": [
           {
@@ -5881,6 +5938,22 @@
                 }
               }
             }
+          },
+          "202": {
+            "description": "Stored as a delete proposal awaiting approval (status 'pending_approval'); nothing was deleted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeleteResult"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The If-Match etag is stale: the DAG changed since it was loaded."
+          },
+          "428": {
+            "description": "The DAG exists and the request carries no If-Match (storage.require_base_etag); the ETag header holds the current etag."
           },
           "422": {
             "description": "Validation Error",
@@ -6361,6 +6434,95 @@
         }
       }
     },
+    "/specs/{dag_id}/proposals/{etag}/delete": {
+      "post": {
+        "tags": [
+          "specs"
+        ],
+        "summary": "Execute Delete Proposal",
+        "description": "Execute an approved delete proposal. Anyone holding ``spec:delete`` and ``deploy``\nmay, including its author, once another user approved it; the delete conflicts (409)\nwhen the DAG changed since it was proposed.",
+        "operationId": "executeDeleteProposal",
+        "parameters": [
+          {
+            "name": "dag_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Dag Id"
+            }
+          },
+          {
+            "name": "etag",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Etag"
+            }
+          },
+          {
+            "name": "git_conn_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 250
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "per_user git credentials: connection to use.",
+              "title": "Git Conn Id"
+            },
+            "description": "per_user git credentials: connection to use."
+          },
+          {
+            "name": "X-AutoAir-Git-Token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Git token for this one write (storage.git.request_token): used instead of the configured credentials, never stored or logged. HTTPS only.",
+              "title": "X-Autoair-Git-Token"
+            },
+            "description": "Git token for this one write (storage.git.request_token): used instead of the configured credentials, never stored or logged. HTTPS only."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeleteResult"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/vcs/status": {
       "get": {
         "tags": [
@@ -6797,7 +6959,7 @@
           "collab"
         ],
         "summary": "Collab Ticket",
-        "description": "Short-lived ticket to join the DAG's live editing room (needs DAG edit permission).",
+        "description": "Short-lived, single-use ticket for one connection to the DAG's live editing room,\nbound to the caller and the room (needs DAG edit permission).",
         "operationId": "collabTicket",
         "parameters": [
           {
@@ -7060,7 +7222,7 @@
           "marketplace"
         ],
         "summary": "Install Entry",
-        "description": "Downloads a template/fragment, checks its SHA-256 against the signed index, saves it.",
+        "description": "Downloads a template/fragment, checks its SHA-256 against the signed index, saves it.\nA template with hand-written DAG code needs `code:raw`, like saving it directly.",
         "operationId": "installMarketplaceEntry",
         "requestBody": {
           "content": {
@@ -14273,11 +14435,32 @@
               }
             ],
             "title": "Error"
+          },
+          "where": {
+            "type": "string",
+            "title": "Where",
+            "description": "Where the code ran: local (this server), validator (the validator service) or none (it did not run).",
+            "readOnly": true
+          },
+          "process_isolated": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Process Isolated",
+            "description": "Whether the run had its own PID namespace (runner.process_isolation); false: it ran with the audit hook only and could see other processes (not fully isolated), null: not known.",
+            "readOnly": true
           }
         },
         "type": "object",
         "required": [
-          "state"
+          "state",
+          "where",
+          "process_isolated"
         ],
         "title": "DagTestResult"
       },
@@ -14827,7 +15010,43 @@
         "properties": {
           "deleted": {
             "type": "boolean",
-            "title": "Deleted"
+            "title": "Deleted",
+            "description": "Something was deleted or a deleting pull request opened."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "deleted",
+              "not_found",
+              "pending_approval",
+              "pr_opened"
+            ],
+            "title": "Status",
+            "description": "'deleted': gone from the target; 'pr_opened': a pull request removes it (still live until merged); 'pending_approval' (HTTP 202): stored as a delete proposal that needs another user's approval (iam.require_approval); 'not_found'.",
+            "default": "deleted"
+          },
+          "proposal_etag": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Proposal Etag",
+            "description": "Etag of the stored delete proposal (pending_approval)."
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
           }
         },
         "type": "object",
@@ -15161,7 +15380,8 @@
                 "type": "null"
               }
             ],
-            "title": "Base Etag"
+            "title": "Base Etag",
+            "description": "Etag of the spec this edit started from (or the If-Match header). Required to overwrite an existing DAG (storage.require_base_etag); a stale one returns status 'conflict'."
           },
           "environment": {
             "anyOf": [
@@ -17475,6 +17695,13 @@
             "title": "Ssh Key File",
             "description": "provider=local: SSH key."
           },
+          "ssh_key_cache_days": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Ssh Key Cache Days",
+            "description": "provider=local/gitea: days an SSH private key from a git connection stays in the clone cache (<cache_dir>/keys/id_autoair-<hash>, mode 0600) after its last use. Writing a new key file removes AutoAir's key files unused for longer (only files of that name owned by this user, never the key being used). 0 keeps them.",
+            "default": 30
+          },
           "github_app_id": {
             "anyOf": [
               {
@@ -17731,6 +17958,14 @@
             "title": "Command Timeout",
             "description": "provider=local: seconds a git command may take.",
             "default": 300
+          },
+          "env_passthrough": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Env Passthrough",
+            "description": "provider=local/gitea: environment variables (fnmatch patterns, case-insensitive) the git CLI inherits besides the ones git, ssh and curl read (PATH, HOME, locale, TMPDIR, SSH_AUTH_SOCK, SSL_CERT_*, proxy variables, GIT_*), e.g. ['KRB5CCNAME'] for Kerberos. Nothing else of the server's environment reaches git."
           },
           "max_attempts": {
             "type": "integer",
@@ -19500,6 +19735,15 @@
             "maxItems": 200,
             "title": "Tools"
           },
+          "read_only_tools": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 200,
+            "title": "Read Only Tools",
+            "description": "Tools (fnmatch) an admin vouches only read: they run without approval and the admin assistant may use them. The server's readOnlyHint is not trusted."
+          },
           "headers": {
             "additionalProperties": {
               "anyOf": [
@@ -19623,6 +19867,14 @@
             "type": "array",
             "title": "Tools"
           },
+          "read_only_tools": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Read Only Tools",
+            "description": "Tools an admin vouches only read (run without approval)."
+          },
           "headers": {
             "items": {
               "type": "string"
@@ -19708,6 +19960,18 @@
             "type": "boolean",
             "title": "Allowed",
             "default": true
+          },
+          "read_only": {
+            "type": "boolean",
+            "title": "Read Only",
+            "description": "Listed in the server's read_only_tools (runs without approval).",
+            "default": false
+          },
+          "hinted_read_only": {
+            "type": "boolean",
+            "title": "Hinted Read Only",
+            "description": "The server marks it read-only (readOnlyHint; informational, not trusted).",
+            "default": false
           }
         },
         "type": "object",
@@ -20085,6 +20349,17 @@
             "title": "Secrets Backend",
             "description": "airflow_secrets_backend: connections/variables may come from a secrets backend, so ids missing from Airflow's metastore are not flagged.",
             "default": false
+          },
+          "test_runs": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TestRunInfo"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Test runs: where they execute, whether mode=db is offered."
           }
         },
         "type": "object",
@@ -21902,7 +22177,8 @@
             "type": "string",
             "enum": [
               "read",
-              "write"
+              "write",
+              "execute"
             ],
             "title": "Kind",
             "default": "write"
@@ -21922,6 +22198,24 @@
             "title": "Truncated",
             "description": "Arguments were cut for display.",
             "default": false
+          },
+          "omitted_chars": {
+            "type": "integer",
+            "title": "Omitted Chars",
+            "description": "About how many characters of the (masked) arguments the cut left out; the full arguments come from GET /ai/approvals/{id}/calls/{call_id}/arguments.",
+            "default": 0
+          },
+          "arguments_sha256": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Arguments Sha256",
+            "description": "SHA-256 of the exact arguments the tool will run with (canonical JSON). An approval sends it back; the run resumes only when the stored call still has these arguments."
           }
         },
         "type": "object",
@@ -22618,6 +22912,16 @@
             ],
             "title": "Direct Push"
           },
+          "action": {
+            "type": "string",
+            "enum": [
+              "deploy",
+              "delete"
+            ],
+            "title": "Action",
+            "description": "'deploy' deploys the proposed spec; 'delete' deletes the DAG (POST .../proposals/{etag}/delete).",
+            "default": "deploy"
+          },
           "approved_by": {
             "items": {
               "type": "string"
@@ -22666,7 +22970,7 @@
           "stale": {
             "type": "boolean",
             "title": "Stale",
-            "description": "The stored spec changed since the author's base version (deploying would conflict unless forced).",
+            "description": "The stored spec changed since the author's base version, or the DAG exists now and the proposal records no base version: deploying, executing or approving it is refused (409) until it is proposed again.",
             "default": false
           },
           "reviews": {
@@ -22734,6 +23038,16 @@
               }
             ],
             "title": "Environment"
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "deploy",
+              "delete"
+            ],
+            "title": "Action",
+            "description": "'delete': the proposal deletes the DAG.",
+            "default": "deploy"
           },
           "approvals": {
             "items": {
@@ -22824,6 +23138,16 @@
               }
             ],
             "title": "Direct Push"
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "deploy",
+              "delete"
+            ],
+            "title": "Action",
+            "description": "'deploy' deploys the proposed spec; 'delete' deletes the DAG (POST .../proposals/{etag}/delete).",
+            "default": "deploy"
           },
           "approved_by": {
             "items": {
@@ -25354,6 +25678,26 @@
             "description": "Saved versions kept per DAG.",
             "default": 100
           },
+          "object_lock_seconds": {
+            "type": "number",
+            "exclusiveMinimum": 0.0,
+            "title": "Object Lock Seconds",
+            "description": "mode=object: seconds a write lease of a DAG lasts. Writers of one DAG hold it (a document in AutoAir's state backend, shared by every replica with database.backend sqlite/postgresql) while they check base_etag and write, so two replicas never both win; a replica that died holding it blocks that DAG's deploys at most this long. Must exceed the longest save.",
+            "default": 300.0
+          },
+          "object_lock_wait_seconds": {
+            "type": "number",
+            "minimum": 0.0,
+            "title": "Object Lock Wait Seconds",
+            "description": "mode=object: seconds a save waits for another writer's lease on the same DAG before it fails with a conflict (409).",
+            "default": 30.0
+          },
+          "require_base_etag": {
+            "type": "boolean",
+            "title": "Require Base Etag",
+            "description": "Overwriting or deleting an existing DAG spec needs the etag it was loaded with (REST: base_etag or If-Match on PUT, If-Match on DELETE, else HTTP 428 Precondition Required with the current etag; MCP save_dag_spec and delete_dag_spec: base_etag, else the call is refused with current_etag). false lets legacy API clients overwrite or delete without one (last writer wins). Creating a new DAG never needs an etag.",
+            "default": true
+          },
           "file_mode": {
             "type": "string",
             "pattern": "^0?[0-7]{3,4}$",
@@ -26097,11 +26441,32 @@
             },
             "type": "object",
             "title": "Xcom Pushes"
+          },
+          "where": {
+            "type": "string",
+            "title": "Where",
+            "description": "Where the code ran: local (this server), validator (the validator service) or none (it did not run).",
+            "readOnly": true
+          },
+          "process_isolated": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Process Isolated",
+            "description": "Whether the run had its own PID namespace (runner.process_isolation); false: it ran with the audit hook only and could see other processes (not fully isolated), null: not known.",
+            "readOnly": true
           }
         },
         "type": "object",
         "required": [
-          "state"
+          "state",
+          "where",
+          "process_isolated"
         ],
         "title": "TaskTestResult"
       },
@@ -26702,7 +27067,7 @@
               "auto"
             ],
             "title": "Mode",
-            "description": "memory: no metadata DB; db: dag.test() (writes a run to the DB); auto: db with fallback to memory.",
+            "description": "memory: no metadata DB; db: dag.test() (writes a run to the DB; needs runner.allow_db_mode and admin:config); auto: db with fallback to memory when db is allowed for the caller, else memory.",
             "default": "memory"
           },
           "timeout": {
@@ -26725,6 +27090,37 @@
           "spec"
         ],
         "title": "TestDagRequest"
+      },
+      "TestRunInfo": {
+        "properties": {
+          "on_validator": {
+            "type": "boolean",
+            "title": "On Validator",
+            "description": "Task and DAG test runs (mode memory) run on the validator service (validator.url and validator.test_runs), not on this host."
+          },
+          "db_mode_unavailable": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "disabled",
+                  "admin_only"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Db Mode Unavailable",
+            "description": "Why mode=db is not available: disabled (runner.allow_db_mode is off) or admin_only (it needs admin:config). Null: the caller may use it. mode=auto runs in memory whenever this is set."
+          }
+        },
+        "type": "object",
+        "required": [
+          "on_validator"
+        ],
+        "title": "TestRunInfo",
+        "description": "Where test runs execute and whether ``mode=db`` is available to the caller."
       },
       "TestTaskRequest": {
         "properties": {
@@ -26943,6 +27339,34 @@
         "title": "ToolApprovalView",
         "description": "A paused run's approval as chat messages and analyses carry it."
       },
+      "ToolCallArguments": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "tool": {
+            "type": "string",
+            "title": "Tool"
+          },
+          "arguments": {
+            "title": "Arguments"
+          },
+          "arguments_sha256": {
+            "type": "string",
+            "title": "Arguments Sha256",
+            "description": "Send it back with an approval of the call."
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "tool",
+          "arguments_sha256"
+        ],
+        "title": "ToolCallArguments",
+        "description": "A pending call's complete arguments (secrets masked, nothing cut)."
+      },
       "ToolCallRecord": {
         "properties": {
           "id": {
@@ -27004,6 +27428,19 @@
               }
             ],
             "title": "Reason"
+          },
+          "arguments_sha256": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Arguments Sha256",
+            "description": "The arguments_sha256 of the call as shown; required to approve."
           }
         },
         "type": "object",

@@ -184,8 +184,11 @@ class GitLabProvider:
             error = AuthError if resp.status_code in (401, 403) else StorageError
             raise error(f"GitLab API error {resp.status_code}: {_message(resp)}")
 
-    def reset_branch(self, name: str, to_sha: str) -> None:
+    def reset_branch(self, name: str, to_sha: str, *, expect: str | None = None) -> None:
         check_branch(name)
+        if expect is not None and self.head(name) != expect:
+            # The host's API has no compare-and-swap for this: checked just before the move.
+            raise ConflictError(None, f"branch {name!r} moved; reload and retry")
         self._request("DELETE", f"{self._p}/repository/branches/{_enc(name)}", ok_missing=True)
         self.create_branch(name, to_sha)
 

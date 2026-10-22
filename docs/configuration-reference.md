@@ -14,7 +14,7 @@ and INI files.
 **Secret** values are masked as `***` by `GET /api/config` (`expose_config=true`) and
 left out with `expose_config=non-sensitive-only`.
 
-670 options.
+692 options.
 
 ## Top level
 
@@ -82,7 +82,7 @@ left out with `expose_config=non-sensitive-only`.
 | `AUTOAIR_MARKETPLACE_MAX_BYTES` | `marketplace_max_bytes` | `int` | `5242880` | Largest index / payload accepted. |  |
 | `AUTOAIR_OTEL_ENABLED` | `otel_enabled` | `bool` | `false` | OpenTelemetry tracing (pip install 'autoair[otel]'). |  |
 | `AUTOAIR_COLLAB_SECRET` | `collab_secret` | `secret str \| None` | `None` | HMAC key for collaboration tickets (default: derived from Airflow's [api_auth] jwt_secret; set it when standalone runs several replicas). | yes |
-| `AUTOAIR_COLLAB_TICKET_TTL` | `collab_ticket_ttl` | `int` | `600` | Seconds a collaboration ticket is valid. |  |
+| `AUTOAIR_COLLAB_TICKET_TTL` | `collab_ticket_ttl` | `int` | `60` | Seconds a collaboration ticket is valid. A ticket opens one connection (single use); the browser asks for a new one before every (re)connect. |  |
 | `AUTOAIR_COLLAB_MAX_ROOMS` | `collab_max_rooms` | `int` | `500` | Live editing rooms per process. |  |
 | `AUTOAIR_TEAM_STORAGE` | `team_storage` | `dict[str, StorageSettings]` | `{}` | Multi-team: per-team deploy target (e.g. each team's repo/bundle); DAGs whose `team` is set are written there. |  |
 | `AUTOAIR_TEAM_DAG_ID_PREFIX` | `team_dag_id_prefix` | `bool` | `false` | Multi-team: require dag_id to start with '<team>_'. |  |
@@ -128,7 +128,7 @@ Authorization: AutoAir roles/permissions governed through Airflow.
 | `AUTOAIR_IAM__ROLES_CLAIMS` | `iam.roles_claims` | `list[str]` | `["role", "roles"]` | Standalone 'role_mapping': JWT claims holding the Airflow role(s). Only used when Airflow verified the token (the default; not with --no-auth). |  |
 | `AUTOAIR_IAM__ROLES` | `iam.roles` | `dict[str, list[str]]` | `{}` | Custom roles or overrides of built-in ones: name -> permissions (wildcards allowed), e.g. {"Auditor": ["spec:read", "audit:read"]}. |  |
 | `AUTOAIR_IAM__DEFAULT_ROLES` | `iam.default_roles` | `list[str]` | `[]` | Roles every signed-in user gets, whatever the strategy. |  |
-| `AUTOAIR_IAM__ANONYMOUS_ROLES` | `iam.anonymous_roles` | `list[str]` | `["Admin"]` | Roles when authentication is disabled (autoair serve --no-auth); such users never get direct-push rights through storage.git.direct_push_roles. |  |
+| `AUTOAIR_IAM__ANONYMOUS_ROLES` | `iam.anonymous_roles` | `list[str]` | `["Viewer"]` | Roles of unauthenticated callers (serve/mcp-serve/ai-serve --no-auth, which only bind to loopback); such users never get direct-push rights through storage.git.direct_push_roles. Set e.g. ['Admin'] to let them edit and deploy. |  |
 | `AUTOAIR_IAM__CUSTOM_VIEW_PREFIX` | `iam.custom_view_prefix` | `str` | `AutoAir` | 'custom_view' strategy: Airflow resource names are '<prefix> <resource>' (e.g. 'AutoAir Deploy'). |  |
 | `AUTOAIR_IAM__DIRECT_PUSH_ROLES` | `iam.direct_push_roles` | `list[str]` | `["Admin"]` | AutoAir roles holding 'deploy:direct_push' (push straight to the branch in git PR mode); a deploy target's storage.git.direct_push_roles overrides it when set. Empty: nobody, except users granted the permission explicitly. |  |
 | `AUTOAIR_IAM__FORCE_PR_WITHOUT_DIRECT_PUSH` | `iam.force_pr_without_direct_push` | `bool` | `false` | Git push mode: users without 'deploy:direct_push' have their deploys opened as pull requests instead of pushed. |  |
@@ -154,6 +154,7 @@ Authorization: AutoAir roles/permissions governed through Airflow.
 | `AUTOAIR_IAM__AIRFLOW_PERMISSION_ROLES__DAG_READ` | `iam.airflow_permission_roles.dag_read` | `list[str]` | `["Viewer"]` | Roles granted by DAG read (GET). |  |
 | `AUTOAIR_IAM__AIRFLOW_PERMISSION_ROLES__DAG_EDIT` | `iam.airflow_permission_roles.dag_edit` | `list[str]` | `["Author", "Reviewer", "Deployer", "Operator", "TemplateManager"]` | Roles granted by DAG edit (PUT). |  |
 | `AUTOAIR_IAM__AIRFLOW_PERMISSION_ROLES__CONFIGURATION_EDIT` | `iam.airflow_permission_roles.configuration_edit` | `list[str]` | `["Admin"]` | Roles granted by configuration edit (PUT); plugin mode only — standalone cannot check it and never infers direct-push rights from it. |  |
+| `AUTOAIR_IAM__AIRFLOW_PERMISSION_ROLES__UNVERIFIED` | `iam.airflow_permission_roles.unverified` | `list[str]` | `["Viewer"]` | Roles granted instead when AutoAir cannot ask Airflow for one of the permissions above (standalone `autoair serve` only verifies the token): a permission that cannot be checked never grants its own roles. Grant more with the 'role_mapping' strategy (the token's role claim) or iam.default_roles. |  |
 
 ## `discovery`
 
@@ -222,7 +223,7 @@ Validation rules: privileged operators, dag_id/task_id patterns, secret detectio
 | `AUTOAIR_POLICY__SECRET_PARAM_PATTERNS_EXTRA` | `policy.secret_param_patterns_extra` | `list[str]` | `[]` | More secret parameter-name regexes (any match). |  |
 | `AUTOAIR_POLICY__SECRET_PARAM_EXCLUDE_PATTERN` | `policy.secret_param_exclude_pattern` | `str` | `(_conn_id\|_id\|_name\|_path\|_file\|_field\|_url\|_ref)$\|^token_url$` | Regex (case-insensitive) over parameter names that are never secrets even when secret_param_pattern matches (token_url, *_conn_id…). |  |
 | `AUTOAIR_POLICY__SECRET_PARAM_EXCLUDE_PATTERNS_EXTRA` | `policy.secret_param_exclude_patterns_extra` | `list[str]` | `[]` | More never-a-secret parameter-name regexes. |  |
-| `AUTOAIR_POLICY__SECRET_ASSIGNMENT_PATTERN` | `policy.secret_assignment_pattern` | `str` | `(?im)^[ \t]*(?:(?:export\|local)[ \t]+)?[\w.\[\]'"]{0,120}?(?:password\|passwd\|secret\|token\|api_?key\|access_?key)[\w'"\]]{0,120}[ \t]*=[ \t]*["'][^"'{}\s]{6,}["']` | Regex over inline code / scripts finding secret-looking assignments. Overrides the built-in pattern; empty disables it. |  |
+| `AUTOAIR_POLICY__SECRET_ASSIGNMENT_PATTERN` | `policy.secret_assignment_pattern` | `str` | `(?i)(?<![\w.\[\]'"])[\w.\[\]'"]{0,120}?(?:password\|passwd\|secret\|token\|api_?key\|access_?key)[\w'"\]]{0,120}[ \t]*=[ \t]*["'][^"'{}\s]{6,}["']` | Regex over inline code / scripts finding secret-looking assignments. Overrides the built-in pattern; empty disables it. |  |
 | `AUTOAIR_POLICY__SECRET_ASSIGNMENT_PATTERNS_EXTRA` | `policy.secret_assignment_patterns_extra` | `list[str]` | `[]` | More secret-assignment regexes (any match). |  |
 | `AUTOAIR_POLICY__JINJA_NAMES_EXTRA` | `policy.jinja_names_extra` | `list[str]` | `[]` | Template variables known besides Airflow's context (user_defined_macros, plugin macros…): no 'unknown template variable' warning for them. |  |
 | `AUTOAIR_POLICY__RULES` | `policy.rules` | `list[PolicyRule]` | `[]` | Declarative rules: a match (environments, teams, dag_ids, tags, schedule, operators, params) and a check (forbid, min_retries, require_owner, tags_include, dag_field, task_field, param…) with severity error or warning. See docs/policy.md. |  |
@@ -252,6 +253,9 @@ Test runs from the builder.
 | `AUTOAIR_RUNNER__MAX_TIMEOUT` | `runner.max_timeout` | `float` | `600` | Largest timeout (s) a test-run request may ask for. |  |
 | `AUTOAIR_RUNNER__MAX_LOG_CHARS` | `runner.max_log_chars` | `int` | `64000` | Characters of task log returned per test run. |  |
 | `AUTOAIR_RUNNER__MAX_VALUE_CHARS` | `runner.max_value_chars` | `int` | `4000` | Characters of a returned value/XCom repr shown. |  |
+| `AUTOAIR_RUNNER__ALLOW_DB_MODE` | `runner.allow_db_mode` | `bool` | `false` | Allow DAG test runs with mode=db (dag.test()): the run writes a DAG run to the metadata DB, so the DAG code gets the metadata DB connection and the Fernet key, i.e. every Airflow connection and variable. Even then only callers holding admin:config (besides run:test and code:execute) may use it, and mode=auto picks db only for them; for everyone else auto runs in memory. Read for every request. |  |
+| `AUTOAIR_RUNNER__PROCESS_ISOLATION` | `runner.process_isolation` | `'auto' \| 'required' \| 'off'` | `auto` | Run each local test run as PID 1 of its own PID, user and mount namespaces with a fresh /proc, so its code (Python or a BashOperator command) cannot see other processes, the AutoAir or Airflow server that started it included (Linux unprivileged user namespaces); the namespace also hides Airflow's secret files and mounts the DAG folders read-only. auto (default, every mode): when the kernel allows it (Ubuntu 24.04+ restricts it by default through AppArmor); otherwise the run still executes with the audit hook (audit_hook), read-only DAG folders and a secret-free copy of airflow.cfg, its result carries a 'not fully isolated' notice and the server logs one warning. required: test runs fail without namespaces. off: never. For isolated test runs on hosts without namespaces, configure validator.url. Runs on the validator service use validator.run_process_isolation. |  |
+| `AUTOAIR_RUNNER__AUDIT_HOOK` | `runner.audit_hook` | `bool` | `true` | A Python audit hook in each local test-run child denies reading other processes' /proc/<pid> entries (environment, command line, memory) and other test runs' folders. It does not restrict subprocesses, network or writes (task code needs them), and it does not see what a subprocess does: process_isolation does. |  |
 
 ## `editor`
 
@@ -349,6 +353,9 @@ Environment of processes running DAG code (secrets removed).
 | `AUTOAIR_SANDBOX__SECRET_ENV_PATTERNS_EXTRA` | `sandbox.secret_env_patterns_extra` | `list[str]` | `[]` | More AUTOAIR_* name regexes to remove (any match). |  |
 | `AUTOAIR_SANDBOX__SCRUB_ENV` | `sandbox.scrub_env` | `list[str]` | `["ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GEMINI_API_KEY", "GOOGLE_API_KEY"]` | Variables (any prefix) always removed from DAG-code processes. Overrides the built-in list. |  |
 | `AUTOAIR_SANDBOX__SCRUB_ENV_EXTRA` | `sandbox.scrub_env_extra` | `list[str]` | `[]` | More variables removed, e.g. ['AWS_SECRET_ACCESS_KEY', 'VAULT_TOKEN']. |  |
+| `AUTOAIR_SANDBOX__CREDENTIAL_ENV_PATTERN` | `sandbox.credential_env_pattern` | `str` | `^AIRFLOW_(CONN\|VAR)_\|^AIRFLOW__.*(SECRET\|FERNET\|SQL_ALCHEMY_CONN\|PASSWORD\|PASSWD\|TOKEN\|PRIVATE_KEY\|BROKER_URL\|RESULT_BACKEND\|_KWARGS$\|ENGINE_ARGS\|BASIC_AUTH\|_DSN$\|_CMD$)\|(^\|_)(SECRET\|PASSWORD\|PASSWD\|TOKEN\|API_KEY\|ACCESS_KEY\|PRIVATE_KEY\|CREDENTIALS?\|CONNECTION_STRING\|SAS_TOKEN\|ACCOUNT_KEY\|SESSION_TOKEN\|SECURITY_TOKEN\|DSN\|BASIC_AUTH\|WEBHOOK\|WEBHOOK_URL\|BROKER_URL)(_\|$)\|_(PASS\|PWD)$\|^AWS_(ACCESS_KEY_ID\|WEB_IDENTITY_TOKEN_FILE\|CONTAINER_AUTHORIZATION_TOKEN.*)$\|^AZURE_(CLIENT_SECRET\|CLIENT_CERTIFICATE_.*\|FEDERATED_TOKEN_FILE\|USERNAME\|STORAGE_KEY)$\|^(GOOGLE_APPLICATION_CREDENTIALS\|CLOUDSDK_AUTH_.*\|PGPASSWORD\|PGPASSFILE\|MYSQL_PWD\|DATABASE_URL)$` | Regex (case-insensitive) over every variable name (any prefix) removed from DAG-code processes: Airflow's secrets (AIRFLOW__DATABASE__SQL_ALCHEMY_CONN, AIRFLOW__CORE__FERNET_KEY, AIRFLOW__API_AUTH__JWT_SECRET, any *_CMD or *_SECRET indirection, AIRFLOW_CONN_*, AIRFLOW_VAR_*) and common cloud credentials (AWS_*, GOOGLE_APPLICATION_CREDENTIALS, AZURE_*). Non-secret Airflow configuration stays. Overrides the built-in pattern; empty disables this rule. |  |
+| `AUTOAIR_SANDBOX__CREDENTIAL_ENV_PATTERNS_EXTRA` | `sandbox.credential_env_patterns_extra` | `list[str]` | `[]` | More regexes over any variable name to remove (any match). |  |
+| `AUTOAIR_SANDBOX__ENV_PASSTHROUGH` | `sandbox.env_passthrough` | `list[str]` | `[]` | Variable names (fnmatch patterns, case-insensitive) kept for DAG-code processes although credential_env_pattern matches them, e.g. ['AIRFLOW_VAR_ENVIRONMENT', 'AIRFLOW_CONN_TEST_*'] for DAGs that read a variable at parse time or task tests that need a connection. AutoAir's own secrets and the validator key connection are removed regardless. |  |
 
 ## `server`
 
@@ -470,7 +477,7 @@ Sign-in with the Airflow UI session (docs/sso.md).
 | `AUTOAIR_SSO__ENABLED` | `sso.enabled` | `bool` | `true` | Standalone: accept the Airflow UI session cookie (when the browser sends it: same host, or a shared parent domain set up at the proxy) and offer 'Sign in with Airflow'. Plugin mode always uses Airflow's session. |  |
 | `AUTOAIR_SSO__COOKIE_NAME` | `sso.cookie_name` | `str` | `_token` | Name of Airflow's session (JWT) cookie. |  |
 | `AUTOAIR_SSO__AIRFLOW_PUBLIC_URL` | `sso.airflow_public_url` | `str \| None` | `None` | Airflow UI URL as browsers reach it (default: airflow_url). 'Sign in with Airflow' opens <airflow_public_url>/auth/login. |  |
-| `AUTOAIR_SSO__REQUIRE_CSRF_HEADER` | `sso.require_csrf_header` | `bool` | `true` | Standalone: state-changing requests authenticated by the cookie (not a bearer token) must carry the X-AutoAir-CSRF header and a same-origin (or allowed CORS) Origin — the cookie is SameSite=Lax, which still lets sibling sites on the same registrable domain send it. |  |
+| `AUTOAIR_SSO__REQUIRE_CSRF_HEADER` | `sso.require_csrf_header` | `bool` | `true` | Standalone with SSO, and plugin mode (Airflow's _token cookie): state-changing requests authenticated by the cookie (not a bearer token) must carry the X-AutoAir-CSRF header and a same-origin (or allowed CORS) Origin — the cookie is SameSite=Lax, which still lets sibling sites on the same registrable domain send it. |  |
 | `AUTOAIR_SSO__REFRESH_MARGIN_SECONDS` | `sso.refresh_margin_seconds` | `int` | `300` | The UI refreshes the session this many seconds before the token expires (cookie sessions: through Airflow's refresh middleware). |  |
 | `AUTOAIR_SSO__SESSION_CHECK_SECONDS` | `sso.session_check_seconds` | `int` | `60` | The UI re-checks the session this often (s) so a sign-out in Airflow signs AutoAir out too (0: only on API errors). |  |
 | `AUTOAIR_SSO__PROPAGATE_LOGOUT` | `sso.propagate_logout` | `bool` | `true` | Signing out of AutoAir also revokes the Airflow token (Airflow >= 3.2) and clears the shared session cookie (signs the Airflow UI out when it shares it). |  |
@@ -492,7 +499,8 @@ Admin panel export and scan limits.
 
 | Environment variable | Config key | Type | Default | Description | Secret |
 |---|---|---|---|---|---|
-| `AUTOAIR_LOCAL__TOKEN` | `local.token` | `secret str \| None` | `None` | Optional access token for `autoair local` (Bearer header or pasted in the UI); unset: no authentication (only bind to 127.0.0.1 then). | yes |
+| `AUTOAIR_LOCAL__TOKEN` | `local.token` | `secret str \| None` | `None` | Access token for `autoair local` (Bearer header or pasted in the UI). Unset: `autoair local` creates a random token per run and opens the UI with it (`--no-token` serves without authentication on loopback, with iam.anonymous_roles). | yes |
+| `AUTOAIR_LOCAL__ROLES` | `local.roles` | `list[str]` | `["Admin"]` | AutoAir roles of the `autoair local` token holder (the local user); never direct-push rights through storage.git.direct_push_roles. |  |
 | `AUTOAIR_LOCAL__OPEN_BROWSER` | `local.open_browser` | `bool` | `false` | Open the UI in the default browser once started. |  |
 
 ## `validator`
@@ -524,6 +532,14 @@ Import checks in a separate validator service (autoair validator-serve) and the 
 | `AUTOAIR_VALIDATOR__AUDIT_HOOK` | `validator.audit_hook` | `bool` | `true` | Validator: a Python audit hook in each worker denies subprocesses, fork/exec, signals, ctypes, network connections and DNS, writes outside the worker's scratch folder, and reads of other processes' /proc entries. Defence in depth: the container (no egress, read-only root, non-root) is the boundary. |  |
 | `AUTOAIR_VALIDATOR__NETWORK_ISOLATION` | `validator.network_isolation` | `'auto' \| 'required' \| 'off'` | `auto` | Validator: move each worker into its own empty network namespace (Linux unprivileged user namespaces). auto: when the kernel allows it, required: workers fail to start otherwise, off: never. |  |
 | `AUTOAIR_VALIDATOR__METRICS_ENABLED` | `validator.metrics_enabled` | `bool` | `true` | Validator: serve Prometheus metrics at /metrics. |  |
+| `AUTOAIR_VALIDATOR__TEST_RUNS` | `validator.test_runs` | `bool` | `true` | Send task and DAG test runs to the validator (POST /v1/run on run_url, else url) when one is set, so their code runs in the validator's sandbox instead of this host. When the validator cannot be asked, fail_mode local runs the test here and both open and closed fail it (a test run never silently runs locally). mode=db runs always run here: the validator has no metadata DB. false: test runs always run here. |  |
+| `AUTOAIR_VALIDATOR__RUN_URL` | `validator.run_url` | `str` | `""` | Base URL of the validator that executes test runs; empty: url. Point it at a second validator deployment whose NetworkPolicy allows the egress task tests need, so the import-check validator keeps no network at all (a NetworkPolicy applies to a whole pod and cannot tell run processes from check workers). |  |
+| `AUTOAIR_VALIDATOR__RUNS_ENABLED` | `validator.runs_enabled` | `bool` | `true` | Validator: serve test runs (POST /v1/run). Set false on an import-check-only deployment (when the server's run_url points at a separate one): /v1/run then answers 404. |  |
+| `AUTOAIR_VALIDATOR__RUN_NETWORK` | `validator.run_network` | `bool` | `true` | Validator: test-run processes may open network connections (task tests often call services). The pod then needs a NetworkPolicy egress rule; import checks keep no network either way. false: every run gets an empty network namespace (network_isolation decides whether that is required). |  |
+| `AUTOAIR_VALIDATOR__RUN_PROCESS_ISOLATION` | `validator.run_process_isolation` | `'auto' \| 'required' \| 'off'` | `auto` | Validator: run each test run as PID 1 of its own PID, user and mount namespaces with a fresh /proc (see runner.process_isolation). auto: when the kernel or container allows it, required: runs fail otherwise, off: never. |  |
+| `AUTOAIR_VALIDATOR__MAX_RUN_SECONDS` | `validator.max_run_seconds` | `float` | `600` | Validator: largest test-run timeout (s) a request may ask for. |  |
+| `AUTOAIR_VALIDATOR__MAX_CONCURRENT_RUNS` | `validator.max_concurrent_runs` | `int` | `2` | Validator: test runs executing at the same time (one process each); more concurrent requests get HTTP 503 (the main server retries). |  |
+| `AUTOAIR_VALIDATOR__RUN_MEMORY_LIMIT_MB` | `validator.run_memory_limit_mb` | `int` | `2048` | Validator: address-space limit of a test-run process (MiB, RLIMIT_AS); file_size_limit_mb, open_files_limit and process_limit apply to runs too, the CPU time is bounded by the run's timeout. 0: no limit. |  |
 
 ## `kb`
 
@@ -991,7 +1007,7 @@ Human approval of individual agent tool calls.
 | Environment variable | Config key | Type | Default | Description | Secret |
 |---|---|---|---|---|---|
 | `AUTOAIR_AI__APPROVALS__ENABLED` | `ai.approvals.enabled` | `bool` | `true` | Pause a run when the agent calls a tool that needs approval and ask the user who started it. False: such tools are not offered to the agent at all (it never runs them unapproved). |  |
-| `AUTOAIR_AI__APPROVALS__AGENTS` | `ai.approvals.agents` | `dict['developer' \| 'admin' \| 'troubleshoot', ToolApprovalRule]` | `{}` | Rule per agent (developer, admin, troubleshoot), replacing default for that agent, e.g. {"developer": {"classes": ["write"], "exempt": ["remember"]}} (JSON in the environment). |  |
+| `AUTOAIR_AI__APPROVALS__AGENTS` | `ai.approvals.agents` | `dict['developer' \| 'admin' \| 'troubleshoot', ToolApprovalRule]` | `{}` | Rule per agent (developer, admin, troubleshoot), replacing default for that agent, e.g. {"developer": {"classes": ["write"], "exempt": ["mcp__jira__get_*"]}} (JSON in the environment). |  |
 | `AUTOAIR_AI__APPROVALS__TTL_SECONDS` | `ai.approvals.ttl_seconds` | `float` | `3600` | Seconds a pending approval can be decided; afterwards it expires and the paused run cannot be resumed (the user asks again). |  |
 | `AUTOAIR_AI__APPROVALS__MAX_PENDING_PER_USER` | `ai.approvals.max_pending_per_user` | `int` | `20` | Pending approvals per user; a new one beyond this cancels the oldest. |  |
 | `AUTOAIR_AI__APPROVALS__RETENTION_HOURS` | `ai.approvals.retention_hours` | `float` | `168` | Hours decided, expired and cancelled approvals are kept (their outcome stays in the AI audit log). |  |
@@ -1006,9 +1022,9 @@ Rule of every agent without its own entry in agents.
 
 | Environment variable | Config key | Type | Default | Description | Secret |
 |---|---|---|---|---|---|
-| `AUTOAIR_AI__APPROVALS__DEFAULT__CLASSES` | `ai.approvals.default.classes` | `list['read' \| 'write']` | `["write"]` | Tool classes whose calls need approval (JSON list in the environment): write = tools that change something (stored memories, external MCP tools not marked read-only); read = every read-only tool too. [] = none by class. |  |
+| `AUTOAIR_AI__APPROVALS__DEFAULT__CLASSES` | `ai.approvals.default.classes` | `list['read' \| 'write' \| 'execute']` | `["write"]` | Tool classes whose calls need approval (JSON list in the environment): write = tools that change something (stored memories, external MCP tools not listed in the server's read_only_tools) and tools that run Python on the server (class execute: import_python_dag, deploy_dry_run); execute = only the latter; read = every read-only tool too. [] = none by class. |  |
 | `AUTOAIR_AI__APPROVALS__DEFAULT__TOOLS` | `ai.approvals.default.tools` | `list[str]` | `[]` | Tool names (fnmatch, e.g. mcp__jira__*) that always need approval, whatever their class; takes precedence over exempt. |  |
-| `AUTOAIR_AI__APPROVALS__DEFAULT__EXEMPT` | `ai.approvals.default.exempt` | `list[str]` | `[]` | Tool names (fnmatch) that never need approval although their class does, e.g. remember. Ignored for write tools of a troubleshooting analysis in hitl mode. |  |
+| `AUTOAIR_AI__APPROVALS__DEFAULT__EXEMPT` | `ai.approvals.default.exempt` | `list[str]` | `[]` | Tool names (fnmatch) that never need approval although their class does, e.g. mcp__metrics__*. Ignored for write and execute tools of a troubleshooting analysis in hitl mode, and for remember (a stored memory always needs approval). |  |
 
 ## `ai.upgrade`
 
@@ -1033,6 +1049,7 @@ Sharing live-editing rooms between replicas (AUTOAIR_COLLAB__<FIELD>).
 | `AUTOAIR_COLLAB__SNAPSHOT_SECONDS` | `collab.snapshot_seconds` | `float` | `5` | Shared sync: how often a changed room is saved to the database. |  |
 | `AUTOAIR_COLLAB__SNAPSHOT_TTL_SECONDS` | `collab.snapshot_ttl_seconds` | `float` | `300` | A saved room is restored only when it changed within this many seconds (older ones are stale: the stored spec is the source of truth). |  |
 | `AUTOAIR_COLLAB__RETENTION_SECONDS` | `collab.retention_seconds` | `float` | `300` | Database fan-out: how long relayed messages are kept before pruning. |  |
+| `AUTOAIR_COLLAB__SESSION_SECONDS` | `collab.session_seconds` | `float` | `300` | A live-editing connection is closed after this many seconds; the browser reconnects with a new ticket, which re-checks DAG edit permission, so a revoked permission ends co-editing within this interval. Lower is stricter (one ticket request per user and interval). |  |
 
 ## `database`
 
@@ -1071,6 +1088,9 @@ Deploy target: local folder, object storage or git (AUTOAIR_STORAGE__*).
 | `AUTOAIR_STORAGE__OBJECT_URL` | `storage.object_url` | `str \| None` | `None` | mode=object: fsspec URL of the bundle prefix. |  |
 | `AUTOAIR_STORAGE__STORAGE_OPTIONS` | `storage.storage_options` | `dict[str, Any]` | `{}` | mode=object: fsspec storage options (credentials, endpoint…). | yes |
 | `AUTOAIR_STORAGE__HISTORY_LIMIT` | `storage.history_limit` | `int` | `100` | Saved versions kept per DAG. |  |
+| `AUTOAIR_STORAGE__OBJECT_LOCK_SECONDS` | `storage.object_lock_seconds` | `float` | `300.0` | mode=object: seconds a write lease of a DAG lasts. Writers of one DAG hold it (a document in AutoAir's state backend, shared by every replica with database.backend sqlite/postgresql) while they check base_etag and write, so two replicas never both win; a replica that died holding it blocks that DAG's deploys at most this long. Must exceed the longest save. |  |
+| `AUTOAIR_STORAGE__OBJECT_LOCK_WAIT_SECONDS` | `storage.object_lock_wait_seconds` | `float` | `30.0` | mode=object: seconds a save waits for another writer's lease on the same DAG before it fails with a conflict (409). |  |
+| `AUTOAIR_STORAGE__REQUIRE_BASE_ETAG` | `storage.require_base_etag` | `bool` | `true` | Overwriting or deleting an existing DAG spec needs the etag it was loaded with (REST: base_etag or If-Match on PUT, If-Match on DELETE, else HTTP 428 Precondition Required with the current etag; MCP save_dag_spec and delete_dag_spec: base_etag, else the call is refused with current_etag). false lets legacy API clients overwrite or delete without one (last writer wins). Creating a new DAG never needs an etag. |  |
 | `AUTOAIR_STORAGE__FILE_MODE` | `storage.file_mode` | `str` | `0644` | mode=local: permissions (octal) of written files. |  |
 | `AUTOAIR_STORAGE__DIR_MODE` | `storage.dir_mode` | `str \| None` | `None` | mode=local: permissions (octal) of created folders (default: umask). |  |
 | `AUTOAIR_STORAGE__TEMP_DIR` | `storage.temp_dir` | `path \| None` | `None` | mode=local: folder for the temporary file of atomic writes (default: the target folder). Must be on the same file system, or writes stop being atomic. |  |
@@ -1096,6 +1116,7 @@ Deploy target: local folder, object storage or git (AUTOAIR_STORAGE__*).
 | `AUTOAIR_STORAGE__GIT__CREDENTIALS_TTL` | `storage.git.credentials_ttl` | `float` | `60` | Seconds the credentials read from an Airflow connection (conn_id, forced_conn_id, the bundle's or a user's own) are reused before the connection is read again; on an authentication failure it is re-read at once and the operation retried, so a rotated token works without a restart. 0 = read on every operation. |  |
 | `AUTOAIR_STORAGE__GIT__CACHE_DIR` | `storage.git.cache_dir` | `path \| None` | `None` | Clone cache (provider=local). |  |
 | `AUTOAIR_STORAGE__GIT__SSH_KEY_FILE` | `storage.git.ssh_key_file` | `path \| None` | `None` | provider=local: SSH key. |  |
+| `AUTOAIR_STORAGE__GIT__SSH_KEY_CACHE_DAYS` | `storage.git.ssh_key_cache_days` | `int` | `30` | provider=local/gitea: days an SSH private key from a git connection stays in the clone cache (<cache_dir>/keys/id_autoair-<hash>, mode 0600) after its last use. Writing a new key file removes AutoAir's key files unused for longer (only files of that name owned by this user, never the key being used). 0 keeps them. |  |
 | `AUTOAIR_STORAGE__GIT__GITHUB_APP_ID` | `storage.git.github_app_id` | `str \| None` | `None` | GitHub App id. |  |
 | `AUTOAIR_STORAGE__GIT__GITHUB_INSTALLATION_ID` | `storage.git.github_installation_id` | `str \| None` | `None` | GitHub App installation id. |  |
 | `AUTOAIR_STORAGE__GIT__GITHUB_PRIVATE_KEY` | `storage.git.github_private_key` | `secret str \| None` | `None` | GitHub App private key (PEM). | yes |
@@ -1127,6 +1148,7 @@ Deploy target: local folder, object storage or git (AUTOAIR_STORAGE__*).
 | `AUTOAIR_STORAGE__GIT__COMMITTER_EMAIL` | `storage.git.committer_email` | `str` | `autoair@localhost` | provider=local: committer e-mail (also the author when none is known). |  |
 | `AUTOAIR_STORAGE__GIT__TIMEOUT` | `storage.git.timeout` | `float` | `30` | Seconds per request to the git host's REST API. |  |
 | `AUTOAIR_STORAGE__GIT__COMMAND_TIMEOUT` | `storage.git.command_timeout` | `float` | `300` | provider=local: seconds a git command may take. |  |
+| `AUTOAIR_STORAGE__GIT__ENV_PASSTHROUGH` | `storage.git.env_passthrough` | `list[str]` | `[]` | provider=local/gitea: environment variables (fnmatch patterns, case-insensitive) the git CLI inherits besides the ones git, ssh and curl read (PATH, HOME, locale, TMPDIR, SSH_AUTH_SOCK, SSL_CERT_*, proxy variables, GIT_*), e.g. ['KRB5CCNAME'] for Kerberos. Nothing else of the server's environment reaches git. |  |
 | `AUTOAIR_STORAGE__GIT__MAX_ATTEMPTS` | `storage.git.max_attempts` | `int` | `3` | Saves retried when the branch moves between read and commit. |  |
 | `AUTOAIR_STORAGE__GIT__READ_CACHE_SIZE` | `storage.git.read_cache_size` | `int` | `512` | File reads at immutable commits kept in memory. |  |
 

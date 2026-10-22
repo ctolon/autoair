@@ -592,7 +592,15 @@ def test_troubleshoot_filesystem_and_mcp_scope(
         llm,
         ai={
             "troubleshoot": {"filesystem": {"roots": [str(logs)]}},
-            "mcp_client": {"servers": [{"name": "metrics", "url": "https://mcp.example/mcp"}]},
+            "mcp_client": {
+                "servers": [
+                    {
+                        "name": "metrics",
+                        "url": "https://mcp.example/mcp",
+                        "read_only_tools": ["db_*"],
+                    }
+                ]
+            },
         },
     )
     options = client.get("/ai/troubleshoot/options").json()
@@ -760,10 +768,12 @@ def test_admin_mcp_servers_crud(tmp_path: Path, monkeypatch: pytest.MonkeyPatch)
         "url": "https://mcp.example/mcp",
         "headers": {"Authorization": "Bearer t0ps3cr3t"},
         "tools": ["ping"],
+        "read_only_tools": ["ping"],
     }
     put = client.put("/admin/mcp-servers/grafana", json=body)
     assert put.status_code == 200, put.text
     assert put.json()["headers"] == ["Authorization"]
+    assert put.json()["read_only_tools"] == ["ping"]
     assert put.json()["source"] == "database"
     raw = (tmp_path / ".autoair").rglob("grafana.json")
     stored = "".join(p.read_text() for p in raw)
@@ -775,7 +785,13 @@ def test_admin_mcp_servers_crud(tmp_path: Path, monkeypatch: pytest.MonkeyPatch)
     # keep the stored header when '***' is sent back
     client.put("/admin/mcp-servers/grafana", json={**body, "headers": {"Authorization": "***"}})
     assert client.post("/admin/mcp-servers/grafana/test").json() == [
-        {"name": "ping", "description": "Ping.", "allowed": True}
+        {
+            "name": "ping",
+            "description": "Ping.",
+            "allowed": True,
+            "read_only": True,
+            "hinted_read_only": False,
+        }
     ]
     assert captured[-1].headers["Authorization"].get_secret_value() == "Bearer t0ps3cr3t"
     assert client.put("/admin/mcp-servers/configured", json=body).status_code == 409
@@ -848,7 +864,12 @@ def _ops_mcp(monkeypatch: pytest.MonkeyPatch) -> None:
 
 MCP_SERVERS = {
     "servers": [
-        {"name": "ops", "url": "https://mcp.example/ops", "agents": ["developer", "admin"]},
+        {
+            "name": "ops",
+            "url": "https://mcp.example/ops",
+            "agents": ["developer", "admin"],
+            "read_only_tools": ["db_health"],
+        },
         {"name": "metrics", "url": "https://mcp.example/metrics"},  # troubleshoot only
     ]
 }
@@ -898,7 +919,7 @@ def test_chat_assistants_attach_scoped_external_mcp_servers(
     assert "mcp__ops__db_health" in names
     assert "mcp__ops__restart_db" not in names
     assert any(
-        e["type"] == "status" and e["stage"] == "mcp" and "not marked read-only" in e["message"]
+        e["type"] == "status" and e["stage"] == "mcp" and "read_only_tools" in e["message"]
         for e in evts
     )
 

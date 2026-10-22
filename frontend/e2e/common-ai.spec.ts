@@ -6,7 +6,7 @@ import { type Page, expect, test } from "@playwright/test";
  * half-typed / invalid input never breaks the inspector. Light and dark screenshots.
  *
  * Needs a server whose catalog includes apache-airflow-providers-common-ai, e.g.
- *   .venv-allproviders/bin/autoair local --port 8855 + `vite preview` with AUTOAIR_API_PORT=8855.
+ *   AUTOAIR_IAM__ANONYMOUS_ROLES='["Admin"]' .venv-allproviders/bin/autoair local --no-token --port 8855 + `vite preview` with AUTOAIR_API_PORT=8855.
  *   AUTOAIR_DEV_URL   UI base URL (default http://localhost:5173)
  *   AUTOAIR_AI_OPS_SHOTS  folder for screenshots (optional)
  */

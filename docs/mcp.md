@@ -21,7 +21,7 @@ an LLM-oriented description that says *when* to use it, MCP annotations
 | Group | Tools |
 |---|---|
 | Catalog | `search_knowledge` (ranked search over operators, guides, saved DAGs, templates), `list_operators`, `get_operator_schema`, `get_dagspec_schema`, `list_node_kinds`, `list_notifiers`, `list_blueprints` (Astronomer Blueprint templates with config schemas; `features.blueprints`) |
-| Specs | `validate_dag_spec`, `apply_spec_patch` (JSON-patch edits addressed by node id), `generate_code`, `list_dags` (filter `document_type`: `spec`/`raw`), `get_dag_spec`, `get_dag_code` (the DAG file and its `document_type`), `import_python_dag`, `preview_dag_source` (what `save_dag_spec` writes as the DAG file: generated, or the hand-written file patched, with a diff), `save_dag_spec` (confirm; follows the DAG's source policy, validates a patched hand-written file like the REST deploy and records it as the kept file, so regenerating it needs a REST deploy with `preserve.allow_force_overwrite=true` and `deploy:overwrite_ejected`, and `delete_dag_spec` refuses it (the REST delete needs `deploy:overwrite_ejected`)), `save_raw_dag_code` (confirm; raw code DAGs, needs `code:raw`; replaces the code of an existing raw code DAG without `deploy:overwrite_ejected`), `delete_dag_spec` (confirm) |
+| Specs | `validate_dag_spec` (static checks only, read-only), `import_check_dag_spec` (validate and import the generated DAG in a sandboxed DagBag: runs its top-level code, `RUNS_CODE`, needs `code:execute`), `apply_spec_patch` (JSON-patch edits addressed by node id), `generate_code`, `list_dags` (filter `document_type`: `spec`/`raw`), `get_dag_spec`, `get_dag_code` (the DAG file and its `document_type`), `import_python_dag`, `preview_dag_source` (what `save_dag_spec` writes as the DAG file: generated, or the hand-written file patched, with a diff), `save_dag_spec` (confirm; follows the DAG's source policy, validates a patched hand-written file like the REST deploy and records it as the kept file, so regenerating it needs a REST deploy with `preserve.allow_force_overwrite=true` and `deploy:overwrite_ejected`, and `delete_dag_spec` refuses it (the REST delete needs `deploy:overwrite_ejected`)), `save_raw_dag_code` (confirm; raw code DAGs, needs `code:raw`; replaces the code of an existing raw code DAG without `deploy:overwrite_ejected`), `delete_dag_spec` (confirm) |
 | Analysis | `review_dag_spec`, `scan_dag_leaks`, `optimize_dag_parameters` (from run history) |
 | Airflow | `list_connections`, `list_variables`, `get_dag_status`, `list_dag_runs`, `get_task_log`, `trigger_dag` (confirm) |
 | Research | `search_installed_docs` (offline search over the installed providers' docstrings, metadata and example DAGs, the knowledge base and fetched pages), `read_source` (installed module / class / method source, confined to site-packages and configured folders), `list_installed_packages`, `get_package_info` (+ PyPI when online), `fetch_doc` (allow-listed sites, online mode only) |
@@ -45,6 +45,12 @@ an LLM-oriented description that says *when* to use it, MCP annotations
 * `save_dag_spec`, `save_raw_dag_code`, `delete_dag_spec` and `trigger_dag` only act with `confirm=true`; without it
   they dry-run and describe what would happen. `AUTOAIR_AI__MCP__ALLOW_WRITES=false` refuses
   them entirely (read-only server).
+* Overwriting an existing DAG with `save_dag_spec` / `save_raw_dag_code` needs `base_etag`: the
+  `current_etag` the dry run returns (a successful save returns the new `etag`). Without it, or
+  when someone saved in between, nothing is written and the result carries `current_etag` so the
+  agent can re-read, merge and retry (`storage.require_base_etag=false` drops the requirement).
+  `delete_dag_spec` works the same way: its dry run returns `current_etag`, and a confirmed
+  delete needs it as `base_etag`, so an agent never deletes a version it did not read.
 * Over HTTP the endpoint sits behind the same auth as the API (Airflow's auth manager in plugin
   mode, the bearer verifier standalone); the caller's credentials are forwarded to Airflow, so
   Airflow RBAC applies to every Airflow tool. Connection/variable values and run `conf` are never
@@ -62,7 +68,27 @@ an LLM-oriented description that says *when* to use it, MCP annotations
   [configuration](configuration.md#git-tokens-typed-per-deploy-storagegitrequest_token).
 * `import_python_dag` executes the file in an isolated subprocess without AutoAir's secrets and
   requires `AUTOAIR_ALLOW_PYTHON_CODE=true`. Unexpected errors are masked
-  (`mask_error_details`).
+  (`mask_error_details`). Its annotation is `RUNS_CODE` (`readOnlyHint: false`), like
+  `preview_dag_source` and `import_check_dag_spec`, so MCP clients ask before calling it.
+  `validate_dag_spec` is read-only and never runs code: its former `import_check` argument is
+  accepted but ignored (the result's `note` says so); the import check is
+  `import_check_dag_spec` (`code:execute`).
+* Deploy governance over HTTP (`governance()` in `mcp/server.py`, the four-eyes helpers of
+  `iam/proposals.py`): a confirmed `save_dag_spec`, `save_raw_dag_code` or `delete_dag_spec`
+  lands like `PUT` / `DELETE /specs/{id}` would. `iam/proposals.write_mode` decides between a
+  pull request (PR-mode target, or `iam.force_pr_without_direct_push` for a caller without
+  `deploy:direct_push`) and a live write; a live write needs `deploy` (checked in the tool,
+  `DEPLOY_WHEN_LIVE`), and with `iam.require_approval` another user's approval of that version
+  (`approvers_for`), else the tool stores a deploy or delete proposal (`status:
+  pending_approval`, `proposal_etag`, audit `propose` with `via: mcp`). Results carry `status`
+  (`saved` / `deleted` / `pr_opened` / `pending_approval`). Over stdio no principal applies and
+  writes use the target's own mode.
+* Hand-written `source.code`: `save_dag_spec` refuses a spec whose `source.code` is new or
+  differs from the stored spec's unless the caller holds `code:raw`, like the REST deploy.
+* Memories: `remember` with `scope` `global` or `team` needs `admin:config` over HTTP
+  (`mcp/iam.py::_extra`); `forget` deletes a global or team memory only for `admin:config` and a
+  personal one only for its owner (`MemoryStore.delete(user=, admin=)`, checked in the tool
+  through `caller_may`). Over stdio the local user manages every scope.
 * Raw code DAGs are arbitrary Python: `save_raw_dag_code`, and `save_dag_spec` with a spec that
   sets `raw_code`, need the `code:raw` permission and the `python_code` and `code_editor`
   features; `save_raw_dag_code` never replaces a visual (spec-backed) DAG or the hand-written
@@ -104,7 +130,11 @@ The same server can run in three places, with the same auth in each:
 | In the separate AI service | `autoair ai-serve` serves `/mcp` (`AUTOAIR_AI__SERVICE__SERVE_MCP`); with `AUTOAIR_AI__SERVICE__PROXY_MCP=true` the main server proxies its `/mcp` there, so clients keep one URL | main server auth, then signed identity / bearer verification in the service |
 | Standalone | `autoair mcp-serve --http --port 8766` (streamable HTTP at `/mcp/`), or stdio: `autoair mcp-serve` / `autoair mcp` / `autoair-mcp` | HTTP: the caller's Airflow bearer token verified against Airflow (`--no-auth` for local experiments); stdio: `AUTOAIR_AIRFLOW_TOKEN` |
 
-`autoair mcp --http` / `autoair-mcp --http` serve HTTP without authentication, for local use only.
+`autoair mcp --http` / `autoair-mcp --http` serve HTTP without authentication, for local use only:
+they refuse a non-loopback `--host`, run behind `LoopbackGuard` (`net/loopback.py`: `Host` and
+`Origin` must name loopback or the host of `server.public_url`) and give every caller
+`iam.anonymous_roles` (default Viewer), like `autoair mcp-serve --http --no-auth`
+(`mcp/http.py::create_local_http_app`).
 
 ### Documentation-only server (`autoair docs-mcp`)
 

@@ -7,6 +7,7 @@ import { Box, ChakraProvider, type SystemContext, defaultSystem } from "@chakra-
 import { useLayoutEffect, useRef, useState } from "react";
 
 import { App } from "./App";
+import { RootErrorBoundary } from "./ui/ErrorBoundary";
 
 declare global {
   // Set by the Airflow UI so plugins inherit its theme (light/dark, tokens).
@@ -51,7 +52,9 @@ export default function AutoAirPlugin(props: PluginProps) {
   return (
     <ChakraProvider value={system}>
       <Box ref={ref} h={height} minH="600px">
-        <App />
+        <RootErrorBoundary>
+          <App />
+        </RootErrorBoundary>
       </Box>
     </ChakraProvider>
   );

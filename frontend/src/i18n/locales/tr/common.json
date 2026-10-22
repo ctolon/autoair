@@ -55,7 +55,9 @@
       "dialog": "Pencere",
       "codeMode": "kod düzenleyici"
     },
-    "undo": "Son değişikliği geri al"
+    "undo": "Son değişikliği geri al",
+    "appTitle": "AutoAir içinde bir hata oluştu.",
+    "reload": "Sayfayı yeniden yükle"
   },
   "codeEditor": {
     "expand": "{{name}} için büyük editörü aç",

@@ -316,6 +316,33 @@ def test_socket_needs_a_ticket_for_its_language(tmp_path):
         pass
 
 
+def test_ticket_opens_one_socket_on_any_replica(tmp_path):
+    """A ticket is single use within its TTL, across replicas sharing the state folder
+    (a ticket that leaked through logs or a proxy cannot be replayed)."""
+    c = _client(tmp_path)
+    ticket = _ticket(c, "bash")
+    with c.websocket_connect(f"/api/lsp/ws/bash?ticket={ticket}") as ws:
+        _call(ws, 1, "initialize", {"capabilities": {}})
+    with (
+        pytest.raises(WebSocketDenialResponse) as denied,
+        c.websocket_connect(f"/api/lsp/ws/bash?ticket={ticket}"),
+    ):
+        pass
+    assert denied.value.status_code == 403
+    # another replica (same state folder and ticket key) refuses a ticket used here
+    other = _client(tmp_path)
+    with other.websocket_connect(f"/api/lsp/ws/bash?ticket={_ticket(c, 'bash')}") as ws:
+        _call(ws, 1, "initialize", {"capabilities": {}})  # tickets validate on every replica
+    second = _ticket(c, "bash")
+    with c.websocket_connect(f"/api/lsp/ws/bash?ticket={second}") as ws:
+        _call(ws, 1, "initialize", {"capabilities": {}})
+    with (
+        pytest.raises(WebSocketDenialResponse),
+        other.websocket_connect(f"/api/lsp/ws/bash?ticket={second}"),
+    ):
+        pass
+
+
 def test_servers_report_availability(tmp_path):
     c = _client(tmp_path)
     body = c.get("/api/lsp/servers").json()

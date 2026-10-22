@@ -34,8 +34,10 @@ from autoair.storage.base import (
     TargetStatus,
     VersionInfo,
 )
+from autoair.storage.object import DEFAULT_LOCK_SECONDS, DEFAULT_LOCK_WAIT_SECONDS
 
 if TYPE_CHECKING:
+    from autoair.persistence import DocumentStore
     from autoair.storage.git.config import GitCredentials
     from autoair.storage.git.provider import GitProvider
 
@@ -98,6 +100,14 @@ class GitStorageSettings(BaseModel):
     )
     cache_dir: Path | None = Field(default=None, description="Clone cache (provider=local).")
     ssh_key_file: Path | None = Field(default=None, description="provider=local: SSH key.")
+    ssh_key_cache_days: int = Field(
+        default=30,
+        ge=0,
+        description="provider=local/gitea: days an SSH private key from a git connection stays "
+        "in the clone cache (<cache_dir>/keys/id_autoair-<hash>, mode 0600) after its last "
+        "use. Writing a new key file removes AutoAir's key files unused for longer (only "
+        "files of that name owned by this user, never the key being used). 0 keeps them.",
+    )
     github_app_id: str | None = Field(default=None, description="GitHub App id.")
     github_installation_id: str | None = Field(
         default=None, description="GitHub App installation id."
@@ -264,6 +274,14 @@ class GitStorageSettings(BaseModel):
     command_timeout: float = Field(
         default=300, gt=0, description="provider=local: seconds a git command may take."
     )
+    env_passthrough: list[str] = Field(
+        default_factory=list,
+        description="provider=local/gitea: environment variables (fnmatch patterns, "
+        "case-insensitive) the git CLI inherits besides the ones git, ssh and curl read "
+        "(PATH, HOME, locale, TMPDIR, SSH_AUTH_SOCK, SSL_CERT_*, proxy variables, GIT_*), "
+        "e.g. ['KRB5CCNAME'] for Kerberos. Nothing else of the server's environment reaches "
+        "git.",
+    )
     max_attempts: int = Field(
         default=3,
         ge=1,
@@ -336,6 +354,30 @@ class StorageSettings(BaseModel):
     )
     history_limit: int = Field(
         default=DEFAULT_HISTORY_LIMIT, ge=1, description="Saved versions kept per DAG."
+    )
+    object_lock_seconds: float = Field(
+        default=DEFAULT_LOCK_SECONDS,
+        gt=0,
+        description="mode=object: seconds a write lease of a DAG lasts. Writers of one DAG "
+        "hold it (a document in AutoAir's state backend, shared by every replica with "
+        "database.backend sqlite/postgresql) while they check base_etag and write, so two "
+        "replicas never both win; a replica that died holding it blocks that DAG's deploys "
+        "at most this long. Must exceed the longest save.",
+    )
+    object_lock_wait_seconds: float = Field(
+        default=DEFAULT_LOCK_WAIT_SECONDS,
+        ge=0,
+        description="mode=object: seconds a save waits for another writer's lease on the "
+        "same DAG before it fails with a conflict (409).",
+    )
+    require_base_etag: bool = Field(
+        default=True,
+        description="Overwriting or deleting an existing DAG spec needs the etag it was "
+        "loaded with (REST: base_etag or If-Match on PUT, If-Match on DELETE, else HTTP 428 "
+        "Precondition Required with the current etag; MCP save_dag_spec and delete_dag_spec: "
+        "base_etag, else the call is refused with current_etag). false lets legacy API "
+        "clients overwrite or delete without one (last writer wins). Creating a new DAG "
+        "never needs an etag.",
     )
     file_mode: str = Field(
         default="0644",
@@ -411,8 +453,31 @@ def repo_slug(url_or_slug: str) -> str:
     return match.group("slug") if match else url_or_slug.strip().strip("/")
 
 
-def build_target(settings: StorageSettings, *, default_local_path: Path) -> DeployTarget:
-    """Instantiate the configured deploy target."""
+def object_locks(root: Any, storage: StorageSettings) -> DocumentStore | None:
+    """mode=object: the document store holding the per-DAG write leases of
+    :class:`~autoair.storage.object.ObjectStorageTarget` (``root``: the full ``Settings``;
+    a SQL ``database.backend`` makes them shared by every replica)."""
+    if storage.mode != "object":
+        return None
+    from autoair.persistence import document_store, is_sql
+
+    if not is_sql(root):
+        log.warning(
+            "storage.mode=object with database.backend=file: write leases are shared only "
+            "by the processes of this host; use a SQL backend for several replicas"
+        )
+    return document_store(
+        root, "object_deploy_locks", file_url=str(Path(root.state_dir) / "object-locks")
+    )
+
+
+def build_target(
+    settings: StorageSettings,
+    *,
+    default_local_path: Path,
+    locks: DocumentStore | None = None,
+) -> DeployTarget:
+    """Instantiate the configured deploy target (``locks``: :func:`object_locks`)."""
     if settings.mode == "local":
         from autoair.storage.local import LocalFolderTarget
 
@@ -429,7 +494,12 @@ def build_target(settings: StorageSettings, *, default_local_path: Path) -> Depl
         from autoair.storage.object import ObjectStorageTarget
 
         return ObjectStorageTarget(
-            settings.object_url, settings.storage_options, history_limit=settings.history_limit
+            settings.object_url,
+            settings.storage_options,
+            history_limit=settings.history_limit,
+            locks=locks,
+            lock_seconds=settings.object_lock_seconds,
+            lock_wait_seconds=settings.object_lock_wait_seconds,
         )
     return _build_git(settings.git)
 
@@ -508,11 +578,14 @@ class UnavailableTarget:
 
 
 def build_target_or_unavailable(
-    settings: StorageSettings, *, default_local_path: Path
+    settings: StorageSettings,
+    *,
+    default_local_path: Path,
+    locks: DocumentStore | None = None,
 ) -> DeployTarget:
     """:func:`build_target`, or an :class:`UnavailableTarget` carrying the error (logged)."""
     try:
-        return build_target(settings, default_local_path=default_local_path)
+        return build_target(settings, default_local_path=default_local_path, locks=locks)
     except Exception as exc:
         log.warning(
             "deploy target (storage.mode=%s) unavailable, starting degraded: %s",
@@ -786,6 +859,8 @@ def _git_provider(
             "fetch_interval": cfg.fetch_interval,
             "committer": (cfg.committer_name, cfg.committer_email),
             "command_timeout": cfg.command_timeout,
+            "env_passthrough": cfg.env_passthrough,
+            "ssh_key_cache_days": cfg.ssh_key_cache_days,
         }
         if cfg.provider == "gitea":
             from autoair.storage.git.gitea import GiteaProvider

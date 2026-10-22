@@ -7,6 +7,7 @@ from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel
 
 from autoair.api.deps import ServicesDep
+from autoair.api.features import ensure_feature
 from autoair.audit import request_user
 from autoair.iam import model as P
 from autoair.iam.deps import STATE_ATTR, check
@@ -17,6 +18,7 @@ from autoair.templates import (
     TemplateInput,
     TemplateSummary,
     TemplateVersionInfo,
+    carries_raw_code,
 )
 
 # Split so the auth backend can guard writes with DAG edit permission.
@@ -71,6 +73,24 @@ async def check_owner_team(request: Request, services: ServicesDep, owner: str |
         detail=f"the template is owned by team {owner!r}; this deployment belongs to team "
         f"{team!r} (changing it needs AutoAir permission {P.ADMIN_CONFIG!r})",
     )
+
+
+async def check_raw_code(request: Request, template: TemplateInput) -> None:
+    """A template with hand-written DAG code needs ``code:raw`` (and, for a raw code DAG,
+    the code editor and Python code features), exactly like saving that spec."""
+    if not carries_raw_code(template):
+        return
+    detail = (
+        "the template holds hand-written DAG code (a raw code DAG or a kept Python file), "
+        "which is arbitrary Python: saving it needs the AutoAir permission 'code:raw'"
+    )
+    if template.spec is not None and template.spec.raw_code is not None:
+        ensure_feature(request, "code_editor")
+        ensure_feature(request, "python_code")
+    principal = getattr(request.state, STATE_ATTR, None)
+    if principal is None:
+        raise HTTPException(status_code=403, detail=detail)
+    await check(request, principal, P.CODE_RAW, detail=detail)
 
 
 @read_router.get("", operation_id="listTemplates")
@@ -131,7 +151,9 @@ async def save_template(
     ] = None,
 ) -> Template:
     """Create a template, or publish a new version of a saved one (operator templates get
-    the next version number; older versions stay readable under `/versions`)."""
+    the next version number; older versions stay readable under `/versions`). A template
+    with hand-written DAG code needs `code:raw`."""
+    await check_raw_code(request, body)
     try:
         previous = await run_in_threadpool(services.templates.get, body.id)
     except TemplateError as exc:

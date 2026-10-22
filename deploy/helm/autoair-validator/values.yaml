@@ -49,7 +49,9 @@ resources:
     memory: 1Gi
   limits:
     cpu: "2"
-    # pool_size x memory_limit_mb plus the service process
+    # pool_size x memory_limit_mb plus the service process; a release that serves test runs
+    # also needs room for max_concurrent_runs x the runs' resident memory
+    # (run_memory_limit_mb caps each run's address space)
     memory: 3Gi
     ephemeral-storage: 1Gi
 
@@ -84,6 +86,13 @@ networkPolicy:
           app.kubernetes.io/name: autoair
   # Prometheus scraping /metrics, e.g. a namespaceSelector for the monitoring namespace.
   allowMetricsFrom: []
+  # Egress rules (NetworkPolicy egress entries). Keep [] for the import-check validator.
+  # Test runs (POST /v1/run) execute task code, which often calls services: install the
+  # chart a second time for runs only (e.g. release "autoair-validator-runs") with the
+  # egress those tasks need here (DNS plus the services), and point the main server's
+  # AUTOAIR_VALIDATOR__RUN_URL at it. A NetworkPolicy applies to a whole pod, so widening
+  # this release instead would give import-time code the network too.
+  egress: []
 
 podDisruptionBudget:
   enabled: true

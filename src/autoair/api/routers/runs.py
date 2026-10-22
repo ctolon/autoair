@@ -1,22 +1,30 @@
-"""Test-run a task / DAG of a spec (code executes on the AutoAir host, in a subprocess)."""
+"""Test-run a task / DAG of a spec: on the validator service when ``validator.url`` is set,
+else in a sandboxed subprocess on the AutoAir host (:mod:`autoair.runner`)."""
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field
 
 from autoair.api.deps import ServicesDep
 from autoair.codegen import CodegenError, render
+from autoair.iam import model as P
+from autoair.iam.deps import PrincipalDep, check
+from autoair.iam.model import Principal
 from autoair.runner import (
     DagTestMode,
     DagTestResult,
     TaskTestResult,
+    local_sandbox,
+    process_isolated,
+    ran_on,
     run_dag_test,
     run_task_test,
 )
+from autoair.settings import Settings
 from autoair.spec import CustomNode, DagSpec, OperatorNode, PythonTaskNode
 from autoair.validation import effective_task_id, policy_from_settings
 
@@ -48,8 +56,9 @@ class TestDagRequest(BaseModel):
     conf: dict[str, Any] = Field(default_factory=dict)
     mode: DagTestMode = Field(
         default="memory",
-        description="memory: no metadata DB; db: dag.test() (writes a run to the DB); "
-        "auto: db with fallback to memory.",
+        description="memory: no metadata DB; db: dag.test() (writes a run to the DB; needs "
+        "runner.allow_db_mode and admin:config); auto: db with fallback to memory when db is "
+        "allowed for the caller, else memory.",
     )
     timeout: float | None = Field(
         default=None,
@@ -58,6 +67,20 @@ class TestDagRequest(BaseModel):
         description="Seconds (default AUTOAIR_RUNNER__DEFAULT_DAG_TIMEOUT, at most "
         "AUTOAIR_RUNNER__MAX_TIMEOUT).",
     )
+
+
+DbModeUnavailable = Literal["disabled", "admin_only"]
+
+
+def db_mode_unavailable(settings: Settings, principal: Principal) -> DbModeUnavailable | None:
+    """Why ``mode=db`` is not available to ``principal`` (``None``: it is). ``mode=db`` hands
+    the DAG code the metadata DB connection and the Fernet key: off unless an admin turns
+    on ``runner.allow_db_mode``, and then only for callers holding ``admin:config``."""
+    if not settings.runner.allow_db_mode:
+        return "disabled"
+    if not principal.has(P.ADMIN_CONFIG):
+        return "admin_only"
+    return None
 
 
 def _timeout(requested: float | None, default: float, services: ServicesDep) -> float:
@@ -110,8 +133,36 @@ def _render(spec: DagSpec, services: ServicesDep) -> str:
         raise HTTPException(status_code=422, detail=f"codegen failed: {exc}") from exc
 
 
+def _sandbox(services: ServicesDep) -> Any:
+    """The local sandbox for this server (``runner.*``), AutoAir's DAG folder read-only."""
+    s = services.settings
+    return local_sandbox(s.runner, read_only=(s.dags_folder,))
+
+
+async def _audit(
+    services: ServicesDep,
+    principal: Principal,
+    dag_id: str,
+    result: TaskTestResult | DagTestResult,
+    **details: Any,
+) -> None:
+    await run_in_threadpool(
+        lambda: services.audit.record(
+            "test_run",
+            user=principal.user,
+            dag_id=dag_id,
+            state=result.state,
+            where=ran_on(result),
+            process_isolated=process_isolated(result),
+            **details,
+        )
+    )
+
+
 @router.post("/test-task", operation_id="testTask")
-async def test_task(req: TestTaskRequest, services: ServicesDep) -> TaskTestResult:
+async def test_task(
+    req: TestTaskRequest, services: ServicesDep, principal: PrincipalDep
+) -> TaskTestResult:
     spec = req.spec
     nodes = spec.node_map()
     node = nodes.get(req.task_node_id)
@@ -134,30 +185,78 @@ async def test_task(req: TestTaskRequest, services: ServicesDep) -> TaskTestResu
         )
         mocks[f"{tid}{sep}{xcom_key}"] = value
     source = await run_in_threadpool(_render, spec, services)
-    return await run_in_threadpool(
-        run_task_test,
-        source,
-        spec.dag_id,
-        task_id,
-        conf=req.conf,
-        timeout=_timeout(req.timeout, services.settings.runner.default_task_timeout, services),
-        mock_xcoms=mocks,
-        max_log=services.settings.runner.max_log_chars,
-        max_value=services.settings.runner.max_value_chars,
+    s = services.settings
+    result = await run_in_threadpool(
+        lambda: run_task_test(
+            source,
+            spec.dag_id,
+            task_id,
+            conf=req.conf,
+            timeout=_timeout(req.timeout, s.runner.default_task_timeout, services),
+            mock_xcoms=mocks,
+            max_log=s.runner.max_log_chars,
+            max_value=s.runner.max_value_chars,
+            validator=s.validator,
+            sandbox=_sandbox(services),
+        )
     )
+    await _audit(
+        services,
+        principal,
+        spec.dag_id,
+        result,
+        kind="task",
+        task_id=task_id,
+    )
+    return result
 
 
 @router.post("/test-dag", operation_id="testDag")
-async def test_dag(req: TestDagRequest, services: ServicesDep) -> DagTestResult:
+async def test_dag(
+    req: TestDagRequest, services: ServicesDep, principal: PrincipalDep, request: Request
+) -> DagTestResult:
+    s = services.settings
+    mode: DagTestMode = req.mode
+    why = db_mode_unavailable(s, principal)
+    if mode == "db":
+        if why == "disabled":
+            raise HTTPException(
+                status_code=403,
+                detail="mode=db is disabled (runner.allow_db_mode): it gives the DAG code the "
+                "metadata DB and the Fernet key; use mode=memory",
+            )
+        # audited 403 like every other missing permission
+        await check(
+            request,
+            principal,
+            P.ADMIN_CONFIG,
+            detail="mode=db gives the DAG code the metadata DB and the Fernet key: it needs "
+            "'admin:config'; use mode=memory",
+        )
+    elif mode == "auto" and why is not None:
+        mode = "memory"  # auto never picks db for a caller who may not use it
     _enforce_policy(req.spec, services)
     source = await run_in_threadpool(_render, req.spec, services)
-    return await run_in_threadpool(
-        run_dag_test,
-        source,
-        req.spec.dag_id,
-        conf=req.conf,
-        timeout=_timeout(req.timeout, services.settings.runner.default_dag_timeout, services),
-        mode=req.mode,
-        max_log=services.settings.runner.max_log_chars,
-        max_value=services.settings.runner.max_value_chars,
+    result = await run_in_threadpool(
+        lambda: run_dag_test(
+            source,
+            req.spec.dag_id,
+            conf=req.conf,
+            timeout=_timeout(req.timeout, s.runner.default_dag_timeout, services),
+            mode=mode,
+            max_log=s.runner.max_log_chars,
+            max_value=s.runner.max_value_chars,
+            validator=s.validator,
+            sandbox=_sandbox(services),
+        )
     )
+    await _audit(
+        services,
+        principal,
+        req.spec.dag_id,
+        result,
+        kind="dag",
+        mode=result.mode or mode,
+        requested_mode=req.mode,
+    )
+    return result

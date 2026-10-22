@@ -51,9 +51,18 @@ _SECRET_KEY = re.compile(
 #: Compare-and-set retries of :meth:`ApprovalStore.mutate` (only concurrent writers of the
 #: same approval cause one).
 _MUTATE_ATTEMPTS = 20
+#: Characters of a call's arguments the full-arguments view returns: above the largest
+#: tool input (an imported DAG file, 200 000 characters) with room for JSON escaping.
+FULL_ARGUMENT_CHARS = 1_000_000
 
 
 # --------------------------------------------------------------------------- policy
+
+
+#: Tools whose every call waits for a decision whatever the rule says (exemptions and
+#: classes do not apply): a stored memory reaches every later prompt of its scope, so a
+#: prompt-injected ``remember`` would persist the injection.
+ALWAYS_APPROVE: frozenset[str] = frozenset({"remember"})
 
 
 def _matches(name: str, patterns: Iterable[str]) -> bool:
@@ -64,13 +73,18 @@ def needs_approval(
     name: str, kind: str, rule: ToolApprovalRule, *, force_writes: bool = False
 ) -> bool:
     """Whether a call of tool ``name`` (class ``kind``) waits for a decision under ``rule``.
-    ``force_writes``: write tools always do (a troubleshooting analysis in ``hitl`` mode)."""
-    if _matches(name, rule.tools):
+    ``force_writes``: write (and execute) tools always do (a troubleshooting analysis in
+    ``hitl`` mode). An ``execute`` tool (runs Python on the server) is gated by the
+    ``write`` class too, so a rule written before that class existed still gates it.
+    :data:`ALWAYS_APPROVE` tools always wait."""
+    if name in ALWAYS_APPROVE or _matches(name, rule.tools):
         return True
-    if force_writes and kind == "write":
+    if force_writes and kind in ("write", "execute"):
         return True
     if _matches(name, rule.exempt):
         return False
+    if kind == "execute":
+        return "execute" in rule.classes or "write" in rule.classes
     return kind in rule.classes
 
 
@@ -147,19 +161,35 @@ class PendingToolCall(BaseModel):
 
     id: str = Field(description="The model's tool call id.")
     tool: str
-    kind: Literal["read", "write"] = "write"
+    kind: Literal["read", "write", "execute"] = "write"
     description: str = Field(default="", description="The tool's description (shortened).")
     arguments: Any = Field(
         default=None,
         description="Arguments with secrets masked and long values cut (display only).",
     )
     truncated: bool = Field(default=False, description="Arguments were cut for display.")
+    omitted_chars: int = Field(
+        default=0,
+        description="About how many characters of the (masked) arguments the cut left out; "
+        "the full arguments come from GET /ai/approvals/{id}/calls/{call_id}/arguments.",
+    )
+    arguments_sha256: str | None = Field(
+        default=None,
+        description="SHA-256 of the exact arguments the tool will run with (canonical JSON). "
+        "An approval sends it back; the run resumes only when the stored call still has "
+        "these arguments.",
+    )
 
 
 class ToolDecision(BaseModel):
     id: str = Field(max_length=200, description="Tool call id.")
     approved: bool
     reason: str | None = Field(default=None, max_length=10_000)
+    arguments_sha256: str | None = Field(
+        default=None,
+        pattern=r"^[0-9a-f]{64}$",
+        description="The arguments_sha256 of the call as shown; required to approve.",
+    )
 
 
 class ToolApprovalView(BaseModel):
@@ -206,6 +236,12 @@ class ToolApproval(ToolApprovalView):
 
 class ApprovalNotFound(LookupError):
     pass
+
+
+class ArgumentsMismatch(ValueError):
+    """An approval does not match the exact arguments the tool would run with."""
+
+    status_code = 409
 
 
 class ApprovalBusy(Exception):
@@ -289,6 +325,83 @@ def parse_arguments(raw: Any) -> Any:
         except ValueError:
             return raw
     return raw
+
+
+def _canonical(value: Any) -> str:
+    return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False, default=str)
+
+
+def arguments_digest(raw: Any) -> str:
+    """SHA-256 of a tool call's exact arguments (canonical JSON of the decoded value), the
+    value an approval is bound to."""
+    return hashlib.sha256(_canonical(parse_arguments(raw)).encode()).hexdigest()
+
+
+def omitted_chars(raw: Any, shown: Any, scrub: Callable[[str], str]) -> int:
+    """About how many characters of the masked arguments a display cut left out."""
+    full, _ = redact_arguments(parse_arguments(raw), scrub, FULL_ARGUMENT_CHARS)
+    return max(0, len(_canonical(full)) - len(_canonical(shown)))
+
+
+_NO_CALL = object()
+
+
+def stored_call_arguments(messages: Sequence[Any], call_id: str) -> Any:
+    """The raw arguments of tool call ``call_id`` in a paused run's stored pydantic-ai
+    messages (JSON dicts), i.e. what the resumed run executes; ``_NO_CALL`` if absent."""
+    found: Any = _NO_CALL
+    for message in messages:
+        parts = message.get("parts") if isinstance(message, dict) else None
+        for part in parts or []:
+            if (
+                isinstance(part, dict)
+                and part.get("part_kind") == "tool-call"
+                and part.get("tool_call_id") == call_id
+            ):
+                found = part.get("args")
+    return found
+
+
+def full_arguments(
+    approval: ToolApproval, call_id: str, scrub: Callable[[str], str]
+) -> tuple[Any, str]:
+    """A pending call's complete arguments for review: secrets masked like the card, but
+    not cut (up to :data:`FULL_ARGUMENT_CHARS`), with the digest an approval sends back.
+    Raises :class:`ApprovalNotFound` for an unknown call or a closed approval."""
+    if approval.status not in OPEN_STATUSES or call_id not in {c.id for c in approval.calls}:
+        raise ApprovalNotFound(call_id)
+    raw = stored_call_arguments(approval.messages, call_id)
+    if raw is _NO_CALL:
+        raise ApprovalNotFound(call_id)
+    value, _ = redact_arguments(parse_arguments(raw), scrub, FULL_ARGUMENT_CHARS)
+    return value, arguments_digest(raw)
+
+
+def check_bound_arguments(approval: ToolApproval, decisions: Sequence[ToolDecision]) -> None:
+    """Every approved call must carry the digest the user was shown, and the stored call
+    (what the resumed run executes) must still have exactly those arguments; raises
+    :class:`ArgumentsMismatch` otherwise. Denials need no digest (nothing runs)."""
+    calls = {c.id: c for c in approval.calls}
+    for decision in decisions:
+        if not decision.approved:
+            continue
+        call = calls[decision.id]
+        if call.arguments_sha256 is None:
+            raise ArgumentsMismatch(
+                f"the call {call.tool} cannot be verified (it was paused by an older "
+                "version); deny it and ask again"
+            )
+        if decision.arguments_sha256 != call.arguments_sha256:
+            raise ArgumentsMismatch(
+                f"the approval of {call.tool} does not match its arguments (reload the "
+                "approval and review them again)"
+            )
+        raw = stored_call_arguments(approval.messages, call.id)
+        if raw is _NO_CALL or arguments_digest(raw) != call.arguments_sha256:
+            raise ArgumentsMismatch(
+                f"the stored arguments of {call.tool} changed after they were shown; "
+                "the run is not resumed"
+            )
 
 
 # --------------------------------------------------------------------------- store
@@ -390,8 +503,10 @@ class ApprovalStore:
         """Record the decisions and mark the approval ``resuming`` for this replica.
 
         Raises :class:`ApprovalExpired` (it is then stored as expired),
-        :class:`ApprovalBusy` when it is not pending, ``ValueError`` when the decisions do
-        not cover exactly the pending calls and :class:`ApprovalNotFound`."""
+        :class:`ApprovalBusy` when it is not pending, :class:`ArgumentsMismatch` when an
+        approval is not bound to the exact stored arguments (:func:`check_bound_arguments`),
+        ``ValueError`` when the decisions do not cover exactly the pending calls and
+        :class:`ApprovalNotFound`."""
         current = at or now()
         claimer = by or replica_id()
         expired = [False]
@@ -408,6 +523,7 @@ class ApprovalStore:
             given = [d.id for d in decisions]
             if len(set(given)) != len(given) or set(given) != pending:
                 raise ValueError("decide every pending tool call exactly once")
+            check_bound_arguments(approval, decisions)
             approval.status = "resuming"
             approval.claimed_by = claimer
             approval.claimed_at = iso(current)
@@ -584,23 +700,30 @@ def new_approval(
 
 
 __all__ = [
+    "ALWAYS_APPROVE",
     "OPEN_STATUSES",
     "ApprovalBusy",
     "ApprovalExpired",
     "ApprovalNotFound",
     "ApprovalStatus",
     "ApprovalStore",
+    "ArgumentsMismatch",
     "PendingToolCall",
     "ToolApproval",
     "ToolApprovalView",
     "ToolDecision",
     "approval_rule",
     "approval_store_for",
+    "arguments_digest",
+    "check_bound_arguments",
+    "full_arguments",
     "gated_tools",
     "needs_approval",
     "new_approval",
+    "omitted_chars",
     "parse_arguments",
     "redact_arguments",
     "refresh_views",
+    "stored_call_arguments",
     "withdraw_gated",
 ]

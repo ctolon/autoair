@@ -51,7 +51,9 @@ def test_mcp_adoption_keeps_the_file_protected(tmp_path: Path) -> None:
     blocked = deploy(c, spec, "Writer", base_etag=stored["etag"]).json()
     assert blocked["status"] == "ejected", blocked
     assert blocked["source"]["target_state"] == "hand_written"
-    gone = c.delete("/api/specs/hand_load", headers=as_role("Writer"))
+    gone = c.delete(
+        "/api/specs/hand_load", headers={**as_role("Writer"), "If-Match": stored["etag"]}
+    )
     assert gone.status_code == 409
     assert "deploy:overwrite_ejected" in gone.text
     assert path.read_text() == HAND
@@ -178,10 +180,12 @@ async def _mcp_save_raw(services: Any, code: str) -> dict[str, Any]:
 
     from autoair.mcp import create_mcp_server
 
+    stored = services.target.get("hand_load")
+    etag = stored.etag if stored is not None else None
     async with Client(create_mcp_server(lambda: services)) as client:
         res = await client.call_tool(
             "save_raw_dag_code",
-            {"dag_id": "hand_load", "code": code, "confirm": True},
+            {"dag_id": "hand_load", "code": code, "confirm": True, "base_etag": etag},
             raise_on_error=False,
         )
         if res.is_error:

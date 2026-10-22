@@ -11,18 +11,21 @@ from __future__ import annotations
 import base64
 import contextlib
 import datetime
+import fnmatch
 import hashlib
 import logging
 import os
 import re
 import shlex
+import stat
 import subprocess
 import tempfile
 import threading
 import time
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator, Mapping
 from pathlib import Path
 
+from autoair._subprocess import is_credential_name, is_secret_name
 from autoair.net import tls
 from autoair.storage.base import AuthError, ConflictError, StorageError
 from autoair.storage.git.provider import (
@@ -63,6 +66,67 @@ def cache_lock(cache_dir: Path) -> threading.RLock:
         return _CACHE_LOCKS.setdefault(cache_dir, threading.RLock())
 
 
+# What the git CLI (and the ssh / curl it runs) needs from the server's environment; nothing
+# else is inherited, so AutoAir's settings (AUTOAIR_*), Airflow's secrets and cloud
+# credentials never reach git, its hooks or credential helpers. Names are exact, upper case.
+_GIT_ENV_NAMES = frozenset(
+    {
+        "PATH",
+        "HOME",
+        "USER",
+        "LOGNAME",
+        "SHELL",
+        "LANG",
+        "TZ",
+        "TMPDIR",
+        "TEMP",
+        "TMP",
+        "XDG_CONFIG_HOME",
+        "XDG_CACHE_HOME",
+        "SSH_AUTH_SOCK",
+        "SSL_CERT_FILE",
+        "SSL_CERT_DIR",
+        "CURL_CA_BUNDLE",
+        "HTTP_PROXY",
+        "HTTPS_PROXY",
+        "ALL_PROXY",
+        "NO_PROXY",
+        # Windows: git for Windows does not start without these.
+        "SYSTEMROOT",
+        "COMSPEC",
+        "PATHEXT",
+        "USERPROFILE",
+        "APPDATA",
+        "LOCALAPPDATA",
+        "PROGRAMDATA",
+        "WINDIR",
+    }
+)
+# Operator-set git settings (GIT_SSL_CAINFO, GIT_SSH_COMMAND, ...) except the injected
+# configuration, which AutoAir sets itself.
+_GIT_ENV_PREFIXES = ("GIT_", "LC_")
+_GIT_ENV_OWN = ("GIT_CONFIG_COUNT", "GIT_CONFIG_KEY_", "GIT_CONFIG_VALUE_", "GIT_CONFIG_PARAMETERS")
+
+
+def git_base_env(
+    passthrough: Iterable[str] = (), base: Mapping[str, str] | None = None
+) -> dict[str, str]:
+    """The part of ``base`` (default ``os.environ``) a git process inherits: the names git,
+    ssh and curl read plus ``passthrough`` (fnmatch patterns, ``storage.git.env_passthrough``)."""
+    patterns = [p.upper() for p in passthrough]
+    out: dict[str, str] = {}
+    for name, value in (os.environ if base is None else base).items():
+        upper = name.upper()
+        if upper.startswith(_GIT_ENV_OWN):
+            continue
+        listed = any(fnmatch.fnmatchcase(upper, p) for p in patterns)
+        needed = upper in _GIT_ENV_NAMES or upper.startswith(_GIT_ENV_PREFIXES)
+        # By name only: an authenticated proxy URL (user:password@) is what git needs.
+        if listed or (needed and not (is_credential_name(name) or is_secret_name(name))):
+            out[name] = value
+    return out
+
+
 def redact_url(url: str) -> str:
     return _USERINFO_RE.sub("***@", url)
 
@@ -71,6 +135,48 @@ def default_cache_dir(remote_url: str) -> Path:
     base = Path(os.environ.get("XDG_CACHE_HOME") or Path.home() / ".cache")
     digest = hashlib.sha256(redact_url(remote_url).encode()).hexdigest()[:16]
     return base / "autoair" / "git" / digest
+
+
+# Key files AutoAir writes into <cache>/keys/ (id_autoair-<32 hex>) and the temporary files
+# of an interrupted write (mkstemp prefix ".key-"): nothing else there is ever removed.
+_KEY_FILE_RE = re.compile(r"(?:id_autoair-[0-9a-f]{32}|\.key-[A-Za-z0-9_]+)")
+
+
+def prune_key_cache(directory: Path, days: int, *, keep: Path) -> list[Path]:
+    """Remove AutoAir's SSH key files in ``directory`` not used for ``days`` days (0: none).
+
+    Only regular files named like AutoAir's key files and owned by this process's user go;
+    ``keep`` (the key about to be used) never does. A key of another provider that is still
+    in use is written again on its next use. Returns the removed paths."""
+    if days <= 0:
+        return []
+    cutoff = time.time() - days * 86400
+    uid = os.getuid() if hasattr(os, "getuid") else None
+    removed: list[Path] = []
+    try:
+        entries = list(os.scandir(directory))
+    except OSError:
+        return []
+    for entry in entries:
+        if entry.name == keep.name or not _KEY_FILE_RE.fullmatch(entry.name):
+            continue
+        try:
+            info = entry.stat(follow_symlinks=False)
+        except OSError:
+            continue
+        if not stat.S_ISREG(info.st_mode) or (uid is not None and info.st_uid != uid):
+            continue
+        if info.st_mtime >= cutoff:
+            continue
+        try:
+            os.unlink(entry.path)
+        except OSError:  # removed concurrently, or not ours to remove: next time
+            log.debug("cannot remove the cached SSH key %s", entry.name, exc_info=True)
+            continue
+        removed.append(Path(entry.path))
+    if removed:
+        log.info("removed %d SSH key file(s) unused for %d days", len(removed), days)
+    return removed
 
 
 class LocalGitProvider:
@@ -92,6 +198,8 @@ class LocalGitProvider:
         committer: tuple[str, str] = ("AutoAir", "autoair@localhost"),
         git_binary: str = "git",
         command_timeout: float = 300,
+        env_passthrough: Iterable[str] = (),
+        ssh_key_cache_days: int = 30,
     ) -> None:
         self.remote_url = remote_url
         self.location = redact_url(remote_url)
@@ -105,13 +213,15 @@ class LocalGitProvider:
         self.committer = committer
         self.git_binary = git_binary
         self.command_timeout = command_timeout
+        self.env_passthrough = tuple(env_passthrough)
+        self.ssh_key_cache_days = ssh_key_cache_days
         self._lock = cache_lock(self.cache_dir)
         self._last_fetch = 0.0
         self._initialised = False
 
     # ----------------------------------------------------------------- plumbing
     def _env(self, extra: dict[str, str] | None = None) -> dict[str, str]:
-        env = dict(os.environ)
+        env = git_base_env(self.env_passthrough)
         env.update(
             GIT_TERMINAL_PROMPT="0",
             GIT_ASKPASS="echo",
@@ -150,12 +260,30 @@ class LocalGitProvider:
             return self._ssh_key_file.expanduser()
         if not self._private_key:
             return None
-        path = self.cache_dir / "id_autoair"
+        key = self._private_key.strip() + "\n"
+        # Named after the key itself: providers of different users (or a rotated key) that
+        # share a clone cache never use each other's key file.
+        digest = hashlib.sha256(key.encode()).hexdigest()[:32]
+        directory = self.cache_dir / "keys"
+        path = directory / f"id_autoair-{digest}"
         if not path.exists():
-            self.cache_dir.mkdir(parents=True, exist_ok=True)
-            fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-            with os.fdopen(fd, "w", encoding="utf-8") as fh:
-                fh.write(self._private_key.strip() + "\n")
+            # The single key file of AutoAir <= 0.2.2, whichever user wrote it first.
+            (self.cache_dir / "id_autoair").unlink(missing_ok=True)
+            directory.mkdir(parents=True, exist_ok=True)
+            os.chmod(directory, 0o700)
+            fd, tmp = tempfile.mkstemp(dir=directory, prefix=".key-")  # mode 0600
+            try:
+                with os.fdopen(fd, "w", encoding="utf-8") as fh:
+                    fh.write(key)
+                os.replace(tmp, path)  # concurrent writers: whole files only
+            except BaseException:
+                Path(tmp).unlink(missing_ok=True)
+                raise
+            prune_key_cache(directory, self.ssh_key_cache_days, keep=path)
+        else:
+            # The file's age is its last use: pruning only removes keys nobody used lately.
+            with contextlib.suppress(OSError):
+                os.utime(path)
         return path
 
     def _redact(self, text: str) -> str:
@@ -314,12 +442,19 @@ class LocalGitProvider:
             self._ensure_repo()
             self._push(from_sha, name, None)
 
-    def reset_branch(self, name: str, to_sha: str) -> None:
+    def reset_branch(self, name: str, to_sha: str, *, expect: str | None = None) -> None:
         check_branch(name)
         with self._lock:
             self._ensure_repo()
-            self._git("push", "-q", "--force", "origin", f"{to_sha}:refs/heads/{name}")
-            self._git("update-ref", f"refs/remotes/origin/{name}", to_sha)
+            if expect is None:
+                expect = self._git(
+                    "rev-parse", "--verify", "-q", f"refs/remotes/origin/{name}", check=False
+                ).stdout.strip()
+                if not expect:
+                    raise ConflictError(None, f"branch {name!r} does not exist; reload and retry")
+            # A lease on the head the caller saw: the remote refuses the reset when someone
+            # pushed in between (a plain --force would silently discard their commit).
+            self._push(to_sha, name, expect)
 
     def commit_files(
         self,

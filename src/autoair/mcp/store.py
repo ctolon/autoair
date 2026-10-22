@@ -14,6 +14,7 @@ from typing import Any, Protocol, runtime_checkable
 from pydantic import BaseModel, Field
 
 from autoair.spec import DagSpec
+from autoair.storage.render import TargetRepository
 
 
 class StoredDag(BaseModel):
@@ -65,11 +66,39 @@ class RepositoryStore:
         spec = self._repo.get(dag_id)
         return spec if spec is None or isinstance(spec, DagSpec) else DagSpec.model_validate(spec)
 
-    def save(self, spec: DagSpec, python_source: str | None) -> str:
-        result = self._repo.save(spec, python_source)
+    def save(
+        self,
+        spec: DagSpec,
+        python_source: str | None,
+        *,
+        base_etag: str | None = None,
+        author: str | None = None,
+        mode: str | None = None,
+    ) -> str:
+        """``base_etag``: written only while the stored spec still has this etag (checked by
+        the deploy target under its lock; repositories without that check ignore it).
+        ``author``/``mode``: the writing user and a git target's write mode (``"pr"``
+        opens a pull request), for deploy targets."""
+        if isinstance(self._repo, TargetRepository):
+            result = self._repo.save(
+                spec, python_source, base_etag=base_etag, author=author, mode=mode
+            )
+        else:
+            result = self._repo.save(spec, python_source)
         return str(getattr(result, "location", None) or result)
 
-    def delete(self, dag_id: str) -> bool:
+    def delete(
+        self,
+        dag_id: str,
+        *,
+        base_etag: str | None = None,
+        author: str | None = None,
+        mode: str | None = None,
+    ) -> bool:
+        """``base_etag``: deleted only while the stored spec still has this etag (checked
+        by the deploy target under its lock; repositories without that check ignore it)."""
+        if isinstance(self._repo, TargetRepository):
+            return bool(self._repo.delete(dag_id, base_etag=base_etag, author=author, mode=mode))
         return bool(self._repo.delete(dag_id))
 
 

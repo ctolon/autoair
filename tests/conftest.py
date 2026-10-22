@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import tempfile
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
@@ -78,3 +79,17 @@ def _reset_process_config() -> object:
     sections.reset_all()
     yield
     sections.reset_all()
+
+
+@pytest.fixture(autouse=True)
+def _anonymous_callers_edit() -> Iterator[None]:
+    """Most API tests build apps with ``AuthBackend()`` (no authentication) and act as an
+    editor. ``iam.anonymous_roles`` defaults to Viewer, so tests opt back into Admin here;
+    tests about the default pass ``iam`` explicitly (an explicit value beats the env).
+
+    A private MonkeyPatch, not the ``monkeypatch`` fixture: requesting that here would set it
+    up before ``_reset_process_config``, so a test's own patches (``importlib``) would still
+    be active while that fixture's teardown runs."""
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setenv("AUTOAIR_IAM__ANONYMOUS_ROLES", '["Admin"]')
+        yield

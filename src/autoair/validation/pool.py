@@ -9,8 +9,11 @@ subprocess import check. Each worker here pre-imports ``airflow.sdk`` and the
 * recycling — a worker is replaced after ``max_tasks_per_child`` checks (DAG modules
   leak into ``sys.modules``; user code may mutate global state);
 * lazy start, thread-safe :meth:`DagBagPool.submit`, :meth:`DagBagPool.shutdown`;
-* optional :class:`~autoair.validation.sandbox.WorkerSandbox` limits (the validator
-  service): resource limits, network namespace, audit hook, a private scratch folder.
+* optional :class:`~autoair.validation.sandbox.WorkerSandbox` limits: the validator
+  service's (resource limits, network namespace, the check profile of the audit hook, a
+  private scratch folder and HOME), or those of the process's own pool
+  (:func:`local_pool_sandbox`: the run profile of the audit hook, non-dumpable, a private
+  AIRFLOW_HOME with a secret-free airflow.cfg).
 
 Workers are fresh interpreters started with :mod:`subprocess` (never ``fork`` a
 threaded server process) in their own process group, and talk to the parent through a
@@ -261,17 +264,29 @@ class _Worker:
             self.scratch = tempfile.mkdtemp(prefix="w-", dir=sandbox.scratch_root or None)
             sandbox = replace(sandbox, scratch_dir=self.scratch)
             sandbox_arg = json.dumps(sandbox.to_dict())
-            home = os.path.join(self.scratch, "home")
-            os.makedirs(os.path.join(home, "airflow"), exist_ok=True)
-            # Private homes: a check must not plant files (airflow.cfg, config modules, user
-            # site-packages) that a later worker would load during its warm imports.
-            extra = {
-                "TMPDIR": self.scratch,
-                "HOME": home,
-                "AIRFLOW_HOME": os.path.join(home, "airflow"),
-                "PYTHONDONTWRITEBYTECODE": "1",
-                "PYTHONNOUSERSITE": "1",
-            }
+            if sandbox.sanitize_airflow_config:
+                # the local pool (no validator): Airflow's configuration without its secrets
+                # in a private AIRFLOW_HOME; HOME and user site-packages stay, DAG files may
+                # import from them
+                from autoair.runner import private_airflow_home
+
+                try:
+                    extra = {"TMPDIR": self.scratch, **private_airflow_home(self.scratch)}
+                except BaseException:
+                    self._remove_scratch()
+                    raise
+            else:
+                home = os.path.join(self.scratch, "home")
+                os.makedirs(os.path.join(home, "airflow"), exist_ok=True)
+                # Private homes: a check must not plant files (airflow.cfg, config modules,
+                # user site-packages) that a later worker would load during its warm imports.
+                extra = {
+                    "TMPDIR": self.scratch,
+                    "HOME": home,
+                    "AIRFLOW_HOME": os.path.join(home, "airflow"),
+                    "PYTHONDONTWRITEBYTECODE": "1",
+                    "PYTHONNOUSERSITE": "1",
+                }
         parent, child = socket.socketpair()
         fd = child.fileno()
         out = subprocess.DEVNULL if silence else None
@@ -536,14 +551,18 @@ def configure_pool(
     size: int | None = None,
     max_tasks: int | None = None,
     start_timeout: float | None = None,
+    read_only: tuple[str, ...] | None = None,
 ) -> None:
     """Pool settings for this process (``AUTOAIR_DAGBAG_POOL*``, see Settings); they apply
-    to the next pool started (call :func:`shutdown_pool` to restart a running one)."""
+    to the next pool started (call :func:`shutdown_pool` to restart a running one).
+    ``read_only``: folders besides Airflow's DAG folders that checks may read but not write
+    (AutoAir's output folder)."""
     for key, value in (
         ("enabled", enabled),
         ("size", size),
         ("max_tasks", max_tasks),
         ("start_timeout", start_timeout),
+        ("read_only", read_only),
     ):
         if value is not None:
             _config[key] = value
@@ -581,10 +600,18 @@ def pool_enabled() -> bool:
     return bool(value)
 
 
+def local_pool_sandbox() -> WorkerSandbox:
+    """The sandbox of this process's own pool (:func:`autoair.runner.local_check_sandbox`,
+    read with the current ``runner.*`` settings)."""
+    from autoair.runner import local_check_sandbox
+
+    return local_check_sandbox(read_only=tuple(_config.get("read_only") or ()))
+
+
 def get_pool() -> DagBagPool:
     """Process-wide pool (size / recycling from ``AUTOAIR_DAGBAG_POOL_SIZE`` /
-    ``AUTOAIR_DAGBAG_POOL_MAX_TASKS`` or :func:`configure_pool`); shut down at
-    interpreter exit."""
+    ``AUTOAIR_DAGBAG_POOL_MAX_TASKS`` or :func:`configure_pool`), its workers sandboxed with
+    :func:`local_pool_sandbox`; shut down at interpreter exit."""
     global _pool
     if _pool is None:
         with _pool_lock:
@@ -599,6 +626,7 @@ def get_pool() -> DagBagPool:
                         "AUTOAIR_DAGBAG_POOL_START_TIMEOUT",
                         DEFAULT_START_TIMEOUT,
                     ),
+                    sandbox=local_pool_sandbox(),
                 )
                 atexit.register(shutdown_pool)
                 # start every worker now (non-blocking) so none cold-starts later
@@ -619,6 +647,7 @@ __all__ = [
     "bag_summary",
     "configure_pool",
     "get_pool",
+    "local_pool_sandbox",
     "pool_enabled",
     "shutdown_pool",
 ]

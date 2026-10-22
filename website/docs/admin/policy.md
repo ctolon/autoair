@@ -90,6 +90,14 @@ Regexes are compiled when the settings load; an invalid regex stops the server w
 
 Literal values of parameters whose name contains `password`, `passwd`, `secret`, `token`, `api_key`, `access_key`, `private_key` or `credential` (the default `policy.secret_param_pattern`), and secret-looking assignments in inline code produce a `secret` **warning** that tells the user to use `{{ conn.<id>.password }}`, `{{ var.value.<key> }}` or an Airflow connection instead. Tune the patterns with the `policy.secret_*` settings above. Secret findings never block a deploy; combine them with code review or the AI leak scan if they must.
 
+Python code (inline functions, `@task` bodies, raw code DAGs and the hand-written parts of source-preserving deploys) is also checked for dict entries whose key matches the secret parameter pattern and whose value is a string literal: `{"token": "ghp_..."}` and `dict(password="...")` are reported with the line of the key. To keep false positives out, an entry is not reported when its value:
+
+- is not a plain string literal (a variable, `os.environ[...]`, `Variable.get(...)`, an f-string or a concatenation),
+- is shorter than six characters, contains whitespace or braces (Jinja such as `{{ conn.db.password }}`, `%(password)s` format fields), or is empty,
+- is a placeholder (`<your-token>`, `changeme`, `********`, `xxxxxxxx`, `YOUR_API_KEY`, `${TOKEN}`, `placeholder`, `redacted`) or an environment variable name such as `GITHUB_TOKEN`.
+
+Keys matching the exclude pattern (`token_url`, `password_conn_id`, `secret_name`) are never reported.
+
 ## Operator templates
 
 Operator templates (blueprints) can lock or require fields of the tasks created from them, for example a fixed `pool` or a required `owner`; validation reports violations as errors. This is per-template policy maintained by template authors; see [Operator templates](/docs/user-guide/operator-templates).

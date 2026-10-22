@@ -5,6 +5,7 @@ from pydantic import BaseModel
 
 from autoair.api.deps import ServicesDep
 from autoair.collab import ROOM_RE, available, issue_ticket
+from autoair.iam.deps import PrincipalDep
 
 router = APIRouter(prefix="/collab", tags=["collab"])
 
@@ -15,13 +16,17 @@ class CollabTicket(BaseModel):
 
 
 @router.post("/{dag_id}/ticket", operation_id="collabTicket")
-async def collab_ticket(dag_id: str, services: ServicesDep) -> CollabTicket:
-    """Short-lived ticket to join the DAG's live editing room (needs DAG edit permission)."""
+async def collab_ticket(
+    dag_id: str, services: ServicesDep, principal: PrincipalDep
+) -> CollabTicket:
+    """Short-lived, single-use ticket for one connection to the DAG's live editing room,
+    bound to the caller and the room (needs DAG edit permission)."""
     if not available():
         raise HTTPException(status_code=404, detail="collaboration is disabled")
     if not ROOM_RE.fullmatch(f"collab/{dag_id}"):
         raise HTTPException(status_code=400, detail="invalid dag_id")
     ttl = services.settings.collab_ticket_ttl
     return CollabTicket(
-        ticket=issue_ticket(services.collab_secret, dag_id, ttl=ttl), expires_in=ttl
+        ticket=issue_ticket(services.collab_secret, dag_id, user=principal.user, ttl=ttl),
+        expires_in=ttl,
     )

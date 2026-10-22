@@ -3302,6 +3302,18 @@ export type DagTestResult = {
      * Error
      */
     error?: string | null;
+    /**
+     * Where
+     *
+     * Where the code ran: local (this server), validator (the validator service) or none (it did not run).
+     */
+    readonly where: string;
+    /**
+     * Process Isolated
+     *
+     * Whether the run had its own PID namespace (runner.process_isolation); false: it ran with the audit hook only and could see other processes (not fully isolated), null: not known.
+     */
+    readonly process_isolated: boolean | null;
 };
 
 /**
@@ -3559,8 +3571,26 @@ export type DefaultArgs = {
 export type DeleteResult = {
     /**
      * Deleted
+     *
+     * Something was deleted or a deleting pull request opened.
      */
     deleted: boolean;
+    /**
+     * Status
+     *
+     * 'deleted': gone from the target; 'pr_opened': a pull request removes it (still live until merged); 'pending_approval' (HTTP 202): stored as a delete proposal that needs another user's approval (iam.require_approval); 'not_found'.
+     */
+    status?: 'deleted' | 'not_found' | 'pending_approval' | 'pr_opened';
+    /**
+     * Proposal Etag
+     *
+     * Etag of the stored delete proposal (pending_approval).
+     */
+    proposal_etag?: string | null;
+    /**
+     * Message
+     */
+    message?: string | null;
 };
 
 /**
@@ -3732,6 +3762,8 @@ export type DeployRequest = {
     spec: DagSpec;
     /**
      * Base Etag
+     *
+     * Etag of the spec this edit started from (or the If-Match header). Required to overwrite an existing DAG (storage.require_base_etag); a stale one returns status 'conflict'.
      */
     base_etag?: string | null;
     /**
@@ -4967,6 +4999,12 @@ export type GitStorageSettings = {
      */
     ssh_key_file?: string | null;
     /**
+     * Ssh Key Cache Days
+     *
+     * provider=local/gitea: days an SSH private key from a git connection stays in the clone cache (<cache_dir>/keys/id_autoair-<hash>, mode 0600) after its last use. Writing a new key file removes AutoAir's key files unused for longer (only files of that name owned by this user, never the key being used). 0 keeps them.
+     */
+    ssh_key_cache_days?: number;
+    /**
      * Github App Id
      *
      * GitHub App id.
@@ -5152,6 +5190,12 @@ export type GitStorageSettings = {
      * provider=local: seconds a git command may take.
      */
     command_timeout?: number;
+    /**
+     * Env Passthrough
+     *
+     * provider=local/gitea: environment variables (fnmatch patterns, case-insensitive) the git CLI inherits besides the ones git, ssh and curl read (PATH, HOME, locale, TMPDIR, SSH_AUTH_SOCK, SSL_CERT_*, proxy variables, GIT_*), e.g. ['KRB5CCNAME'] for Kerberos. Nothing else of the server's environment reaches git.
+     */
+    env_passthrough?: Array<string>;
     /**
      * Max Attempts
      *
@@ -6210,6 +6254,12 @@ export type McpServerInput = {
      */
     tools?: Array<string>;
     /**
+     * Read Only Tools
+     *
+     * Tools (fnmatch) an admin vouches only read: they run without approval and the admin assistant may use them. The server's readOnlyHint is not trusted.
+     */
+    read_only_tools?: Array<string>;
+    /**
      * Headers
      *
      * Header values; null or '***' keeps the stored value, '' removes it.
@@ -6282,6 +6332,12 @@ export type McpServerView = {
      */
     tools?: Array<string>;
     /**
+     * Read Only Tools
+     *
+     * Tools an admin vouches only read (run without approval).
+     */
+    read_only_tools?: Array<string>;
+    /**
      * Headers
      *
      * Names of the set headers.
@@ -6329,6 +6385,18 @@ export type McpToolInfo = {
      * Allowed
      */
     allowed?: boolean;
+    /**
+     * Read Only
+     *
+     * Listed in the server's read_only_tools (runs without approval).
+     */
+    read_only?: boolean;
+    /**
+     * Hinted Read Only
+     *
+     * The server marks it read-only (readOnlyHint; informational, not trusted).
+     */
+    hinted_read_only?: boolean;
 };
 
 /**
@@ -6557,6 +6625,10 @@ export type MetaInfo = {
      * airflow_secrets_backend: connections/variables may come from a secrets backend, so ids missing from Airflow's metastore are not flagged.
      */
     secrets_backend?: boolean;
+    /**
+     * Test runs: where they execute, whether mode=db is offered.
+     */
+    test_runs?: TestRunInfo | null;
 };
 
 /**
@@ -7549,7 +7621,7 @@ export type PendingToolCall = {
     /**
      * Kind
      */
-    kind?: 'read' | 'write';
+    kind?: 'read' | 'write' | 'execute';
     /**
      * Description
      *
@@ -7568,6 +7640,18 @@ export type PendingToolCall = {
      * Arguments were cut for display.
      */
     truncated?: boolean;
+    /**
+     * Omitted Chars
+     *
+     * About how many characters of the (masked) arguments the cut left out; the full arguments come from GET /ai/approvals/{id}/calls/{call_id}/arguments.
+     */
+    omitted_chars?: number;
+    /**
+     * Arguments Sha256
+     *
+     * SHA-256 of the exact arguments the tool will run with (canonical JSON). An approval sends it back; the run resumes only when the stored call still has these arguments.
+     */
+    arguments_sha256?: string | null;
 };
 
 /**
@@ -7940,6 +8024,12 @@ export type ProposalDetail = {
      */
     direct_push?: boolean | null;
     /**
+     * Action
+     *
+     * 'deploy' deploys the proposed spec; 'delete' deletes the DAG (POST .../proposals/{etag}/delete).
+     */
+    action?: 'deploy' | 'delete';
+    /**
      * Approved By
      *
      * Other users whose latest verdict is 'approve'.
@@ -7967,7 +8057,7 @@ export type ProposalDetail = {
     /**
      * Stale
      *
-     * The stored spec changed since the author's base version (deploying would conflict unless forced).
+     * The stored spec changed since the author's base version, or the DAG exists now and the proposal records no base version: deploying, executing or approving it is refused (409) until it is proposed again.
      */
     stale?: boolean;
     /**
@@ -8004,6 +8094,12 @@ export type ProposalRow = {
      * Environment
      */
     environment?: string | null;
+    /**
+     * Action
+     *
+     * 'delete': the proposal deletes the DAG.
+     */
+    action?: 'deploy' | 'delete';
     /**
      * Approvals
      */
@@ -8050,6 +8146,12 @@ export type ProposalSummary = {
      * Direct Push
      */
     direct_push?: boolean | null;
+    /**
+     * Action
+     *
+     * 'deploy' deploys the proposed spec; 'delete' deletes the DAG (POST .../proposals/{etag}/delete).
+     */
+    action?: 'deploy' | 'delete';
     /**
      * Approved By
      *
@@ -9487,6 +9589,24 @@ export type StorageSettings = {
      */
     history_limit?: number;
     /**
+     * Object Lock Seconds
+     *
+     * mode=object: seconds a write lease of a DAG lasts. Writers of one DAG hold it (a document in AutoAir's state backend, shared by every replica with database.backend sqlite/postgresql) while they check base_etag and write, so two replicas never both win; a replica that died holding it blocks that DAG's deploys at most this long. Must exceed the longest save.
+     */
+    object_lock_seconds?: number;
+    /**
+     * Object Lock Wait Seconds
+     *
+     * mode=object: seconds a save waits for another writer's lease on the same DAG before it fails with a conflict (409).
+     */
+    object_lock_wait_seconds?: number;
+    /**
+     * Require Base Etag
+     *
+     * Overwriting or deleting an existing DAG spec needs the etag it was loaded with (REST: base_etag or If-Match on PUT, If-Match on DELETE, else HTTP 428 Precondition Required with the current etag; MCP save_dag_spec and delete_dag_spec: base_etag, else the call is refused with current_etag). false lets legacy API clients overwrite or delete without one (last writer wins). Creating a new DAG never needs an etag.
+     */
+    require_base_etag?: boolean;
+    /**
      * File Mode
      *
      * mode=local: permissions (octal) of written files.
@@ -9904,6 +10024,18 @@ export type TaskTestResult = {
     xcom_pushes?: {
         [key: string]: string;
     };
+    /**
+     * Where
+     *
+     * Where the code ran: local (this server), validator (the validator service) or none (it did not run).
+     */
+    readonly where: string;
+    /**
+     * Process Isolated
+     *
+     * Whether the run had its own PID namespace (runner.process_isolation); false: it ran with the audit hook only and could see other processes (not fully isolated), null: not known.
+     */
+    readonly process_isolated: boolean | null;
 };
 
 /**
@@ -10214,7 +10346,7 @@ export type TestDagRequest = {
     /**
      * Mode
      *
-     * memory: no metadata DB; db: dag.test() (writes a run to the DB); auto: db with fallback to memory.
+     * memory: no metadata DB; db: dag.test() (writes a run to the DB; needs runner.allow_db_mode and admin:config); auto: db with fallback to memory when db is allowed for the caller, else memory.
      */
     mode?: 'memory' | 'db' | 'auto';
     /**
@@ -10223,6 +10355,26 @@ export type TestDagRequest = {
      * Seconds (default AUTOAIR_RUNNER__DEFAULT_DAG_TIMEOUT, at most AUTOAIR_RUNNER__MAX_TIMEOUT).
      */
     timeout?: number | null;
+};
+
+/**
+ * TestRunInfo
+ *
+ * Where test runs execute and whether ``mode=db`` is available to the caller.
+ */
+export type TestRunInfo = {
+    /**
+     * On Validator
+     *
+     * Task and DAG test runs (mode memory) run on the validator service (validator.url and validator.test_runs), not on this host.
+     */
+    on_validator: boolean;
+    /**
+     * Db Mode Unavailable
+     *
+     * Why mode=db is not available: disabled (runner.allow_db_mode is off) or admin_only (it needs admin:config). Null: the caller may use it. mode=auto runs in memory whenever this is set.
+     */
+    db_mode_unavailable?: 'disabled' | 'admin_only' | null;
 };
 
 /**
@@ -10362,6 +10514,32 @@ export type ToolApprovalView = {
 };
 
 /**
+ * ToolCallArguments
+ *
+ * A pending call's complete arguments (secrets masked, nothing cut).
+ */
+export type ToolCallArguments = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Tool
+     */
+    tool: string;
+    /**
+     * Arguments
+     */
+    arguments?: unknown;
+    /**
+     * Arguments Sha256
+     *
+     * Send it back with an approval of the call.
+     */
+    arguments_sha256: string;
+};
+
+/**
  * ToolCallRecord
  */
 export type ToolCallRecord = {
@@ -10411,6 +10589,12 @@ export type ToolDecision = {
      * Reason
      */
     reason?: string | null;
+    /**
+     * Arguments Sha256
+     *
+     * The arguments_sha256 of the call as shown; required to approve.
+     */
+    arguments_sha256?: string | null;
 };
 
 /**
@@ -11480,6 +11664,36 @@ export type BulkImportRequestWritable = {
 };
 
 /**
+ * DagTestResult
+ */
+export type DagTestResultWritable = {
+    /**
+     * State
+     */
+    state: string;
+    /**
+     * Mode
+     */
+    mode?: 'memory' | 'db' | null;
+    /**
+     * Duration
+     */
+    duration?: number;
+    /**
+     * Tasks
+     */
+    tasks?: Array<DagTaskOutcome>;
+    /**
+     * Log
+     */
+    log?: string;
+    /**
+     * Error
+     */
+    error?: string | null;
+};
+
+/**
  * DeployCandidate
  */
 export type DeployCandidateWritable = {
@@ -11695,6 +11909,12 @@ export type GitStorageSettingsWritable = {
      */
     ssh_key_file?: string | null;
     /**
+     * Ssh Key Cache Days
+     *
+     * provider=local/gitea: days an SSH private key from a git connection stays in the clone cache (<cache_dir>/keys/id_autoair-<hash>, mode 0600) after its last use. Writing a new key file removes AutoAir's key files unused for longer (only files of that name owned by this user, never the key being used). 0 keeps them.
+     */
+    ssh_key_cache_days?: number;
+    /**
      * Github App Id
      *
      * GitHub App id.
@@ -11881,6 +12101,12 @@ export type GitStorageSettingsWritable = {
      */
     command_timeout?: number;
     /**
+     * Env Passthrough
+     *
+     * provider=local/gitea: environment variables (fnmatch patterns, case-insensitive) the git CLI inherits besides the ones git, ssh and curl read (PATH, HOME, locale, TMPDIR, SSH_AUTH_SOCK, SSL_CERT_*, proxy variables, GIT_*), e.g. ['KRB5CCNAME'] for Kerberos. Nothing else of the server's environment reaches git.
+     */
+    env_passthrough?: Array<string>;
+    /**
      * Max Attempts
      *
      * Saves retried when the branch moves between read and commit.
@@ -11937,6 +12163,24 @@ export type StorageSettingsWritable = {
      */
     history_limit?: number;
     /**
+     * Object Lock Seconds
+     *
+     * mode=object: seconds a write lease of a DAG lasts. Writers of one DAG hold it (a document in AutoAir's state backend, shared by every replica with database.backend sqlite/postgresql) while they check base_etag and write, so two replicas never both win; a replica that died holding it blocks that DAG's deploys at most this long. Must exceed the longest save.
+     */
+    object_lock_seconds?: number;
+    /**
+     * Object Lock Wait Seconds
+     *
+     * mode=object: seconds a save waits for another writer's lease on the same DAG before it fails with a conflict (409).
+     */
+    object_lock_wait_seconds?: number;
+    /**
+     * Require Base Etag
+     *
+     * Overwriting or deleting an existing DAG spec needs the etag it was loaded with (REST: base_etag or If-Match on PUT, If-Match on DELETE, else HTTP 428 Precondition Required with the current etag; MCP save_dag_spec and delete_dag_spec: base_etag, else the call is refused with current_etag). false lets legacy API clients overwrite or delete without one (last writer wins). Creating a new DAG never needs an etag.
+     */
+    require_base_etag?: boolean;
+    /**
      * File Mode
      *
      * mode=local: permissions (octal) of written files.
@@ -11955,6 +12199,62 @@ export type StorageSettingsWritable = {
      */
     temp_dir?: string | null;
     git?: GitStorageSettingsWritable;
+};
+
+/**
+ * TaskTestResult
+ */
+export type TaskTestResultWritable = {
+    /**
+     * Task Id
+     */
+    task_id?: string | null;
+    /**
+     * State
+     */
+    state: 'success' | 'failed' | 'skipped' | 'upstream_failed' | 'deferred' | 'timeout' | 'import_error' | 'not_found' | 'error';
+    /**
+     * Duration
+     *
+     * Seconds spent executing the task.
+     */
+    duration?: number;
+    /**
+     * Log
+     *
+     * Captured stdout/stderr/logging (truncated).
+     */
+    log?: string;
+    /**
+     * Return Value Repr
+     */
+    return_value_repr?: string | null;
+    /**
+     * Return Value
+     *
+     * Return value when JSON-serialisable.
+     */
+    return_value?: unknown;
+    /**
+     * Error
+     */
+    error?: string | null;
+    /**
+     * Mapped
+     *
+     * Mapped task; ran map_index 0 only.
+     */
+    mapped?: boolean;
+    /**
+     * Skipped Downstream
+     */
+    skipped_downstream?: Array<string>;
+    /**
+     * Xcom Pushes
+     */
+    xcom_pushes?: {
+        [key: string]: string;
+    };
 };
 
 /**
@@ -14271,6 +14571,40 @@ export type GetToolApprovalResponses = {
 
 export type GetToolApprovalResponse = GetToolApprovalResponses[keyof GetToolApprovalResponses];
 
+export type GetToolCallArgumentsData = {
+    body?: never;
+    path: {
+        /**
+         * Approval Id
+         */
+        approval_id: string;
+        /**
+         * Call Id
+         */
+        call_id: string;
+    };
+    query?: never;
+    url: '/ai/approvals/{approval_id}/calls/{call_id}/arguments';
+};
+
+export type GetToolCallArgumentsErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetToolCallArgumentsError = GetToolCallArgumentsErrors[keyof GetToolCallArgumentsErrors];
+
+export type GetToolCallArgumentsResponses = {
+    /**
+     * Successful Response
+     */
+    200: ToolCallArguments;
+};
+
+export type GetToolCallArgumentsResponse = GetToolCallArgumentsResponses[keyof GetToolCallArgumentsResponses];
+
 export type ResumeToolApprovalStreamData = {
     body: ToolApprovalDecision;
     path: {
@@ -15574,9 +15908,17 @@ export type DeleteSpecData = {
 
 export type DeleteSpecErrors = {
     /**
+     * The If-Match etag is stale: the DAG changed since it was loaded.
+     */
+    409: unknown;
+    /**
      * Validation Error
      */
     422: HttpValidationError;
+    /**
+     * The DAG exists and the request carries no If-Match (storage.require_base_etag); the ETag header holds the current etag.
+     */
+    428: unknown;
 };
 
 export type DeleteSpecError = DeleteSpecErrors[keyof DeleteSpecErrors];
@@ -15586,6 +15928,10 @@ export type DeleteSpecResponses = {
      * Successful Response
      */
     200: DeleteResult;
+    /**
+     * Stored as a delete proposal awaiting approval (status 'pending_approval'); nothing was deleted.
+     */
+    202: DeleteResult;
 };
 
 export type DeleteSpecResponse = DeleteSpecResponses[keyof DeleteSpecResponses];
@@ -15649,6 +15995,10 @@ export type DeploySpecErrors = {
      * Validation Error
      */
     422: HttpValidationError;
+    /**
+     * The DAG already exists and the request carries no base_etag / If-Match (storage.require_base_etag); the ETag header holds the current etag.
+     */
+    428: unknown;
 };
 
 export type DeploySpecError = DeploySpecErrors[keyof DeploySpecErrors];
@@ -15945,6 +16295,55 @@ export type DeployProposalResponses = {
 };
 
 export type DeployProposalResponse = DeployProposalResponses[keyof DeployProposalResponses];
+
+export type ExecuteDeleteProposalData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Autoair-Git-Token
+         *
+         * Git token for this one write (storage.git.request_token): used instead of the configured credentials, never stored or logged. HTTPS only.
+         */
+        'X-AutoAir-Git-Token'?: string | null;
+    };
+    path: {
+        /**
+         * Dag Id
+         */
+        dag_id: string;
+        /**
+         * Etag
+         */
+        etag: string;
+    };
+    query?: {
+        /**
+         * Git Conn Id
+         *
+         * per_user git credentials: connection to use.
+         */
+        git_conn_id?: string | null;
+    };
+    url: '/specs/{dag_id}/proposals/{etag}/delete';
+};
+
+export type ExecuteDeleteProposalErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ExecuteDeleteProposalError = ExecuteDeleteProposalErrors[keyof ExecuteDeleteProposalErrors];
+
+export type ExecuteDeleteProposalResponses = {
+    /**
+     * Successful Response
+     */
+    200: DeleteResult;
+};
+
+export type ExecuteDeleteProposalResponse = ExecuteDeleteProposalResponses[keyof ExecuteDeleteProposalResponses];
 
 export type GetStorageStatusData = {
     body?: never;

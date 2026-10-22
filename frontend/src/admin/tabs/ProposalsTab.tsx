@@ -28,6 +28,7 @@ export function ProposalsTab() {
                 <Table.Header>
                   <Table.Row>
                     <Table.ColumnHeader>{t("proposals.dag")}</Table.ColumnHeader>
+                    <Table.ColumnHeader>{t("proposals.action")}</Table.ColumnHeader>
                     <Table.ColumnHeader>{t("proposals.version")}</Table.ColumnHeader>
                     <Table.ColumnHeader>{t("proposals.author")}</Table.ColumnHeader>
                     <Table.ColumnHeader>{t("proposals.submitted")}</Table.ColumnHeader>
@@ -40,6 +41,11 @@ export function ProposalsTab() {
                     <Table.Row key={`${p.dag_id}/${p.etag}`}>
                       <Table.Cell fontFamily="mono" fontSize="xs">
                         {p.dag_id}
+                      </Table.Cell>
+                      <Table.Cell>
+                        <Badge size="xs" colorPalette={p.action === "delete" ? "red" : "blue"}>
+                          {t(`proposals.actions.${p.action ?? "deploy"}`, { defaultValue: p.action ?? "deploy" })}
+                        </Badge>
                       </Table.Cell>
                       <Table.Cell>
                         <Code fontSize="xs">{p.etag.slice(0, 12)}</Code>

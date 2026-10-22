@@ -42,6 +42,7 @@ from autoair.storage.base import (
     history_id,
     is_owned,
     main_file,
+    parse_state,
     serialize_spec,
     sha256_text,
     source_sha,
@@ -89,6 +90,7 @@ class FileTarget:
         return f"{HISTORY_DIR}/{check_dag_id(dag_id)}"
 
     def _read_state(self, dag_id: str) -> DagState | None:
+        """The state record for reads (an unreadable one reads as missing)."""
         raw = self.store.read(self._state_rel(dag_id))
         if raw is None:
             return None
@@ -97,6 +99,44 @@ class FileTarget:
         except ValidationError:
             log.warning("ignoring unreadable AutoAir state for %s", dag_id)
             return None
+
+    def _state_for_write(self, dag_id: str) -> DagState | None:
+        """The state record a write decides with: unreadable fails closed (it says which
+        files are hand-written or hand-edited, so guessing could destroy one)."""
+        rel = self._state_rel(dag_id)
+        return parse_state(self.store.read(rel), self.store.location(rel), dag_id)
+
+    def _write_lock(self, dag_id: str) -> contextlib.AbstractContextManager[None]:
+        """Held while a write of ``dag_id`` reads, checks and writes."""
+        return self.store.lock()
+
+    def _still_writing(self) -> None:
+        """Called before each write step; raises when this writer lost its right to write
+        (an expired replica lease), which rolls the save back."""
+
+    def _apply(self, steps: builtins.list[tuple[str, str | None]]) -> None:
+        """Write (content) or remove (``None``) each path in order. When a step fails, the
+        steps done so far are undone (previous content restored) and the error raised, so
+        a failed deploy leaves the spec, history, DAG files and state as they were."""
+        done: builtins.list[tuple[str, str | None]] = []
+        try:
+            for rel, content in steps:
+                self._still_writing()
+                done.append((rel, self.store.read(rel)))
+                if content is None:
+                    self.store.remove(rel)
+                else:
+                    self.store.write(rel, content)
+        except BaseException:
+            for rel, previous in reversed(done):
+                try:
+                    if previous is None:
+                        self.store.remove(rel)
+                    else:
+                        self.store.write(rel, previous)
+                except Exception:
+                    log.exception("cannot restore %s after a failed write", rel)
+            raise
 
     def _generated_names(self, dag_id: str, state: DagState | None) -> list[str]:
         if state is not None and state.files:
@@ -111,8 +151,18 @@ class FileTarget:
         new_sha: str | None,
         force: bool,
         expected: str | None = None,
+        *,
+        unknown: bool = False,
     ) -> None:
-        check_overwrite(self.store.location(name), existing, recorded, new_sha, force, expected)
+        check_overwrite(
+            self.store.location(name),
+            existing,
+            recorded,
+            new_sha,
+            force,
+            expected,
+            unknown=unknown,
+        )
 
     def current_file(self, dag_id: str, *, environment: str | None = None) -> ExistingFile | None:
         """The main DAG file now in the target (``<dag_id>.py``) and its recorded hash."""
@@ -234,11 +284,11 @@ class FileTarget:
         dag_id = check_dag_id(spec.dag_id)
         check_files(dag_id, files)
         expected = expected or {}
-        with self.store.lock():
+        with self._write_lock(dag_id):
             current = self.get(dag_id)
             if base_etag is not None and (current is None or current.etag != base_etag):
                 raise ConflictError(current)
-            state = self._read_state(dag_id)
+            state = self._state_for_write(dag_id)
             recorded = state.files if state else {}
             hashes = {name: sha256_text(content) for name, content in files.items()}
             # Every write path (loader/YAML output modes, raw code, promotion, MCP) ends
@@ -255,6 +305,7 @@ class FileTarget:
                     hashes[name],
                     force,
                     expected.get(name),
+                    unknown=state is None,
                 )
             stale: list[str] = []
             for name in recorded:
@@ -293,49 +344,52 @@ class FileTarget:
 
             now = utcnow()
             version = history_id(now, etag)
-            # Spec first: in loader mode the stub reads it at parse time.
-            self.store.write(spec_filename(dag_id), serialize_spec(spec))
-            self._write_history(
-                HistoryEntry(
-                    version=version,
-                    timestamp=now,
-                    etag=etag,
-                    author=author,
-                    message=message,
-                    environment=environment,
-                    spec=json.loads(serialize_spec(spec)),
-                )
+            entry = HistoryEntry(
+                version=version,
+                timestamp=now,
+                etag=etag,
+                author=author,
+                message=message,
+                environment=environment,
+                spec=json.loads(serialize_spec(spec)),
             )
-            for name in sorted(files, key=lambda n: n == main):
-                self.store.write(name, files[name])
-            for name in stale:
-                self.store.remove(name)
-            self.store.write(
-                self._state_rel(dag_id),
-                DagState(
-                    dag_id=dag_id,
-                    etag=etag,
-                    version=version,
-                    files=hashes,
-                    updated_at=now,
-                    author=author,
-                    environment=environment,
-                    source_sha=source_sha(spec),
-                    hand_written=kept,
-                ).model_dump_json(indent=2),
+            history_json = entry.model_dump_json(indent=2)
+            state_json = DagState(
+                dag_id=dag_id,
+                etag=etag,
+                version=version,
+                files=hashes,
+                updated_at=now,
+                author=author,
+                environment=environment,
+                source_sha=source_sha(spec),
+                hand_written=kept,
+            ).model_dump_json(indent=2)
+            # Spec first (in loader mode the stub reads it at parse time), then the DAG
+            # files, the history entry and the state record; all or nothing (_apply).
+            self._apply(
+                [
+                    (spec_filename(dag_id), serialize_spec(spec)),
+                    *((name, files[name]) for name in sorted(files, key=lambda n: n == main)),
+                    *((name, None) for name in stale),
+                    (f"{self._history_dir(dag_id)}/{version}.json", history_json),
+                    (self._state_rel(dag_id), state_json),
+                ]
             )
+            self._prune_history(dag_id)
         location = self.store.location(main)
         return SaveResult(
             path=location, etag=etag, version=version, message=f"written to {location}"
         )
 
-    def _write_history(self, entry: HistoryEntry) -> None:
-        dag_id = entry.spec.get("dag_id", "")
-        directory = self._history_dir(str(dag_id))
-        self.store.write(f"{directory}/{entry.version}.json", entry.model_dump_json(indent=2))
-        names = sorted(n for n in self.store.listdir(directory) if n.endswith(".json"))
-        for name in names[: max(0, len(names) - self.history_limit)]:
-            self.store.remove(f"{directory}/{name}")
+    def _prune_history(self, dag_id: str) -> None:
+        directory = self._history_dir(dag_id)
+        try:
+            names = sorted(n for n in self.store.listdir(directory) if n.endswith(".json"))
+            for name in names[: max(0, len(names) - self.history_limit)]:
+                self.store.remove(f"{directory}/{name}")
+        except OSError:  # the deploy itself succeeded; old entries go next time
+            log.warning("cannot prune the history of %s", dag_id, exc_info=True)
 
     def delete(
         self,
@@ -349,13 +403,13 @@ class FileTarget:
         """``allow_hand_written``: the caller may delete a hand-written file AutoAir keeps
         (``deploy:overwrite_ejected``); it is still deleted only while unchanged."""
         check_dag_id(dag_id)
-        with self.store.lock():
+        with self._write_lock(dag_id):
             current = self.get(dag_id)
             if current is None:
                 return False
             if base_etag is not None and current.etag != base_etag:
                 raise ConflictError(current)
-            state = self._read_state(dag_id)
+            state = self._state_for_write(dag_id)
             recorded = state.files if state else {}
             doomed: list[str] = []
             for name in self._generated_names(dag_id, state):
@@ -367,12 +421,23 @@ class FileTarget:
                     if not allow_hand_written:
                         raise HandWrittenError(self.store.location(name))
                     expected = recorded.get(name)
-                self._check_overwrite(name, existing, recorded.get(name), None, force, expected)
+                self._check_overwrite(
+                    name,
+                    existing,
+                    recorded.get(name),
+                    None,
+                    force,
+                    expected,
+                    unknown=state is None,
+                )
                 doomed.append(name)
             # DAG files first so Airflow never parses a stub without its spec.
-            for name in doomed:
-                self.store.remove(name)
-            self.store.remove(spec_filename(dag_id))
-            self.store.remove(self._state_rel(dag_id))
+            self._apply(
+                [
+                    *((name, None) for name in doomed),
+                    (spec_filename(dag_id), None),
+                    (self._state_rel(dag_id), None),
+                ]
+            )
             log.info("deleted DAG %s (by %s)", dag_id, author or "unknown")
         return True

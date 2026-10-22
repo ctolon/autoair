@@ -128,6 +128,11 @@
     "submitted": "Submitted",
     "message": "Message",
     "approvals": "Approved by",
+    "action": "Change",
+    "actions": {
+      "deploy": "deploy",
+      "delete": "delete"
+    },
     "reviewer": "Reviewer",
     "verdict": "Verdict",
     "comment": "Comment",
@@ -209,6 +214,9 @@
     "transport": "Transport",
     "tools": "Allowed tools",
     "toolsHelp": "Comma-separated names or patterns (* = every tool).",
+    "readOnlyTools": "Read-only tools (no approval)",
+    "readOnlyToolsHelp": "Tools you vouch only read: they run without approval and the admin assistant may use them. The server's own read-only hint is not trusted. Empty = every call needs approval.",
+    "readOnly": "read-only",
     "timeout": "Timeout (s)",
     "agents": "Agents",
     "agent": {

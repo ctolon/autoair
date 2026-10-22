@@ -3,6 +3,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 
 import { App } from "./App";
+import { RootErrorBoundary } from "./ui/ErrorBoundary";
 
 const root = document.getElementById("root") as HTMLElement;
 document.documentElement.style.height = "100%";
@@ -13,7 +14,9 @@ root.style.height = "100vh";
 createRoot(root).render(
   <StrictMode>
     <ChakraProvider value={defaultSystem}>
-      <App />
+      <RootErrorBoundary>
+        <App />
+      </RootErrorBoundary>
     </ChakraProvider>
   </StrictMode>,
 );

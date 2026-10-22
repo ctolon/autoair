@@ -61,7 +61,11 @@ def test_save_patches_the_hand_written_file(tmp_path: Path) -> None:
             assert dry.structured_content is not None
             assert dry.structured_content["source"]["action"] == "preserve"
             assert path.read_text() == HAND
-            saved = await client.call_tool("save_dag_spec", {"spec": changed, "confirm": True})
+            etag = dry.structured_content["current_etag"]
+            assert etag
+            saved = await client.call_tool(
+                "save_dag_spec", {"spec": changed, "confirm": True, "base_etag": etag}
+            )
             assert saved.structured_content is not None
             assert saved.structured_content["saved"], saved.structured_content
             code = await client.call_tool("get_dag_code", {"dag_id": "hand_load"})

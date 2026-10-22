@@ -30,13 +30,31 @@ SPEC: dict[str, Any] = {
 }
 
 
+TOKEN = "autoair-local-test"
+
+
 def local_client(tmp_path: Path, **extra: Any) -> TestClient:
+    """`autoair local` as started by the CLI: with its per-run token, sent by the client."""
     overrides = local_preset(dags_folder=tmp_path / "dags")
     overrides["ai"] = {"enabled": False}
     overrides["import_check_on_deploy"] = False
+    overrides["local"] = {"token": TOKEN}
     overrides.update(extra)
     options = ServeOptions(overrides=overrides, local=True)
-    return TestClient(build_app(options, settings_for(options)), raise_server_exceptions=False)
+    client = TestClient(build_app(options, settings_for(options)), raise_server_exceptions=False)
+    if overrides["local"].get("token") == TOKEN:
+        client.headers["Authorization"] = f"Bearer {TOKEN}"
+    return client
+
+
+def tokenless_client(tmp_path: Path, base_url: str = "http://127.0.0.1:8765", **extra: Any):
+    """`autoair local --no-token`."""
+    overrides = local_preset(dags_folder=tmp_path / "dags")
+    overrides.update(ai={"enabled": False}, import_check_on_deploy=False, **extra)
+    options = ServeOptions(overrides=overrides, local=True)
+    return TestClient(
+        build_app(options, settings_for(options)), base_url=base_url, raise_server_exceptions=False
+    )
 
 
 def test_local_preset_switches_airflow_features_off(tmp_path: Path) -> None:
@@ -45,7 +63,7 @@ def test_local_preset_switches_airflow_features_off(tmp_path: Path) -> None:
     assert meta.status_code == 200, meta.text
     body = meta.json()
     assert body["mode"] == "local"
-    assert body["auth"] == "none"
+    assert body["auth"] == "static"
     assert body["features"]["runs"] is False
     assert body["features"]["test_runs"] is False
     assert body["features"]["airflow"] is False
@@ -82,6 +100,51 @@ def test_local_token(tmp_path: Path) -> None:
     assert ok.status_code == 200
     assert ok.json()["auth"] == "static"
     assert c.get("/api/auth/config").json()["auth"] == "static"
+    # the token holder is the local user: Admin by default (local.roles), no direct push
+    me = c.get("/api/me", headers={"Authorization": "Bearer letmein"}).json()
+    assert me["roles"] == ["Admin"]
+    assert "admin:config" in me["permissions"]
+    assert "deploy:direct_push" not in me["permissions"]
+
+
+def test_local_roles_are_configurable(tmp_path: Path) -> None:
+    c = local_client(tmp_path, local={"token": TOKEN, "roles": ["Viewer"]})
+    me = c.get("/api/me").json()
+    assert me["roles"] == ["Viewer"]
+    assert c.put("/api/specs/laptop", json={"spec": SPEC}).status_code == 403
+
+
+def test_tokenless_local_is_read_only_and_loopback_only(tmp_path: Path) -> None:
+    c = tokenless_client(tmp_path, iam={"anonymous_roles": ["Viewer"]})  # the default
+    me = c.get("/api/me")
+    assert me.status_code == 200, me.text
+    assert me.json()["roles"] == ["Viewer"]  # iam.anonymous_roles
+    assert c.put("/api/specs/laptop", json={"spec": SPEC}).status_code == 403
+    # DNS rebinding / cross-site pages: only loopback Host and Origin
+    assert c.get("/api/meta", headers={"Host": "evil.example:8765"}).status_code == 403
+    assert c.get("/api/meta", headers={"Origin": "http://evil.example"}).status_code == 403
+    assert c.get("/api/meta", headers={"Origin": "null"}).status_code == 403
+    for host in ("localhost:8765", "127.0.0.1", "[::1]:8765"):
+        assert c.get("/api/meta", headers={"Host": host}).status_code == 200, host
+    assert c.get("/api/meta", headers={"Origin": "http://localhost:5173"}).status_code == 200
+    # an explicit opt-in restores editing for anonymous visitors
+    admin = tokenless_client(tmp_path, iam={"anonymous_roles": ["Admin"]})
+    assert admin.put("/api/specs/laptop", json={"spec": SPEC}).status_code == 200
+
+
+def test_tokenless_local_allows_the_public_url_host(tmp_path: Path) -> None:
+    c = tokenless_client(
+        tmp_path,
+        base_url="https://builder.example.com",
+        server={"public_url": "https://builder.example.com/autoair"},
+    )
+    assert c.get("/api/meta").status_code == 200
+    assert c.get("/api/meta", headers={"Host": "other.example.com"}).status_code == 403
+
+
+def test_token_protected_local_skips_the_host_check(tmp_path: Path) -> None:
+    # behind a token any Host works (e.g. a reverse proxy); the token is the protection
+    assert local_client(tmp_path).get("/api/meta").status_code == 200
 
 
 def test_cli_refuses_public_bind_without_token() -> None:
@@ -90,6 +153,41 @@ def test_cli_refuses_public_bind_without_token() -> None:
     result = CliRunner().invoke(app, ["local", "--host", "0.0.0.0"])
     assert result.exit_code == 2
     assert "without --token" in result.output
+    result = CliRunner().invoke(app, ["local", "--host", "0.0.0.0", "--no-token"])
+    assert result.exit_code == 2
+    result = CliRunner().invoke(app, ["local", "--token", "x", "--no-token"])
+    assert result.exit_code == 2
+
+
+def test_cli_generates_a_per_run_token(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    import autoair.server
+    from autoair.cli import app
+
+    seen: dict[str, Any] = {}
+
+    def fake_run(options: ServeOptions, settings: Any, **kwargs: Any) -> None:
+        seen.update(options=options, settings=settings, **kwargs)
+
+    monkeypatch.setattr(autoair.server, "run", fake_run)
+    monkeypatch.delenv("AUTOAIR_LOCAL__TOKEN", raising=False)
+    result = CliRunner().invoke(app, ["local", "--dags-folder", str(tmp_path), "--open"])
+    assert result.exit_code == 0, result.output
+    token = seen["settings"].local.token.get_secret_value()
+    assert token.startswith("autoair-local-")
+    assert len(token) > 40
+    assert seen["ui_fragment"] == f"#token={token}"
+    assert seen["open_browser"] is True
+    assert f"/ui/#token={token}" in result.output
+    # worker processes rebuild the app from the options: same token
+    assert seen["options"].overrides["local"]["token"] == token
+
+    seen.clear()
+    monkeypatch.delenv("AUTOAIR_IAM__ANONYMOUS_ROLES")  # the default (Viewer)
+    result = CliRunner().invoke(app, ["local", "--dags-folder", str(tmp_path), "--no-token"])
+    assert result.exit_code == 0, result.output
+    assert seen["settings"].local.token is None
+    assert seen["ui_fragment"] == ""
+    assert "Viewer" in result.output
 
 
 def _free_port() -> int:
@@ -106,8 +204,14 @@ def _free_port() -> int:
 def test_autoair_local_starts_and_serves(tmp_path: Path) -> None:
     """Starts the real server (`autoair local`) and loads /api/meta + the catalog."""
     port = _free_port()
-    env = {**os.environ, "AUTOAIR_AI__ENABLED": "false", "XDG_CACHE_HOME": str(tmp_path)}
+    env = {
+        **os.environ,
+        "AUTOAIR_AI__ENABLED": "false",
+        "XDG_CACHE_HOME": str(tmp_path),
+        "PYTHONUNBUFFERED": "1",
+    }
     env.pop("AUTOAIR_CONFIG_FILE", None)
+    env.pop("AUTOAIR_LOCAL__TOKEN", None)
     proc = subprocess.Popen(
         [
             sys.executable,
@@ -127,6 +231,15 @@ def test_autoair_local_starts_and_serves(tmp_path: Path) -> None:
     )
     base = f"http://127.0.0.1:{port}"
     try:
+        token = ""
+        assert proc.stdout is not None
+        for _ in range(20):  # the per-run sign-in link is printed before the server starts
+            line = proc.stdout.readline().decode()
+            if "#token=" in line:
+                token = line.strip().rsplit("#token=", 1)[1]
+                break
+        assert token.startswith("autoair-local-")
+        auth = {"Authorization": f"Bearer {token}"}
         deadline = time.monotonic() + 120
         while time.monotonic() < deadline:
             if proc.poll() is not None:
@@ -137,10 +250,11 @@ def test_autoair_local_starts_and_serves(tmp_path: Path) -> None:
                     break
             except httpx2.HTTPError:
                 time.sleep(0.5)
-        meta = httpx2.get(f"{base}/api/meta", timeout=30)
+        assert httpx2.get(f"{base}/api/meta", timeout=30).status_code == 401
+        meta = httpx2.get(f"{base}/api/meta", headers=auth, timeout=30)
         assert meta.status_code == 200, meta.text
         assert meta.json()["mode"] == "local"
-        catalog = httpx2.get(f"{base}/api/catalog/operators", timeout=120)
+        catalog = httpx2.get(f"{base}/api/catalog/operators", headers=auth, timeout=120)
         assert catalog.status_code == 200
         assert len(catalog.json()) > 0
         page = httpx2.get(f"{base}/api/health", timeout=10)

@@ -209,7 +209,23 @@ class MemoryStore:
         )
         return self.repository.add(item, max_items=limit)
 
-    def delete(self, item_id: str) -> bool:
+    def get(self, item_id: str) -> MemoryItem | None:
+        return next((i for i in self._load() if i.id == item_id), None)
+
+    def delete(self, item_id: str, *, user: str | None = None, admin: bool = True) -> bool:
+        """Delete a memory. With ``admin=False`` only ``user``'s own personal memory can go
+        (:func:`may_manage`); another's or a shared one raises :class:`MemoryError`. Ids
+        are unique and a memory's scope and owner never change, so checking before the
+        delete is safe across replicas."""
+        if not admin:
+            item = self.get(item_id)
+            if item is None:
+                return False
+            if not may_manage(item.scope, item.owner, user=user, admin=False):
+                raise MemoryError(
+                    "only an admin (admin:config) may delete global or team memories, and "
+                    "only its owner a personal one"
+                )
         return self.repository.delete(item_id)
 
     def conventions(
@@ -228,6 +244,15 @@ class MemoryStore:
             out.append(line)
             used += len(line)
         return out
+
+
+def may_manage(scope: Scope, owner: str | None, *, user: str | None, admin: bool) -> bool:
+    """Whether a caller may add or delete a memory of ``scope`` / ``owner``. Global and team
+    memories reach every user's prompts, so only admins (``admin:config``) manage them;
+    everyone else only their own personal (``user``) memories."""
+    if admin:
+        return True
+    return scope == "user" and bool(user) and owner == user
 
 
 _STORES: dict[str, MemoryStore] = {}

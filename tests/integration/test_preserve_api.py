@@ -365,12 +365,12 @@ def test_hand_written_code_needs_code_raw(tmp_path: Path) -> None:
     roles = {"Writer": ["builder:use", "spec:*", "deploy", "code:execute"]}
     c = client(tmp_path, iam={"roles": roles})
     spec = imported(c)
-    res = deploy(c, spec, "Writer").json()
-    assert res["status"] == "source_refused"
-    assert "code:raw" in res["message"]
-    assert res["source"]["options"] == ["generate"]
-    # switching to generate deliberately deploys the generated file
+    res = deploy(c, spec, "Writer")  # storing the hand-written file needs code:raw
+    assert res.status_code == 403, res.text
+    assert "code:raw" in res.text
+    # switching to generate (without the hand-written code) deploys the generated file
     spec["source"]["policy"] = "generate"
+    spec["source"]["code"] = None
     gen = deploy(c, spec, "Writer").json()
     assert gen["deployed"]
     assert gen["source"]["action"] == "generate"

@@ -77,6 +77,9 @@ class AuthBackend:
     custom_view: Callable[[Any], Callable[[str, str], bool] | None] | None = None
     # Standalone: the bearer token is verified by Airflow, so its claims can be trusted.
     verifier: TokenVerifier | None = None
+    # ``autoair local --token``: the AutoAir roles of whoever holds the token (no Airflow
+    # to ask); the IAM strategies do not apply.
+    roles: Sequence[str] | None = None
 
 
 WRITE_DAG_FLAG = "autoair_can_write_dag"
@@ -268,9 +271,9 @@ def bearer_passthrough(
     return AuthBackend(app=[Depends(verify)], name="bearer", verifier=verifier)
 
 
-def static_token(token: str) -> AuthBackend:
-    """``autoair local --token``: one shared access token (Bearer header), compared in
-    constant time. No Airflow is involved."""
+def static_token(token: str, *, roles: Sequence[str] = ("Admin",)) -> AuthBackend:
+    """``autoair local`` (``--token`` or the per-run token): one shared access token (Bearer
+    header), compared in constant time, whose holder gets ``roles``. No Airflow is involved."""
     import hmac
 
     expected = token.encode()
@@ -281,7 +284,7 @@ def static_token(token: str) -> AuthBackend:
         if not header or not hmac.compare_digest(given, expected):
             raise _unauthorized("access token required (autoair local --token)")
 
-    return AuthBackend(app=[Depends(verify)], name="static")
+    return AuthBackend(app=[Depends(verify)], name="static", roles=list(roles))
 
 
 AuthFactory = Callable[[], AuthBackend]

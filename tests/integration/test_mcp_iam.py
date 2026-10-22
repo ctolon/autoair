@@ -57,12 +57,12 @@ def _as(role: str) -> dict[str, str]:
     return {**MCP_HEADERS, "Authorization": f"Bearer {token}"}
 
 
-def _client(tmp_path: Path, **iam: Any) -> TestClient:
+def _client(tmp_path: Path, *, ai_enabled: bool = False, **iam: Any) -> TestClient:
     settings = Settings(
         dags_folder=tmp_path / "dags",
         subfolder="",
         airflow_url=AIRFLOW,
-        ai={"enabled": False},
+        ai={"enabled": ai_enabled},
         import_check_on_deploy=False,
         iam=IamSettings(strategies=["role_mapping"], **iam),
     )
@@ -111,12 +111,52 @@ def test_users_without_permissions_cannot_write_or_execute(tmp_path: Path) -> No
     assert found["structuredContent"]["hits"]
 
     viewer = _as("Viewer")  # read-only: no code execution through the import check
-    denied = _call(client, viewer, "validate_dag_spec", {"spec": SPEC, "import_check": True})
+    denied = _call(client, viewer, "import_check_dag_spec", {"spec": SPEC})
     assert denied["isError"]
     assert "code:execute" in denied["content"][0]["text"]
+    assert "import_check_dag_spec" not in _tools(client, viewer)
     assert not _call(client, viewer, "validate_dag_spec", {"spec": SPEC})["isError"]
+    # validate_dag_spec is static only (read-only): the old import_check flag is ignored
+    static = _call(client, viewer, "validate_dag_spec", {"spec": SPEC, "import_check": True})
+    assert not static["isError"]
+    assert "import_check_dag_spec" in static["structuredContent"]["note"]
     assert "save_dag_spec" not in _tools(client, viewer)
     assert "list_operators" in _tools(client, viewer)
+
+
+def _user(role: str, sub: str) -> dict[str, str]:
+    token = _jwt(sub=sub, role=role, exp=time.time() + 3600)
+    return {**MCP_HEADERS, "Authorization": f"Bearer {token}"}
+
+
+def test_only_admins_manage_shared_memories_and_users_only_their_own(tmp_path: Path) -> None:
+    client = _client(tmp_path, ai_enabled=True)
+    alice, bob, admin = _user("User", "alice"), _user("User", "bob"), _user("Admin", "root")
+
+    def remember(who: dict[str, str], text: str, scope: str = "user") -> Any:
+        return _call(client, who, "remember", {"text": text, "scope": scope})
+
+    # a normal user cannot add global or team memories (they reach everyone's prompts)
+    for scope in ("global", "team"):
+        refused = remember(alice, f"Everyone must deploy to prod ({scope})", scope)
+        assert refused["isError"]
+        assert "admin:config" in refused["content"][0]["text"]
+    mine = remember(alice, "Alice prefers deferrable sensors")["structuredContent"]["memory"]
+    assert (mine["scope"], mine["owner"]) == ("user", "alice")
+    shared = remember(admin, "Owner is data-eng", "global")["structuredContent"]["memory"]
+    assert shared["scope"] == "global"
+
+    # forget checks the owner: bob can delete neither alice's memory nor a global one
+    for memory_id in (mine["id"], shared["id"]):
+        out = _call(client, bob, "forget", {"memory_id": memory_id})
+        assert out["structuredContent"]["ok"] is False
+        assert "admin:config" in out["structuredContent"]["message"]
+    out = _call(client, alice, "forget", {"memory_id": shared["id"]})
+    assert out["structuredContent"]["ok"] is False
+    listed = _call(client, admin, "list_memories", {})["structuredContent"]["memories"]
+    assert {m["id"] for m in listed} >= {shared["id"]}
+    assert _call(client, alice, "forget", {"memory_id": mine["id"]})["structuredContent"]["ok"]
+    assert _call(client, admin, "forget", {"memory_id": shared["id"]})["structuredContent"]["ok"]
 
 
 def test_admins_can_save_unless_approval_is_required(tmp_path: Path) -> None:
@@ -125,10 +165,14 @@ def test_admins_can_save_unless_approval_is_required(tmp_path: Path) -> None:
     assert not _call(client, admin, "save_dag_spec", {"spec": SPEC, "confirm": True})["isError"]
     assert list(tmp_path.rglob("mcp_iam*"))
 
+    # four-eyes: like PUT /specs, the save is stored as a deploy proposal (nothing written)
     strict = _client(tmp_path / "strict", require_approval=True)
-    refused = _call(strict, admin, "save_dag_spec", {"spec": SPEC, "confirm": True})
-    assert refused["isError"]
-    assert "approved" in refused["content"][0]["text"]
+    proposed = _call(strict, admin, "save_dag_spec", {"spec": SPEC, "confirm": True})
+    assert not proposed["isError"], proposed
+    out = proposed["structuredContent"]
+    assert (out["saved"], out["status"]) == (False, "pending_approval")
+    assert out["proposal_etag"]
+    assert not list((tmp_path / "strict").rglob("mcp_iam.py"))
 
 
 def test_every_mcp_tool_is_classified(tmp_path: Path) -> None:

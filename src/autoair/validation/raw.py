@@ -29,6 +29,7 @@ from autoair.validation import (
     ValidationReport,
     _organisation_rules,
     _regexes,
+    secret_dict_entries,
 )
 from autoair.validation.dagbag_check import (
     ImportCheckResult,
@@ -216,6 +217,17 @@ def _secrets(code: str, policy: Policy) -> list[Problem]:
                     severity="warning",
                 )
             )
+    for line, key in secret_dict_entries(code, policy):
+        problems.append(
+            _problem(
+                "secret",
+                f"{key!r} in this dict looks like a hard-coded secret: DAG files are readable "
+                "by anyone with access to the repository; read it from a Connection "
+                "(BaseHook.get_connection) or a Variable instead",
+                line=line,
+                severity="warning",
+            )
+        )
     seen: set[int | None] = set()
     unique = []
     for p in problems:

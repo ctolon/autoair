@@ -33,7 +33,7 @@ ACTIONS: dict[str, tuple[tuple[str, ...], str | None]] = {
     "trigger": ((P.RUN_TRIGGER,), "runs"),
     "clear": ((P.RUN_MANAGE,), "runs"),
     "backfill": ((P.RUN_MANAGE,), "runs"),
-    "test": ((P.RUN_TEST,), "test_runs"),
+    "test": ((P.RUN_TEST, P.CODE_EXECUTE), "test_runs"),
     "import": ((P.SPEC_WRITE, P.CODE_EXECUTE), "imports"),
     "use_ai": ((P.AI_USE,), "ai"),
     "admin_ai": ((P.AI_ADMIN,), "ai"),
@@ -575,7 +575,7 @@ def admin_tools(
             ),
         )
     if memory:
-        tools += memory_tools(services, state=state, user=user, admin=True)
+        tools += memory_tools(services, state=state, user=user, admin=True, can=can)
     return tools
 
 

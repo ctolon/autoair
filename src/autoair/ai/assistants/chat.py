@@ -67,7 +67,7 @@ from autoair.ai.assistants.threads import (
 from autoair.ai.config import ai_settings_of
 from autoair.ai.events import Emit, StatusEvent
 from autoair.ai.guardrails import Budget, filter_tools, pipeline_for
-from autoair.ai.tools import AgentTool
+from autoair.ai.tools import AgentTool, executable_tools
 from autoair.ai.usage import track_usage
 from autoair.spec import DagSpec
 from autoair.validation import policy_from_settings
@@ -175,10 +175,11 @@ def assistant_tools(
             gateway_factory=ctx.gateway_factory,
             research=research,
             memory=profile.memory,
+            can=ctx.can,
         )
         tools += external or []
         tools = filter_tools(tools, ctx.role, ai.guardrails.tool_allowlist)
-    tools = [t for t in tools if allowed(t.name, profile.tools)]
+    tools = [t for t in executable_tools(tools, ctx.can) if allowed(t.name, profile.tools)]
     return state.sources.wrap_all(tools)
 
 
@@ -197,7 +198,7 @@ async def mcp_tools(
     ctx: ChatContext, body: ChatTurnRequest, emit: Emit
 ) -> AsyncIterator[list[AgentTool]]:
     """Attach the turn's external MCP servers (scoped to the assistant; the admin
-    assistant only gets tools the server marks read-only) for the duration of the turn."""
+    assistant only gets tools an admin listed as read-only) for the duration of the turn."""
     selections = mcp_selections(ctx.services, body)
     if not selections:
         yield []

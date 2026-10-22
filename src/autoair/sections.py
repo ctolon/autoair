@@ -357,10 +357,12 @@ DEFAULT_SENSITIVE_PARAM = (
     r"(password|passwd|secret|token|api[_-]?key|access[_-]?key|private[_-]?key|credential)"
 )
 DEFAULT_SENSITIVE_PARAM_EXCLUDE = r"(_conn_id|_id|_name|_path|_file|_field|_url|_ref)$|^token_url$"
-# Linear-time by construction: horizontal whitespace only (``\s`` would let ``^\s*`` span
-# newlines -> quadratic on blank lines) and bounded identifier quantifiers.
+# Not anchored to the line start: keyword arguments (``Connection(password="...")``) and
+# statements after ``;`` carry secrets as often as a plain assignment. The lookbehind starts
+# a match only at the beginning of a name, which keeps it linear (bounded quantifiers,
+# horizontal whitespace only) and stops ``mypassword`` style names matching mid-word.
 DEFAULT_SENSITIVE_ASSIGNMENT = (
-    r"""(?im)^[ \t]*(?:(?:export|local)[ \t]+)?[\w.\[\]'"]{0,120}?"""
+    r"""(?i)(?<![\w.\[\]'"])[\w.\[\]'"]{0,120}?"""
     r"""(?:password|passwd|secret|token|api_?key|access_?key)[\w'"\]]{0,120}"""
     r"""[ \t]*=[ \t]*["'][^"'{}\s]{6,}["']"""
 )
@@ -481,6 +483,23 @@ class PolicyRules(_Section):
 
 DEFAULT_SENSITIVE_ENV = r"TOKEN|SECRET|PASSWORD|PASSWD|API_KEY|PRIVATE_KEY|CREDENTIAL|EXTRA_HEADERS"
 DEFAULT_SCRUB_ENV = ["ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GEMINI_API_KEY", "GOOGLE_API_KEY"]
+# Any variable name (any prefix): Airflow's own secrets (metadata DB URL, Fernet key, JWT and
+# API secrets, broker URLs, *_CMD / *_SECRET indirections, connections and variables from the
+# environment) and common cloud / tool credentials. Non-secret Airflow configuration
+# (AIRFLOW_HOME, AIRFLOW__CORE__DAGS_FOLDER, ...) stays, DagBag needs it.
+DEFAULT_CREDENTIAL_ENV = (
+    r"^AIRFLOW_(CONN|VAR)_"
+    r"|^AIRFLOW__.*(SECRET|FERNET|SQL_ALCHEMY_CONN|PASSWORD|PASSWD|TOKEN|PRIVATE_KEY|"
+    r"BROKER_URL|RESULT_BACKEND|_KWARGS$|ENGINE_ARGS|BASIC_AUTH|_DSN$|_CMD$)"
+    r"|(^|_)(SECRET|PASSWORD|PASSWD|TOKEN|API_KEY|ACCESS_KEY|PRIVATE_KEY|CREDENTIALS?|"
+    r"CONNECTION_STRING|SAS_TOKEN|ACCOUNT_KEY|SESSION_TOKEN|SECURITY_TOKEN|DSN|BASIC_AUTH|"
+    r"WEBHOOK|WEBHOOK_URL|BROKER_URL)(_|$)"
+    r"|_(PASS|PWD)$"
+    r"|^AWS_(ACCESS_KEY_ID|WEB_IDENTITY_TOKEN_FILE|CONTAINER_AUTHORIZATION_TOKEN.*)$"
+    r"|^AZURE_(CLIENT_SECRET|CLIENT_CERTIFICATE_.*|FEDERATED_TOKEN_FILE|USERNAME|STORAGE_KEY)$"
+    r"|^(GOOGLE_APPLICATION_CREDENTIALS|CLOUDSDK_AUTH_.*|PGPASSWORD|PGPASSFILE|MYSQL_PWD|"
+    r"DATABASE_URL)$"
+)
 
 
 class SandboxSettings(_Section):
@@ -503,9 +522,33 @@ class SandboxSettings(_Section):
         default_factory=list,
         description="More variables removed, e.g. ['AWS_SECRET_ACCESS_KEY', 'VAULT_TOKEN'].",
     )
+    credential_env_pattern: str = Field(
+        default=DEFAULT_CREDENTIAL_ENV,
+        description="Regex (case-insensitive) over every variable name (any prefix) removed "
+        "from DAG-code processes: Airflow's secrets (AIRFLOW__DATABASE__SQL_ALCHEMY_CONN, "
+        "AIRFLOW__CORE__FERNET_KEY, AIRFLOW__API_AUTH__JWT_SECRET, any *_CMD or *_SECRET "
+        "indirection, AIRFLOW_CONN_*, AIRFLOW_VAR_*) and common cloud credentials (AWS_*, "
+        "GOOGLE_APPLICATION_CREDENTIALS, AZURE_*). Non-secret Airflow configuration stays. "
+        "Overrides the built-in pattern; empty disables this rule.",
+    )
+    credential_env_patterns_extra: list[str] = Field(
+        default_factory=list,
+        description="More regexes over any variable name to remove (any match).",
+    )
+    env_passthrough: list[str] = Field(
+        default_factory=list,
+        description="Variable names (fnmatch patterns, case-insensitive) kept for DAG-code "
+        "processes although credential_env_pattern matches them, e.g. "
+        "['AIRFLOW_VAR_ENVIRONMENT', 'AIRFLOW_CONN_TEST_*'] for DAGs that read a variable at "
+        "parse time or task tests that need a connection. AutoAir's own secrets and the "
+        "validator key connection are removed regardless.",
+    )
 
 
 # --------------------------------------------------------------------------- task runner
+
+
+NetworkIsolation = Literal["auto", "required", "off"]
 
 
 class RunnerSettings(_Section):
@@ -526,12 +569,40 @@ class RunnerSettings(_Section):
     max_value_chars: int = Field(
         default=4_000, ge=100, description="Characters of a returned value/XCom repr shown."
     )
+    allow_db_mode: bool = Field(
+        default=False,
+        description="Allow DAG test runs with mode=db (dag.test()): the run writes a DAG run "
+        "to the metadata DB, so the DAG code gets the metadata DB connection and the Fernet "
+        "key, i.e. every Airflow connection and variable. Even then only callers holding "
+        "admin:config (besides run:test and code:execute) may use it, and mode=auto picks db "
+        "only for them; for everyone else auto runs in memory. Read for every request.",
+    )
+    process_isolation: NetworkIsolation = Field(
+        default="auto",
+        description="Run each local test run as PID 1 of its own PID, user and mount "
+        "namespaces with a fresh /proc, so its code (Python or a BashOperator command) cannot "
+        "see other processes, the AutoAir or Airflow server that started it included (Linux "
+        "unprivileged user namespaces); the namespace also hides Airflow's secret files and "
+        "mounts the DAG folders read-only. auto (default, every mode): when the kernel allows "
+        "it (Ubuntu 24.04+ restricts it by default through AppArmor); otherwise the run still "
+        "executes with the audit hook (audit_hook), read-only DAG folders and a secret-free "
+        "copy of airflow.cfg, its result carries a 'not fully isolated' notice and the "
+        "server logs one warning. required: test runs fail without namespaces. off: never. "
+        "For isolated test runs on hosts without namespaces, configure validator.url. Runs on "
+        "the validator service use validator.run_process_isolation.",
+    )
+    audit_hook: bool = Field(
+        default=True,
+        description="A Python audit hook in each local test-run child denies reading other "
+        "processes' /proc/<pid> entries (environment, command line, memory) and other test "
+        "runs' folders. It does not restrict subprocesses, network or writes (task code needs "
+        "them), and it does not see what a subprocess does: process_isolation does.",
+    )
 
 
 # --------------------------------------------------------------------------- validator service
 
 ValidatorFailMode = Literal["closed", "open", "local"]
-NetworkIsolation = Literal["auto", "required", "off"]
 
 
 class ValidatorSettings(_Section):
@@ -673,14 +744,74 @@ class ValidatorSettings(_Section):
     metrics_enabled: bool = Field(
         default=True, description="Validator: serve Prometheus metrics at /metrics."
     )
+    # --- test runs on the validator (POST /v1/run)
+    test_runs: bool = Field(
+        default=True,
+        description="Send task and DAG test runs to the validator (POST /v1/run on run_url, "
+        "else url) when one is set, so their code runs in the validator's sandbox instead of "
+        "this host. "
+        "When the validator cannot be asked, fail_mode local runs the test here and both open "
+        "and closed fail it (a test run never silently runs locally). mode=db runs always "
+        "run here: the validator has no metadata DB. false: test runs always run here.",
+    )
+    run_url: str = Field(
+        default="",
+        description="Base URL of the validator that executes test runs; empty: url. Point it "
+        "at a second validator deployment whose NetworkPolicy allows the egress task tests "
+        "need, so the import-check validator keeps no network at all (a NetworkPolicy applies "
+        "to a whole pod and cannot tell run processes from check workers).",
+    )
+    runs_enabled: bool = Field(
+        default=True,
+        description="Validator: serve test runs (POST /v1/run). Set false on an import-check-only "
+        "deployment (when the server's run_url points at a separate one): /v1/run then "
+        "answers 404.",
+    )
+    run_network: bool = Field(
+        default=True,
+        description="Validator: test-run processes may open network connections (task tests "
+        "often call services). The pod then needs a NetworkPolicy egress rule; import checks "
+        "keep no network either way. false: every run gets an empty network namespace "
+        "(network_isolation decides whether that is required).",
+    )
+    run_process_isolation: NetworkIsolation = Field(
+        default="auto",
+        description="Validator: run each test run as PID 1 of its own PID, user and mount "
+        "namespaces with a fresh /proc (see runner.process_isolation). auto: when the "
+        "kernel or container allows it, required: runs fail otherwise, off: never.",
+    )
+    max_run_seconds: float = Field(
+        default=600,
+        gt=0,
+        description="Validator: largest test-run timeout (s) a request may ask for.",
+    )
+    max_concurrent_runs: int = Field(
+        default=2,
+        ge=1,
+        le=64,
+        description="Validator: test runs executing at the same time (one process each); more "
+        "concurrent requests get HTTP 503 (the main server retries).",
+    )
+    run_memory_limit_mb: int = Field(
+        default=2048,
+        ge=0,
+        description="Validator: address-space limit of a test-run process (MiB, RLIMIT_AS); "
+        "file_size_limit_mb, open_files_limit and process_limit apply to runs too, the CPU "
+        "time is bounded by the run's timeout. 0: no limit.",
+    )
 
-    @field_validator("url")
+    @field_validator("url", "run_url")
     @classmethod
     def _http_url(cls, value: str) -> str:
         value = value.strip().rstrip("/")
         if value and not value.startswith(("http://", "https://")):
-            raise ValueError("validator.url must be an http(s) URL")
+            raise ValueError("validator.url and validator.run_url must be http(s) URLs")
         return value
+
+    @property
+    def runs_url(self) -> str:
+        """Where test runs go (``run_url``, else ``url``; empty: nowhere)."""
+        return self.run_url or self.url
 
 
 # --------------------------------------------------------------------------- editor services
@@ -1313,10 +1444,11 @@ class SsoSettings(_Section):
     )
     require_csrf_header: bool = Field(
         default=True,
-        description="Standalone: state-changing requests authenticated by the cookie (not a "
-        "bearer token) must carry the X-AutoAir-CSRF header and a same-origin (or allowed "
-        "CORS) Origin — the cookie is SameSite=Lax, which still lets sibling sites on the "
-        "same registrable domain send it.",
+        description="Standalone with SSO, and plugin mode (Airflow's _token cookie): "
+        "state-changing requests authenticated by the cookie (not a bearer token) must carry "
+        "the X-AutoAir-CSRF header and a same-origin (or allowed CORS) Origin — the cookie "
+        "is SameSite=Lax, which still lets sibling sites on the same registrable domain send "
+        "it.",
     )
     refresh_margin_seconds: int = Field(
         default=300,
@@ -1345,8 +1477,15 @@ class LocalModeSettings(_Section):
 
     token: SecretStr | None = Field(
         default=None,
-        description="Optional access token for `autoair local` (Bearer header or pasted in "
-        "the UI); unset: no authentication (only bind to 127.0.0.1 then).",
+        description="Access token for `autoair local` (Bearer header or pasted in the UI). "
+        "Unset: `autoair local` creates a random token per run and opens the UI with it "
+        "(`--no-token` serves without authentication on loopback, with "
+        "iam.anonymous_roles).",
+    )
+    roles: list[str] = Field(
+        default_factory=lambda: ["Admin"],
+        description="AutoAir roles of the `autoair local` token holder (the local user); "
+        "never direct-push rights through storage.git.direct_push_roles.",
     )
     open_browser: bool = Field(
         default=False, description="Open the UI in the default browser once started."

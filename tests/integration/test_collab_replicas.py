@@ -87,6 +87,7 @@ def cluster(request: pytest.FixtureRequest, tmp_path: Path) -> Iterator[Any]:
         ai={"enabled": False},
         features={"mcp": False},
         collab_secret="cluster-secret",
+        iam={"anonymous_roles": ["Admin"]},  # AuthBackend(): anonymous callers edit
         database=database_settings(request.param, tmp_path),
         collab={
             "poll_seconds": 0.05,
@@ -224,24 +225,28 @@ def test_build_sync_modes(tmp_path: Path) -> None:
     from autoair.persistence.db import database_for
 
     plain = Settings(dags_folder=tmp_path, subfolder="")  # type: ignore[call-arg]
-    assert build_sync(plain, None) is None  # default: rooms stay in memory
+    assert build_sync(plain, None, secret=b"k") is None  # default: rooms stay in memory
     sqlite = Settings(  # type: ignore[call-arg]
         dags_folder=tmp_path,
         subfolder="",
         database={"backend": "sqlite", "url": f"sqlite:///{tmp_path / 's.db'}"},
     )
     db = database_for(sqlite)
-    sync = build_sync(sqlite, db)
+    sync = build_sync(sqlite, db, secret=b"k")
     assert sync is not None
     assert type(sync.bus).__name__ == "DatabaseBus"
     forced_memory = sqlite.model_copy(update={"collab": CollabSettings(sync="memory")})
-    assert build_sync(forced_memory, db) is None
+    assert build_sync(forced_memory, db, secret=b"k") is None
     redis = plain.model_copy(update={"collab": CollabSettings(redis_url="redis://r:6379/0")})
-    sync = build_sync(redis, None)
+    sync = build_sync(redis, None, secret=b"k")
     assert sync is not None
     assert isinstance(sync.bus, RedisBus)
     with pytest.raises(ValueError, match="SQL"):
-        build_sync(plain.model_copy(update={"collab": CollabSettings(sync="database")}), None)
+        build_sync(
+            plain.model_copy(update={"collab": CollabSettings(sync="database")}),
+            None,
+            secret=b"k",
+        )
     drop_tables(sqlite)
 
 
@@ -340,7 +345,8 @@ def test_redis_bus_with_a_fake_client(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setitem(sys.modules, "redis.asyncio", fake)
 
     async def scenario() -> list[BusMessage]:
-        a, b = RedisBus("redis://x", "chan"), RedisBus("redis://x", "chan")
+        a = RedisBus("redis://x", "chan", key=b"k")
+        b = RedisBus("redis://x", "chan", key=b"k")
         got: list[BusMessage] = []
 
         async def collect(msg: BusMessage) -> None:
@@ -373,8 +379,8 @@ def test_postgres_bus_is_woken_by_notify(tmp_path: Path) -> None:
     assert db is not None
 
     async def scenario() -> list[BusMessage]:
-        a = DatabaseBus(db, poll_seconds=10, retention_seconds=60)
-        b = DatabaseBus(db, poll_seconds=10, retention_seconds=60)
+        a = DatabaseBus(db, poll_seconds=10, retention_seconds=60, key=b"k")
+        b = DatabaseBus(db, poll_seconds=10, retention_seconds=60, key=b"k")
         got: list[BusMessage] = []
 
         async def collect(msg: BusMessage) -> None:

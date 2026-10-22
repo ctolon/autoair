@@ -316,3 +316,125 @@ def test_classic_python_callables_defined_in_the_file_are_kept():
     greet_again = _node(again, "greet").params["python_callable"]["source"]
     assert "def greet(name, **context):" in greet_again
     assert generate_source(again) == source
+
+
+# --------------------------------------------------------------------- task settings, labels
+
+TASK_SETTINGS = """
+import datetime
+from airflow.sdk import DAG, task
+from airflow.providers.standard.operators.bash import BashOperator
+from airflow.providers.standard.operators.empty import EmptyOperator
+
+try:
+    from airflow.sdk import Label
+except ImportError:  # Airflow 3.0
+    from airflow.utils.edgemodifier import Label
+
+
+class Helpers:
+    def describe(self):
+        return self.task_id
+
+
+class TaggedBash(Helpers, BashOperator):
+    def __init__(self, *, tag="x", **kwargs):
+        super().__init__(**kwargs)
+        self.tag = tag
+
+
+with DAG(
+    "settings",
+    start_date=datetime.datetime(2024, 1, 1),
+    schedule=None,
+    dagrun_timeout=datetime.timedelta(hours=2),
+    default_args={"retries": 3, "retry_delay": datetime.timedelta(minutes=5)},
+):
+    a = BashOperator(
+        task_id="a",
+        bash_command="echo",
+        retries=0,
+        retry_delay=datetime.timedelta(seconds=30),
+        execution_timeout=datetime.timedelta(minutes=10),
+        email=["ops@example.com"],
+    )
+    b = EmptyOperator(task_id="b")
+    c = EmptyOperator(task_id="c")
+    inherited = EmptyOperator(task_id="inherited")
+    mixed = TaggedBash(task_id="mixed", bash_command="echo hi", env={"A": "1"}, tag="y")
+
+    @task(retry_delay=9, execution_timeout=datetime.timedelta(minutes=1))
+    def f():
+        return 1
+
+    a >> Label("ok path") >> b
+    a >> c
+    f()
+"""
+
+
+def test_task_settings_overrides_and_edge_labels_are_imported():
+    dag = _import(TASK_SETTINGS)["settings"]
+    assert dag.error is None
+    spec = dag.spec
+    assert spec is not None
+    a = _node(spec, "a")
+    # retries=0 overrides default_args retries=3 (it equals Airflow's default)
+    assert a.retries == 0
+    assert a.retry_delay_seconds == 30
+    assert a.execution_timeout_seconds == 600
+    inherited = _node(spec, "inherited")
+    assert inherited.retries is None
+    assert inherited.retry_delay_seconds is None
+    assert spec.default_args.retries == 3
+    assert spec.default_args.retry_delay_seconds == 300
+    assert spec.dagrun_timeout_seconds == 7200
+    f = _node(spec, "f")
+    assert f.retry_delay_seconds == 9
+    assert f.execution_timeout_seconds == 60
+    # arguments of the operator classes after a mixin are still imported
+    assert _node(spec, "mixed").params == {"tag": "y", "bash_command": "echo hi", "env": {"A": "1"}}
+    labels = {(e.source, e.target): e.label for e in spec.edges}
+    ids = {n.task_id: n.id for n in spec.nodes if hasattr(n, "task_id")}
+    assert labels[(ids["a"], ids["b"])] == "ok path"
+    assert labels[(ids["a"], ids["c"])] is None
+    # what the spec cannot hold is a warning, not a silent drop
+    assert "a: argument email is not imported" in dag.warnings
+
+    # an operator class defined in the DAG file cannot be imported by the generated file
+    assert any(
+        "mixed: operator class TaggedBash is defined in the DAG file" in w for w in dag.warnings
+    )
+
+    # generated code imports back to the same settings and labels (code mode apply)
+    current = spec.model_copy(
+        update={"nodes": [n for n in spec.nodes if getattr(n, "task_id", None) != "mixed"]}
+    )
+    for _ in range(2):
+        result = sync_code(generate_source(current), dag_id="settings", current=current)
+        assert result.ok, result.problems
+        assert result.spec is not None
+        again = result.spec
+        assert _node(again, "a").retries == 0
+        assert _node(again, "a").retry_delay_seconds == 30
+        assert sorted(e.label or "" for e in again.edges) == sorted(
+            e.label or "" for e in spec.edges
+        )
+        current = again
+
+
+def test_out_of_range_durations_are_a_warning_not_a_broken_spec():
+    source = """
+import datetime
+from airflow.sdk import DAG
+from airflow.providers.standard.operators.empty import EmptyOperator
+with DAG("big", schedule=None, dagrun_timeout=datetime.timedelta.max):
+    EmptyOperator(task_id="a", execution_timeout=datetime.timedelta.max)
+"""
+    dag = _import(source)["big"]
+    assert dag.error is None, dag.error
+    spec = dag.spec
+    assert spec is not None
+    # timedelta.max as float seconds rounds past the limit; whole seconds still fit
+    assert _node(spec, "a").execution_timeout_seconds == 999_999_999 * 86_400 + 86_399
+    assert "timedelta(seconds=86399999999999)" in generate_source(spec)

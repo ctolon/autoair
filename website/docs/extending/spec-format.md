@@ -223,7 +223,7 @@ A TaskFlow task whose body is written in the builder.
 |---|---|
 | `decorator` | `task` (default), `branch`, `short_circuit`, `virtualenv`, `external_python`, `branch_virtualenv`, `branch_external_python`, `sensor`, `bash`, `docker`, `kubernetes`, `stub` |
 | `decorator_kwargs` | Arguments of the decorator |
-| `function_name` | Python identifier of the generated function |
+| `function_name` | Python identifier of the generated function. A name the generated file also imports (`datetime`, `pendulum`, `os`, `hashlib`, `tempfile`, or a name imported by an inline function) gets a numeric suffix in the code, with a `function_name_reserved` warning; the task id is unchanged |
 | `arguments` | Keyword arguments; values may be XCom references |
 | `extra_parameters` | Function parameters without a bound value (for example keys provided by `expand_kwargs`) |
 | `code` | Function body (statements); `return` pushes an XCom |

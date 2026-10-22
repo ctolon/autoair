@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 from autoair.loader import render_stub
 from autoair.registry import HandlerRegistry
@@ -62,11 +63,30 @@ class TargetRepository:
         stored = self.target.get(dag_id)
         return stored.spec if stored else None
 
-    def save(self, spec: DagSpec, python_source: str | None) -> Path | str:
+    def save(
+        self,
+        spec: DagSpec,
+        python_source: str | None,
+        *,
+        base_etag: str | None = None,
+        author: str | None = None,
+        mode: str | None = None,
+    ) -> Path | str:
+        """``mode``: a git target's write mode for this save (``"pr"``/``"push"``; other
+        targets take none)."""
         if spec.output_mode == "python" and python_source is None:
             raise StorageError("python output mode requires generated source")
         files = render_dag_files(spec, python_source=python_source)
-        return self.target.save(spec, files).path
+        extra: dict[str, Any] = {"mode": mode} if mode is not None else {}
+        return self.target.save(spec, files, base_etag=base_etag, author=author, **extra).path
 
-    def delete(self, dag_id: str) -> bool:
-        return self.target.delete(dag_id)
+    def delete(
+        self,
+        dag_id: str,
+        *,
+        base_etag: str | None = None,
+        author: str | None = None,
+        mode: str | None = None,
+    ) -> bool:
+        extra: dict[str, Any] = {"mode": mode} if mode is not None else {}
+        return self.target.delete(dag_id, base_etag=base_etag, author=author, **extra)

@@ -17,7 +17,7 @@ resources:
 # components add. Keep the tags equal (CI checks it) and bump them with every release.
 images:
   - name: ghcr.io/ctolon/autoair
-    newTag: "0.2.2"
+    newTag: "0.2.3"
 
 configMapGenerator:
   - name: autoair-config

@@ -11,6 +11,7 @@
     "remove": "Kaldır",
     "deployFirst": "Önce DAG'ı dağıtın: bu işlem DAG'ın Airflow'da olmasını gerektirir.",
     "mustBeObject": "Bir JSON nesnesi olmalı",
+    "confInvalid": "conf JSON'u geçerli değil: devam etmek için düzeltin.",
     "nothingAffected": "Hiçbir şey etkilenmeyecek.",
     "affected_one": "{{count}} öğe etkilenecek:",
     "affected_other": "{{count}} öğe etkilenecek:"
@@ -102,6 +103,10 @@
     "selectNodesFirst": "Önce tuval üzerinde bir veya daha fazla düğüm seçin",
     "selectTaskFirst": "Önce tuval üzerinde bir görev seçin",
     "deleted": "{{dagId}} silindi",
+    "deletePending": "{{dagId}} silinmeden önce başka bir inceleyenin onayı gerekiyor",
+    "deletePendingBody": "Silme önerisi olarak kaydedildi; onaylandığında dağıtım yetkisi olan herkes uygulayabilir.",
+    "deletePrOpened": "{{dagId}} silmek için çekme isteği açıldı",
+    "deletePrOpenedBody": "Çekme isteği birleştirilene kadar DAG yayında kalır.",
     "deleteFailed": "Silme başarısız",
     "selectPythonTask": "Önce bir Python görevi seçin",
     "aiConfigureModel": "AI özelliklerini kullanmak için AI modelinizi ayarlayın…",
@@ -317,6 +322,11 @@
       "db": "dag.test() (çalıştırma yazar)",
       "auto": "Otomatik"
     },
+    "dbUnavailable": {
+      "disabled": "dag.test() bu sunucuda kapalı (runner.allow_db_mode): DAG koduna meta veri DB'sini ve Fernet anahtarını verirdi. Otomatik mod bellekte çalışır.",
+      "admin_only": "dag.test() DAG koduna meta veri DB'sini ve Fernet anahtarını verir; bu yüzden yalnızca yöneticiler (admin:config) kullanabilir. Otomatik mod bellekte çalışır."
+    },
+    "onValidator": "Test çalıştırmaları bu sunucuda değil, yalıtılmış doğrulayıcı serviste yürütülür.",
     "duration": "Süre: {{value}}",
     "durationCol": "Süre",
     "state": "Durum",
@@ -325,7 +335,11 @@
     "xcomPushes": "XCom gönderimleri",
     "skippedDownstream": "Atlanan alt görevler: {{list}}",
     "log": "Günlük",
-    "confHelp": "Test sırasında dag_run.conf / params olarak kullanılan JSON; metadata DB'ye yazılmaz."
+    "confHelp": "Test sırasında dag_run.conf / params olarak kullanılan JSON; metadata DB'ye yazılmaz.",
+    "notIsolated": {
+      "title": "Tam olarak yalıtılmadı",
+      "body": "Bu test sunucuda kendi süreç ad alanı olmadan çalıştı (sunucu buna izin vermiyor): kodu oradaki diğer süreçleri görebilirdi. Yalıtılmış test çalıştırmaları için validator.url ayarlayın."
+    }
   },
   "templates": {
     "title": "Şablonlar",

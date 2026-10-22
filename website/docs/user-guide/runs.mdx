@@ -15,7 +15,7 @@ Once a DAG is deployed and parsed by Airflow, you can operate it from the builde
 | Trigger, asset test events | `features.runs` + `features.airflow` | `run:trigger` |
 | Pause/unpause, scheduling state, clear, backfill | `features.runs` + `features.airflow` | `run:manage` |
 | Asset materialize | `features.runs` + `features.airflow` | `run:trigger` |
-| Test a task or DAG | `features.test_runs` | `run:test` |
+| Test a task or DAG | `features.test_runs` | `run:test` and `code:execute` |
 
 All flags default to `true` (`AUTOAIR_FEATURES__RUNS`, `AUTOAIR_FEATURES__TEST_RUNS`, `AUTOAIR_FEATURES__AIRFLOW`). In `autoair local` there is no Airflow, so runs and test runs are off. When a feature is off, its menu items and tabs are hidden and its API routes answer 404. Built-in roles: **Operator** has `run:trigger` and `run:manage`, **Deployer** has `run:trigger`, and **Author** has `run:test`. The default `Authenticated` baseline also includes `run:trigger` and `run:manage`, which leaves the decision to Airflow. See [IAM](/docs/admin/iam).
 
@@ -174,15 +174,50 @@ To trigger the DAG from a script, CI job or webhook, use the **Trigger endpoint*
 
 ## Test a task or the DAG before deploying
 
-**Run → Test selected task…** or **Test whole DAG…** runs the current, possibly unsaved, document in a sandbox on the AutoAir server. Nothing is written to Airflow, and no deploy is needed.
+**Run → Test selected task…** or **Test whole DAG…** runs the current, possibly unsaved, document in a sandbox: on the [validator service](/docs/deployment/validator-service#test-runs) when one is configured, otherwise on the AutoAir server. Nothing is written to Airflow, and no deploy is needed.
 
 - **Single task**: choose the **Task**. Under **Upstream XCom values**, provide mock values for the XComs it reads. They are prefilled from the run shown in the overlay ("prefilled from run …"). **Mock another upstream task…** adds more. Click **Run task**.
-- **Whole DAG**: choose the **Mode**. **In memory (no metadata DB)** runs without Airflow's database. **dag.test() (writes a run)** uses Airflow's `dag.test()`. **Auto** tries `dag.test()` and falls back to in-memory. Click **Run DAG**.
+- **Whole DAG**: choose the **Mode**. **In memory (no metadata DB)** runs without Airflow's database. **dag.test() (writes a run)** uses Airflow's `dag.test()`. **Auto** tries `dag.test()` and falls back to in-memory. Click **Run DAG**. `dag.test()` is off by default; see [dag.test() mode](#dagtest-mode).
 - **conf / params (JSON)** is prefilled with the param defaults.
 
 Results show the state, duration, return value, XCom pushes, skipped downstream tasks and the captured log. For a whole DAG, the results are a table with one row per task. The possible states are `success`, `failed`, `skipped`, `upstream_failed`, `deferred`, `timeout`, `import_error`, `not_found` and `error`.
 
-The sandbox is a fresh interpreter in its own process group and temporary directory. Its environment has AutoAir's secrets removed, and the whole process group is killed at the timeout. A mapped task runs only `map_index=0`. Because a test executes DAG code on the AutoAir server, it needs `run:test`, and Python tasks need `allow_python_code`.
+A mapped task runs only `map_index=0`. Because a test executes DAG code, it needs `run:test` and `code:execute`, and Python tasks need `allow_python_code`. Every test run is recorded in the audit trail (action `test_run`: kind, mode, state, `where` it ran: `local`, `validator` or `none`, and `process_isolated`); the result returns `where` and `process_isolated` as well.
+
+### Where the code runs
+
+| Configuration | Task tests and in-memory DAG tests | `dag.test()` |
+|---|---|---|
+| `AUTOAIR_VALIDATOR__URL` (or `__RUN_URL`) set, `validator.test_runs` on (default) | On the validator service (`POST /v1/run`), in its sandbox. No DAG code runs on the AutoAir server or the Airflow api-server. | On the AutoAir server (the validator has no metadata DB) |
+| No validator | In a sandboxed child process on the AutoAir server | On the AutoAir server |
+
+When the validator cannot be asked, `validator.fail_mode` decides, differently from import checks: `local` runs the test on the AutoAir server instead; `open` and `closed` both fail the test with state `error` ("the test-run service is unavailable"). A test run is never moved to the local server silently, because in plugin mode that is the Airflow api-server.
+
+### The local sandbox
+
+A local test run is a fresh interpreter in its own process group and its own folder below `<tmp>/autoair-runs-<uid>`. The whole process group is killed at the timeout. The child:
+
+- gets an environment without AutoAir's secrets, Airflow's secrets (metadata DB, Fernet key, JWT secret, `AIRFLOW_CONN_*` / `AIRFLOW_VAR_*`) and cloud credentials;
+- gets a private `AIRFLOW_HOME` with a copy of `airflow.cfg` without its secrets (Airflow's sensitive options such as the Fernet key, JWT and API secrets and the metadata DB URL, and every option named like a password, secret or `_cmd` indirection); the rest of the configuration still applies. Reading the real `airflow.cfg`, `airflow.db`, `webserver_config.py` and the simple auth manager's password file is denied, and Airflow's DAG and plugin folders and AutoAir's DAG folder are read-only, so a test cannot plant a DAG file that skips review and validation;
+- runs as PID 1 of its own PID, user and mount namespaces with a fresh `/proc` (`AUTOAIR_RUNNER__PROCESS_ISOLATION`). No other process is visible to the task, so neither Python code nor a command in a BashOperator can read the environment or memory of the server that started it; in the namespace the secret files are also hidden, the DAG folders mounted read-only and other runs' folders masked, for subprocesses too. `auto` (the default, in every mode, the Airflow plugin included) uses the namespaces when the kernel allows them and otherwise runs the test with the protections below; `required` refuses the run ("process isolation is required") where the namespaces are not available; `off` never uses them;
+- sets `PR_SET_NO_NEW_PRIVS` (`sudo` and setuid programs do not gain privileges), disables core dumps and is made non-dumpable, so other runs cannot read its memory;
+- installs a Python audit hook (`AUTOAIR_RUNNER__AUDIT_HOOK`, default on) that denies reading other processes' `/proc/<pid>` entries (`environ`, `cmdline`, `mem` and the rest) and other runs' folders.
+
+Unlike the import-check sandbox, a test run may start processes, open network connections and write files: BashOperator commands and HTTP calls work as in Airflow.
+
+:::warning Hosts without unprivileged user namespaces
+Ubuntu 24.04 and later restrict unprivileged user namespaces through AppArmor (`kernel.apparmor_restrict_unprivileged_userns=1`), and most container runtimes block them with their default seccomp profile. Then `auto` runs without the namespaces: the result shows **Not fully isolated** ("Configure validator.url for isolated test runs"), the log of each run says so, the result and the audit record have `process_isolated: false`, and the server logs one warning per process. The audit hook still stops Python code from reading another process's `/proc` entry or the secret files, the DAG folders stay read-only and the run reads the secret-free copy of `airflow.cfg`, but a subprocess (for example `cat /proc/$PPID/environ` in a BashOperator) is not covered. In the plugin the parent is the Airflow api-server, which AutoAir does not change: configure the [validator service](/docs/deployment/validator-service) for isolated test runs, or set `AUTOAIR_RUNNER__PROCESS_ISOLATION=required` to refuse local runs without the namespaces.
+:::
+
+### dag.test() mode
+
+`dag.test()` writes a DAG run to Airflow's metadata DB, so the DAG code runs with the metadata DB connection and the Fernet key, that is with access to every Airflow connection and variable. It is therefore off by default:
+
+- `AUTOAIR_RUNNER__ALLOW_DB_MODE=true` turns it on. It is read for every request.
+- Even then, only callers holding `admin:config` (in addition to `run:test` and `code:execute`) may choose it. Others get `403`.
+- **Auto** picks `dag.test()` only for those callers; for everyone else it runs in memory.
+
+The **Mode** selector disables **dag.test() (writes a run)** and says why when it is not available to you.
 
 | Setting | Default | Description |
 |---|---|---|
@@ -191,6 +226,9 @@ The sandbox is a fresh interpreter in its own process group and temporary direct
 | `AUTOAIR_RUNNER__MAX_TIMEOUT` | `600` | Largest timeout a request may ask for |
 | `AUTOAIR_RUNNER__MAX_LOG_CHARS` | `64000` | Captured log size |
 | `AUTOAIR_RUNNER__MAX_VALUE_CHARS` | `4000` | Size of each returned value shown |
+| `AUTOAIR_RUNNER__ALLOW_DB_MODE` | `false` | Allow `mode=db` (`dag.test()`) for callers with `admin:config` |
+| `AUTOAIR_RUNNER__PROCESS_ISOLATION` | `auto` | PID + user + mount namespaces per local run: `auto`, `required`, `off` |
+| `AUTOAIR_RUNNER__AUDIT_HOOK` | `true` | Audit hook against reading other processes' `/proc` entries and other runs' folders |
 
 Test runs are rate-limited per user (`limits.rate_limits`, group `test_runs`). See the [configuration reference](/docs/reference/configuration#runner).
 
@@ -211,7 +249,7 @@ Test runs are rate-limited per user (`limits.rate_limits`, group `test_runs`). S
 | `PUT /api/airflow/dags/{dag_id}/scheduling-state` | `run:manage` |
 | `POST /api/airflow/dags/{dag_id}/runs/{run_id}/clear` | `run:manage` |
 | `POST /api/airflow/dags/{dag_id}/backfill` (dry run by default) | `run:manage` |
-| `POST /api/runner/test-task`, `POST /api/runner/test-dag` | `run:test` |
+| `POST /api/runner/test-task`, `POST /api/runner/test-dag` | `run:test` and `code:execute`; `mode=db` also `admin:config` and `runner.allow_db_mode` |
 
 See the [REST API reference](/api).
 

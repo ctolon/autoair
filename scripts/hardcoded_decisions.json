@@ -195,6 +195,10 @@
       "decision": "keep",
       "reason": "where Airflow symbols live per Airflow version (compatibility data)"
     },
+    "autoair/_subprocess.py::<module>::constant::_URL_PASSWORD": {
+      "decision": "keep",
+      "reason": "URL userinfo syntax (RFC 3986) with a password; disabled with sandbox.credential_env_pattern=''"
+    },
     "autoair/admin.py::<module>::constant::CSV_FIELDS": {
       "decision": "keep",
       "reason": "admin panel scan bound / export limit (bounded work per request)"
@@ -426,6 +430,10 @@
     "autoair/api/routers/ai_assistants.py::_audit_decision::number::310b86e0": {
       "decision": "keep",
       "reason": "bounded list of sources kept in one audit record"
+    },
+    "autoair/api/routers/ai_assistants.py::get_tool_call_arguments::kwarg::Path(max_length=)": {
+      "decision": "keep",
+      "reason": "request validation bound (tool call id, same as ToolDecision.id)"
     },
     "autoair/api/routers/ai_assistants.py::list_analyses::kwarg::Query(max_length=)": {
       "decision": "keep",
@@ -726,6 +734,10 @@
     "autoair/api/routers/vcs.py::<module>::constant::CURRENT": {
       "decision": "keep",
       "reason": "API sentinel naming the current version"
+    },
+    "autoair/api/source_plans.py::<module>::constant::SOURCE_CODE_DETAIL": {
+      "decision": "keep",
+      "reason": "permission error message text (code:raw for hand-written source.code)"
     },
     "autoair/audit.py::<module>::constant::OTEL_SCOPE": {
       "decision": "keep",
@@ -1103,6 +1115,18 @@
       "decision": "config",
       "setting": "server.port (default of `autoair local --port`, same as autoair serve)"
     },
+    "autoair/cli.py::local::path::7c1abc4f": {
+      "decision": "keep",
+      "reason": "URL path of the UI in the printed sign-in link (route of the app itself)"
+    },
+    "autoair/cli.py::local::url::43a9519e": {
+      "decision": "keep",
+      "reason": "scheme of the printed local URL: autoair local serves plain HTTP on loopback"
+    },
+    "autoair/cli.py::local::url::43a9519e#1": {
+      "decision": "keep",
+      "reason": "scheme of the printed local URL: autoair local serves plain HTTP on loopback"
+    },
     "autoair/cli.py::marketplace_keygen::number::b741f252": {
       "decision": "keep",
       "reason": "0o600: private key files must be owner-only (ssh/signing keys)"
@@ -1155,9 +1179,17 @@
       "decision": "keep",
       "reason": "generated helper code"
     },
+    "autoair/codegen/context.py::<module>::constant::MAX_TIMEDELTA_SECONDS": {
+      "decision": "keep",
+      "reason": "datetime.timedelta.max in seconds (Python limit)"
+    },
     "autoair/codegen/context.py::<module>::constant::MESSAGE_QUEUE_TRIGGER": {
       "decision": "keep",
       "reason": "Airflow common.messaging trigger import path (Airflow API)"
+    },
+    "autoair/codegen/context.py::<module>::constant::PLAIN_MODULES": {
+      "decision": "keep",
+      "reason": "Python modules the generated DAG file imports by name (generated code)"
     },
     "autoair/codegen/context.py::<module>::constant::SDK": {
       "decision": "keep",
@@ -1171,6 +1203,14 @@
       "decision": "keep",
       "reason": "Python identifier sanitising (syntax)"
     },
+    "autoair/codegen/dagfactory.py::<module>::constant::_DAG_SKIPPED": {
+      "decision": "keep",
+      "reason": "spec DAG fields the dag-factory export does not write (export format)"
+    },
+    "autoair/codegen/dagfactory.py::<module>::constant::_TASK_ARGS": {
+      "decision": "keep",
+      "reason": "BaseOperator keyword arguments written to dag-factory tasks (Airflow API)"
+    },
     "autoair/codegen/timedeltas.py::<module>::constant::_ANY_OPERATOR": {
       "decision": "keep",
       "reason": "BaseOperator arguments Airflow types as timedelta-only (Airflow API contract)"
@@ -1178,6 +1218,10 @@
     "autoair/codegen/timedeltas.py::<module>::constant::_BY_OPERATOR": {
       "decision": "keep",
       "reason": "operator arguments Airflow types as timedelta-only (HITL response_timeout, ExternalTaskSensor execution_delta: Airflow API contract)"
+    },
+    "autoair/codegen/yaml_dag.py::<module>::constant::DEFAULT_ARGS_TEMPLATE": {
+      "decision": "keep",
+      "reason": "name of the task template default_args are exported as (export format, read back on import)"
     },
     "autoair/codegen/yaml_dag.py::<module>::constant::HEADER": {
       "decision": "keep",
@@ -1187,13 +1231,41 @@
       "decision": "keep",
       "reason": "Airflow YAML DAG schema id (protocol)"
     },
+    "autoair/codegen/yaml_dag.py::<module>::constant::_DAG_ARGS": {
+      "decision": "keep",
+      "reason": "DAG keyword arguments written as YAML Dag top-level keys (Airflow API)"
+    },
     "autoair/codegen/yaml_dag.py::<module>::constant::_DEFAULT_ARGS": {
       "decision": "keep",
       "reason": "fields of Airflow's YAML DAG format (protocol)"
     },
+    "autoair/codegen/yaml_dag.py::<module>::constant::_ISO_DURATION": {
+      "decision": "keep",
+      "reason": "ISO 8601 duration syntax without years/months, as Airflow's YAML importer parses it (format)"
+    },
+    "autoair/codegen/yaml_dag.py::<module>::constant::_SHORT_DURATION": {
+      "decision": "keep",
+      "reason": "Airflow YAML importer's short duration syntax (Airflow format)"
+    },
     "autoair/codegen/yaml_dag.py::<module>::constant::_TASK_ARGS": {
       "decision": "keep",
       "reason": "fields of Airflow's YAML DAG format (protocol)"
+    },
+    "autoair/codegen/yaml_dag.py::<module>::constant::_TASK_DURATIONS": {
+      "decision": "keep",
+      "reason": "BaseOperator duration arguments and their spec fields (Airflow API)"
+    },
+    "autoair/codegen/yaml_dag.py::_duration::number::102c5dbf": {
+      "decision": "keep",
+      "reason": "seconds per week (unit conversion)"
+    },
+    "autoair/codegen/yaml_dag.py::_duration::number::3e20a0ed": {
+      "decision": "keep",
+      "reason": "seconds per hour (unit conversion)"
+    },
+    "autoair/codegen/yaml_dag.py::_duration::number::a032c763": {
+      "decision": "keep",
+      "reason": "seconds per day (unit conversion)"
     },
     "autoair/collab.py::<module>::constant::MAX_ROOMS": {
       "decision": "config",
@@ -1202,6 +1274,14 @@
     "autoair/collab.py::<module>::constant::ROOM_RE": {
       "decision": "keep",
       "reason": "co-editing URL routing (Airflow's dag_id rule)"
+    },
+    "autoair/collab.py::<module>::constant::SESSION_EXPIRED": {
+      "decision": "keep",
+      "reason": "WebSocket close code (private range 4000-4999, RFC 6455) the browser answers with a new ticket"
+    },
+    "autoair/collab.py::<module>::constant::TICKET_BUCKET": {
+      "decision": "keep",
+      "reason": "granularity of the single-use ticket ledger documents (internal layout; tickets expire within collab_ticket_ttl)"
     },
     "autoair/collab.py::<module>::constant::TICKET_TTL": {
       "decision": "config",
@@ -1224,6 +1304,10 @@
       "reason": "setting default/bound (documented in the configuration reference)"
     },
     "autoair/collab.py::CollabSettings::kwarg::Field(default=)#4": {
+      "decision": "keep",
+      "reason": "setting default/bound (documented in the configuration reference)"
+    },
+    "autoair/collab.py::CollabSettings::kwarg::Field(default=)#5": {
       "decision": "keep",
       "reason": "setting default/bound (documented in the configuration reference)"
     },
@@ -1275,9 +1359,17 @@
       "decision": "keep",
       "reason": "relay rows may commit out of id order within this window (internal correctness margin)"
     },
+    "autoair/collab_sync.py::<module>::constant::MAC_SIZE": {
+      "decision": "keep",
+      "reason": "HMAC-SHA256 digest size (protocol constant)"
+    },
     "autoair/collab_sync.py::<module>::constant::PRUNE_EVERY": {
       "decision": "keep",
       "reason": "how often the relay table is pruned (retention itself is collab.retention_seconds)"
+    },
+    "autoair/collab_sync.py::DatabaseBus._publish_sync::number::3028f514": {
+      "decision": "keep",
+      "reason": "column width of the relay table's room (schema; SqlCollabLog truncates the same way)"
     },
     "autoair/config_reference.py::<module>::constant::ENV_PREFIX": {
       "decision": "keep",
@@ -1919,9 +2011,17 @@
       "decision": "keep",
       "reason": "per-import-subprocess registry of written cron expressions (internal state, not a setting)"
     },
+    "autoair/importer/python_dag.py::<module>::constant::_DAG_DEFAULTS": {
+      "decision": "keep",
+      "reason": "Airflow's DAG argument defaults, to tell written values from defaults (Airflow API)"
+    },
     "autoair/importer/python_dag.py::<module>::constant::_DECORATORS": {
       "decision": "keep",
       "reason": "Airflow TaskFlow decorator classes (Airflow API)"
+    },
+    "autoair/importer/python_dag.py::<module>::constant::_PARAM_SCHEMA_KEYS": {
+      "decision": "keep",
+      "reason": "JSON Schema keywords of a Param mapped to DagParam fields (protocol)"
     },
     "autoair/importer/python_dag.py::<module>::constant::_PRESETS": {
       "decision": "keep",
@@ -1931,6 +2031,14 @@
       "decision": "keep",
       "reason": "path format written by codegen's MATERIALIZE_TEMPLATE (internal protocol between codegen and importer)"
     },
+    "autoair/importer/python_dag.py::<module>::constant::_TASK_CALLBACKS": {
+      "decision": "keep",
+      "reason": "BaseOperator callback argument names (Airflow API)"
+    },
+    "autoair/importer/python_dag.py::<module>::constant::_UNSUPPORTED_TASK_ARGS": {
+      "decision": "keep",
+      "reason": "BaseOperator arguments without a spec field, reported on import (Airflow API)"
+    },
     "autoair/importer/python_dag.py::_convert_dag::kwarg::getint(fallback=)": {
       "decision": "keep",
       "reason": "Airflow's own default of core.max_active_*_per_dag"
@@ -1939,9 +2047,17 @@
       "decision": "keep",
       "reason": "Airflow's own default of core.max_active_*_per_dag"
     },
+    "autoair/importer/python_dag.py::_convert_dag::kwarg::getint(fallback=)#2": {
+      "decision": "keep",
+      "reason": "Airflow's own default of core.max_consecutive_failed_dag_runs_per_dag (Airflow default)"
+    },
     "autoair/importer/python_dag.py::_schedule::number::3e20a0ed": {
       "decision": "keep",
       "reason": "fallback interval when a timetable hides its delta (import)"
+    },
+    "autoair/importer/python_dag.py::_task_settings::kwarg::getfloat(fallback=)": {
+      "decision": "keep",
+      "reason": "Airflow's own default of core.default_task_retry_delay, used only when the config has none (Airflow default)"
     },
     "autoair/importer/python_dag.py::import_python_file::default::timeout": {
       "decision": "config",
@@ -3899,10 +4015,6 @@
       "decision": "config",
       "setting": "storage.git.fetch_interval"
     },
-    "autoair/storage/git/local_git.py::LocalGitProvider._key_file::number::b741f252": {
-      "decision": "keep",
-      "reason": "0o600: private key files must be owner-only (ssh/signing keys)"
-    },
     "autoair/storage/git/provider.py::<module>::constant::_BRANCH_RE": {
       "decision": "keep",
       "reason": "git ref-name rules (git check-ref-format)"
@@ -4287,10 +4399,6 @@
       "decision": "keep",
       "reason": "HTTP 413 status code (protocol)"
     },
-    "autoair/validation/remote.py::check_remote::number::75988f5a": {
-      "decision": "keep",
-      "reason": "HTTP 429 status code (protocol)"
-    },
     "autoair/validation/sandbox.py::<module>::constant::_CLONE_NEWNET": {
       "decision": "keep",
       "reason": "Linux kernel constant (linux/sched.h)"
@@ -4298,10 +4406,6 @@
     "autoair/validation/sandbox.py::<module>::constant::_CLONE_NEWUSER": {
       "decision": "keep",
       "reason": "Linux kernel constant (linux/sched.h)"
-    },
-    "autoair/validation/sandbox.py::<module>::constant::_DENIED_EVENTS": {
-      "decision": "keep",
-      "reason": "security floor: Python audit events a validator worker may never raise (enabled by validator.audit_hook)"
     },
     "autoair/validation/sandbox.py::<module>::constant::_MIB": {
       "decision": "keep",
@@ -4371,10 +4475,6 @@
       "decision": "keep",
       "reason": "security floor: the DAG file name is a bare *.py name with dag_id characters (no path separators)"
     },
-    "autoair/validation/service.py::create_validator_app.check::number::5715aa02": {
-      "decision": "keep",
-      "reason": "HTTP 413 status code (protocol)"
-    },
     "autoair/validation/service.py::create_validator_app.check::path::eaae7172": {
       "decision": "keep",
       "reason": "protocol between the main server and the validator service (both sides must agree)"
@@ -4414,6 +4514,286 @@
     "autoair/kb/scheduler.py::<module>::constant::_RUNNING": {
       "decision": "keep",
       "reason": "registry of running scheduler stop events (process-local bookkeeping, not configuration)"
+    },
+    "autoair/net/loopback.py::<module>::constant::LOOPBACK_NAMES": {
+      "decision": "keep",
+      "reason": "security floor: loopback host names accepted by unauthenticated servers (DNS rebinding guard); public hosts come from server.public_url"
+    },
+    "autoair/net/loopback.py::LoopbackGuard.__call__::number::ff1eb8bd": {
+      "decision": "keep",
+      "reason": "WebSocket close code 1008 (policy violation, RFC 6455)"
+    },
+    "autoair/net/loopback.py::_hostname::path::ebbffb7d": {
+      "decision": "keep",
+      "reason": "netloc prefix for urlsplit parsing of a Host header, not a path"
+    },
+    "autoair/runner/__init__.py::<module>::constant::_DB_MODE_ENV": {
+      "decision": "keep",
+      "reason": "Airflow config names dag.test() needs for its metadata DB session (mode db/auto); not environment-dependent"
+    },
+    "autoair/sections.py::<module>::constant::DEFAULT_CREDENTIAL_ENV": {
+      "decision": "config",
+      "setting": "sandbox.credential_env_pattern"
+    },
+    "autoair/server.py::<module>::constant::LOCAL_TOKEN_PREFIX": {
+      "decision": "keep",
+      "reason": "protocol constant shared with frontend/src/api/setup.ts: the UI adopts only fragment tokens with this prefix (login-CSRF guard)"
+    },
+    "autoair/storage/base.py::<module>::constant::_STUB_DAG_RE": {
+      "decision": "keep",
+      "reason": "recognises AutoAir's own loader stub header (autoair.loader.STUB_TEMPLATE)"
+    },
+    "autoair/storage/git/local_git.py::<module>::constant::_GIT_ENV_NAMES": {
+      "decision": "config",
+      "setting": "storage.git.env_passthrough (adds names; the base list is what git, ssh and curl read)"
+    },
+    "autoair/storage/git/local_git.py::<module>::constant::_GIT_ENV_OWN": {
+      "decision": "keep",
+      "reason": "git's GIT_CONFIG_* injection variables, which AutoAir sets itself (git protocol)"
+    },
+    "autoair/storage/git/local_git.py::<module>::constant::_GIT_ENV_PREFIXES": {
+      "decision": "config",
+      "setting": "storage.git.env_passthrough (adds names; GIT_*/LC_* are git's and the locale's own variables)"
+    },
+    "autoair/storage/git/local_git.py::<module>::constant::_KEY_FILE_RE": {
+      "decision": "keep",
+      "reason": "names of the SSH key files AutoAir itself writes (only these are pruned)"
+    },
+    "autoair/storage/git/local_git.py::LocalGitProvider.__init__::default::ssh_key_cache_days": {
+      "decision": "config",
+      "setting": "storage.git.ssh_key_cache_days"
+    },
+    "autoair/storage/git/local_git.py::LocalGitProvider._key_file::number::f04b1d72": {
+      "decision": "keep",
+      "reason": "0o700: the folder of private key files must be owner-only (security floor)"
+    },
+    "autoair/storage/git/local_git.py::prune_key_cache::number::a032c763": {
+      "decision": "keep",
+      "reason": "seconds per day (unit conversion of storage.git.ssh_key_cache_days)"
+    },
+    "autoair/storage/object.py::<module>::constant::DEFAULT_LOCK_SECONDS": {
+      "decision": "config",
+      "setting": "storage.object_lock_seconds"
+    },
+    "autoair/storage/object.py::<module>::constant::DEFAULT_LOCK_WAIT_SECONDS": {
+      "decision": "config",
+      "setting": "storage.object_lock_wait_seconds"
+    },
+    "autoair/storage/object.py::<module>::constant::_LOCK_POLL_SECONDS": {
+      "decision": "keep",
+      "reason": "poll interval while waiting for a write lease; bounded by storage.object_lock_wait_seconds"
+    },
+    "autoair/storage/object.py::FsspecStore.write::path::6a253964": {
+      "decision": "keep",
+      "reason": "hidden temporary file name next to the target (temp + rename)"
+    },
+    "autoair/validation/__init__.py::<module>::constant::_BACKOFF_MULTIPLIER_SINCE": {
+      "decision": "keep",
+      "reason": "Airflow version that made retry_exponential_backoff a multiplier (Airflow API fact)"
+    },
+    "autoair/validation/__init__.py::<module>::constant::_ENV_NAME": {
+      "decision": "keep",
+      "reason": "environment variable names are references, not secrets (detection heuristic)"
+    },
+    "autoair/validation/__init__.py::<module>::constant::_PLACEHOLDER_VALUE": {
+      "decision": "keep",
+      "reason": "placeholder values the dict secret scan never reports (detection heuristic; the key patterns are policy.secret_param_* settings)"
+    },
+    "autoair/validation/__init__.py::<module>::constant::_PRE_MULTIPLIER_BASE": {
+      "decision": "keep",
+      "reason": "base of Airflow's exponential backoff before 3.2 (Airflow API fact)"
+    },
+    "autoair/validation/codegen_limits.py::<module>::constant::_VALUE_FIELDS": {
+      "decision": "keep",
+      "reason": "spec node fields that hold user values (spec schema)"
+    },
+    "autoair/runner/__init__.py::runs_root::number::f04b1d72": {
+      "decision": "keep",
+      "reason": "file mode of the private test-run root folder (owner only): security floor"
+    },
+    "autoair/runner/__init__.py::<module>::constant::_R": {
+      "decision": "keep",
+      "reason": "type variable, not a value"
+    },
+    "autoair/validation/remote.py::<module>::constant::RUN_PATH": {
+      "decision": "keep",
+      "reason": "validator API route (protocol between main server and validator)"
+    },
+    "autoair/validation/remote.py::_exchange::number::5715aa02": {
+      "decision": "keep",
+      "reason": "HTTP 413 status code (protocol)"
+    },
+    "autoair/validation/remote.py::_exchange::number::75988f5a": {
+      "decision": "keep",
+      "reason": "HTTP 429 status code (protocol)"
+    },
+    "autoair/validation/remote.py::run_remote::number::5715aa02": {
+      "decision": "keep",
+      "reason": "HTTP 413 status code (protocol)"
+    },
+    "autoair/validation/sandbox.py::<module>::constant::_CLONE_NEWNS": {
+      "decision": "keep",
+      "reason": "Linux kernel constant (linux/sched.h)"
+    },
+    "autoair/validation/sandbox.py::<module>::constant::_CLONE_NEWPID": {
+      "decision": "keep",
+      "reason": "Linux kernel constant (linux/sched.h)"
+    },
+    "autoair/validation/sandbox.py::<module>::constant::_PR_SET_SECUREBITS": {
+      "decision": "keep",
+      "reason": "Linux kernel constant (linux/prctl.h, linux/securebits.h)"
+    },
+    "autoair/validation/sandbox.py::<module>::constant::_SECBIT_NOROOT": {
+      "decision": "keep",
+      "reason": "Linux kernel constant (linux/prctl.h, linux/securebits.h)"
+    },
+    "autoair/validation/sandbox.py::<module>::constant::_SECBIT_NOROOT_LOCKED": {
+      "decision": "keep",
+      "reason": "Linux kernel constant (linux/prctl.h, linux/securebits.h)"
+    },
+    "autoair/validation/sandbox.py::<module>::constant::_MS_NOSUID": {
+      "decision": "keep",
+      "reason": "Linux kernel constant (linux/mount.h)"
+    },
+    "autoair/validation/sandbox.py::<module>::constant::_MS_NODEV": {
+      "decision": "keep",
+      "reason": "Linux kernel constant (linux/mount.h)"
+    },
+    "autoair/validation/sandbox.py::<module>::constant::_MS_NOEXEC": {
+      "decision": "keep",
+      "reason": "Linux kernel constant (linux/mount.h)"
+    },
+    "autoair/validation/sandbox.py::<module>::constant::_MS_REC": {
+      "decision": "keep",
+      "reason": "Linux kernel constant (linux/mount.h)"
+    },
+    "autoair/validation/sandbox.py::<module>::constant::_MS_PRIVATE": {
+      "decision": "keep",
+      "reason": "Linux kernel constant (linux/mount.h)"
+    },
+    "autoair/validation/sandbox.py::<module>::constant::_NS_SETUP_FAILED": {
+      "decision": "keep",
+      "reason": "internal exit code between the namespace helper and its parent (not user-facing)"
+    },
+    "autoair/validation/sandbox.py::_namespace_child::path::b9725925": {
+      "decision": "keep",
+      "reason": "Linux procfs interface for user namespace id maps (kernel ABI)"
+    },
+    "autoair/validation/sandbox.py::_namespace_child::path::912bd244": {
+      "decision": "keep",
+      "reason": "Linux procfs interface for user namespace id maps (kernel ABI)"
+    },
+    "autoair/validation/sandbox.py::_namespace_child::path::95c985cc": {
+      "decision": "keep",
+      "reason": "Linux procfs interface for user namespace id maps (kernel ABI)"
+    },
+    "autoair/validation/sandbox.py::_namespace_child::number::b4182bff": {
+      "decision": "keep",
+      "reason": "shell convention: exit code 128 + signal number"
+    },
+    "autoair/validation/sandbox.py::<module>::constant::_CHECK_DENIED_EVENTS": {
+      "decision": "keep",
+      "reason": "security floor: Python audit events an import-check worker may never raise (validator.audit_hook); test runs use the run profile without them"
+    },
+    "autoair/validation/service.py::RunRequest::kwarg::Field(max_length=)": {
+      "decision": "keep",
+      "reason": "request schema bounds of the validator's /v1/run (ids, timestamps, caps on what the main server sends); the effective limits are runner.* and validator.max_run_seconds"
+    },
+    "autoair/validation/service.py::RunRequest::kwarg::Field(max_length=)#1": {
+      "decision": "keep",
+      "reason": "request schema bounds of the validator's /v1/run (ids, timestamps, caps on what the main server sends); the effective limits are runner.* and validator.max_run_seconds"
+    },
+    "autoair/validation/service.py::RunRequest::kwarg::Field(max_length=)#2": {
+      "decision": "keep",
+      "reason": "request schema bounds of the validator's /v1/run (ids, timestamps, caps on what the main server sends); the effective limits are runner.* and validator.max_run_seconds"
+    },
+    "autoair/validation/service.py::RunRequest::kwarg::Field(default=)": {
+      "decision": "keep",
+      "reason": "request schema bounds of the validator's /v1/run (ids, timestamps, caps on what the main server sends); the effective limits are runner.* and validator.max_run_seconds"
+    },
+    "autoair/validation/service.py::RunRequest::kwarg::Field(default=)#1": {
+      "decision": "keep",
+      "reason": "request schema bounds of the validator's /v1/run (ids, timestamps, caps on what the main server sends); the effective limits are runner.* and validator.max_run_seconds"
+    },
+    "autoair/validation/service.py::RunRequest::kwarg::Field(ge=)": {
+      "decision": "keep",
+      "reason": "request schema bounds of the validator's /v1/run (ids, timestamps, caps on what the main server sends); the effective limits are runner.* and validator.max_run_seconds"
+    },
+    "autoair/validation/service.py::RunRequest::kwarg::Field(le=)": {
+      "decision": "keep",
+      "reason": "request schema bounds of the validator's /v1/run (ids, timestamps, caps on what the main server sends); the effective limits are runner.* and validator.max_run_seconds"
+    },
+    "autoair/validation/service.py::RunRequest::kwarg::Field(default=)#2": {
+      "decision": "keep",
+      "reason": "request schema bounds of the validator's /v1/run (ids, timestamps, caps on what the main server sends); the effective limits are runner.* and validator.max_run_seconds"
+    },
+    "autoair/validation/service.py::RunRequest::kwarg::Field(ge=)#1": {
+      "decision": "keep",
+      "reason": "request schema bounds of the validator's /v1/run (ids, timestamps, caps on what the main server sends); the effective limits are runner.* and validator.max_run_seconds"
+    },
+    "autoair/validation/service.py::RunRequest::kwarg::Field(le=)#1": {
+      "decision": "keep",
+      "reason": "request schema bounds of the validator's /v1/run (ids, timestamps, caps on what the main server sends); the effective limits are runner.* and validator.max_run_seconds"
+    },
+    "autoair/validation/service.py::_Metrics.__init__::number::15aa0c7e": {
+      "decision": "keep",
+      "reason": "Prometheus histogram bucket (s) for long test runs"
+    },
+    "autoair/validation/service.py::create_validator_app.authenticate::number::5715aa02": {
+      "decision": "keep",
+      "reason": "HTTP 413 status code (protocol)"
+    },
+    "autoair/validation/service.py::create_validator_app.run::path::d22e0fe5": {
+      "decision": "keep",
+      "reason": "validator API route (protocol between main server and validator)"
+    },
+    "autoair/runner/__init__.py::<module>::constant::_AIRFLOW_SECRET_FILES": {
+      "decision": "keep",
+      "reason": "Airflow's own file names in AIRFLOW_HOME that hold secrets (Airflow's layout, not deployment-specific); denied to test runs"
+    },
+    "autoair/runner/__init__.py::<module>::constant::_SECRET_OPTION": {
+      "decision": "keep",
+      "reason": "security floor: airflow.cfg option names treated as secrets in the test-run copy (in addition to Airflow's sensitive_config_values)"
+    },
+    "autoair/runner/__init__.py::_airflow_home::path::80a72ec4": {
+      "decision": "keep",
+      "reason": "Airflow's documented default AIRFLOW_HOME when the variable is unset"
+    },
+    "autoair/runner/__init__.py::sanitized_airflow_config::number::b741f252": {
+      "decision": "keep",
+      "reason": "0o600: the sanitized airflow.cfg copy is owner-only"
+    },
+    "autoair/validation/sandbox.py::<module>::constant::_MS_RDONLY": {
+      "decision": "keep",
+      "reason": "Linux kernel constant (linux/mount.h)"
+    },
+    "autoair/validation/sandbox.py::<module>::constant::_MS_REMOUNT": {
+      "decision": "keep",
+      "reason": "Linux kernel constant (linux/mount.h)"
+    },
+    "autoair/validation/sandbox.py::<module>::constant::_MS_BIND": {
+      "decision": "keep",
+      "reason": "Linux kernel constant (linux/mount.h)"
+    },
+    "autoair/validation/sandbox.py::<module>::constant::_ST_LOCKED": {
+      "decision": "keep",
+      "reason": "Linux kernel constants (statvfs ST_* flags equal to MS_* mount flags)"
+    },
+    "autoair/validation/sandbox.py::_mask_scratch::kwarg::makedirs(mode=)": {
+      "decision": "keep",
+      "reason": "0o700: a run's re-bound scratch folder is owner-only"
+    },
+    "autoair/validation/sandbox.py::_mask_scratch::path::14d07044": {
+      "decision": "keep",
+      "reason": "Linux procfs magic link to an open descriptor (kernel ABI)"
+    },
+    "autoair/runner/_child.py::_keep_execution_api_running::default::timeout": {
+      "decision": "keep",
+      "reason": "upper bound of the wait for the in-process execution API to start inside a dag.test() child (Airflow 3.0-3.2 workaround); the whole run is bounded by the test-run timeout"
+    },
+    "autoair/runner/_child.py::<module>::constant::_KEEP_ALIVE": {
+      "decision": "keep",
+      "reason": "holds in-process execution API objects of the running dag.test() child (Airflow 3.0-3.2 workaround), not a configurable value"
     }
   }
 }

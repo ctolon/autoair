@@ -1,12 +1,12 @@
-"""Import checks through the validator service (``validator.url``).
+"""Import checks and test runs through the validator service (``validator.url``).
 
-The main server (plugin or standalone) POSTs the DAG source to ``<url>/v1/check`` of
-``autoair validator-serve``, signed with the HMAC scheme of the AI service
-(:func:`autoair.ai.access.sign_identity`: method, path and body hash, timestamp, single-use
-nonce). The service signs its answer with the same key, bound to that nonce
-(:data:`RESPONSE_SIGNATURE_HEADER`); an unsigned or mismatched answer is not trusted. The
-key is the password of an Airflow connection (``validator.secret_conn_id``): AutoAir stores
-no secret of its own.
+The main server (plugin or standalone) POSTs the DAG source to ``<url>/v1/check`` (import
+check) or ``<url>/v1/run`` (task / DAG test run) of ``autoair validator-serve``, signed
+with the HMAC scheme of the AI service (:func:`autoair.ai.access.sign_identity`: method,
+path and body hash, timestamp, single-use nonce). The service signs its answer with the
+same key, bound to that nonce (:data:`RESPONSE_SIGNATURE_HEADER`); an unsigned or
+mismatched answer is not trusted. The key is the password of an Airflow connection
+(``validator.secret_conn_id``): AutoAir stores no secret of its own.
 
 * connection errors and HTTP 429/502/503/504 are retried (``retries``, exponential
   ``retry_backoff_seconds``); a request that timed out is not;
@@ -45,6 +45,7 @@ SIGNATURE_HEADER = "x-autoair-validator-signature"
 # server and the validator cannot hand back a forged "imports fine" result.
 RESPONSE_SIGNATURE_HEADER = "x-autoair-validator-response-signature"
 CHECK_PATH = "/v1/check"
+RUN_PATH = "/v1/run"
 SIGNED_ROLE = "validator"
 # Largest validator answer read (dag/task ids and import error tracebacks).
 MAX_RESPONSE_BYTES = 16 * 1024 * 1024
@@ -54,7 +55,13 @@ MIN_KEY_BYTES = 16
 
 
 class ValidatorUnavailable(Exception):
-    """The validator could not be asked; the message says why (never the key)."""
+    """The validator could not be asked; the message says why (never the key).
+    ``may_have_run``: the request may have reached the validator (a timeout, a connection
+    lost after sending, a proxy error), so a test run must not be started again."""
+
+    def __init__(self, reason: str, *, may_have_run: bool = False) -> None:
+        super().__init__(reason)
+        self.may_have_run = may_have_run
 
 
 class KeyUnavailable(ValidatorUnavailable):
@@ -232,10 +239,11 @@ def status(cfg: ValidatorSettings | None = None) -> dict[str, Any]:
     return {"configured": True, "down": state.down, "reason": state.reason or None}
 
 
-def _probe(client: httpx2.Client, cfg: ValidatorSettings) -> str | None:
-    """``None`` when ``/ready`` answers 200, else why not."""
+def _probe(client: httpx2.Client, cfg: ValidatorSettings, url: str | None = None) -> str | None:
+    """``None`` when ``/ready`` of ``url`` (default ``validator.url``) answers 200, else why
+    not."""
     try:
-        resp = client.get(f"{cfg.url}/ready", timeout=cfg.health_timeout_seconds)
+        resp = client.get(f"{url or cfg.url}/ready", timeout=cfg.health_timeout_seconds)
     except httpx2.HTTPError as exc:
         return f"not reachable: {type(exc).__name__}"
     if resp.status_code != 200:
@@ -255,33 +263,40 @@ def _read_capped(resp: httpx2.Response) -> bytes:
     return bytes(data)
 
 
-def check_remote(
-    source: str,
-    filename: str,
+def _exchange(
+    route: str,
+    payload: dict[str, Any],
     timeout: float,
-    cfg: ValidatorSettings | None = None,
+    cfg: ValidatorSettings,
     *,
-    transport: httpx2.BaseTransport | None = None,
-    keys: KeyCache | None = None,
-) -> ImportCheckResult:
-    """Import ``source`` (as ``filename``) on the validator; :class:`ValidatorUnavailable`
-    when it cannot be asked."""
-    cfg = cfg or active(ValidatorSettings)
-    if not cfg.url:
+    transport: httpx2.BaseTransport | None,
+    keys: KeyCache | None,
+    passthrough: frozenset[int] = frozenset({413, 422}),
+    base_url: str | None = None,
+    repeatable: bool = True,
+) -> tuple[int, bytes]:
+    """POST ``payload`` signed to ``<base_url><route>`` (default ``validator.url``):
+    ``(status, body)`` of a 2xx answer whose signature verified, or of a ``passthrough``
+    status (unsigned, no body trusted beyond the status). :class:`ValidatorUnavailable`
+    otherwise (retries and circuit as module docs, per base URL). ``repeatable=False`` (test
+    runs, which can have side effects): retried only when the request surely did not run
+    (connection refused, 429, 503)."""
+    url = base_url if base_url is not None else cfg.url
+    if not url:
         raise ValidatorUnavailable("validator.url is not set")
     key = (keys or _KEYS).get(cfg.secret_conn_id, cfg.key_cache_seconds)
-    path = urlsplit(cfg.url).path.rstrip("/") + CHECK_PATH
-    body = json.dumps({"source": source, "filename": filename, "timeout": timeout}).encode()
+    path = urlsplit(url).path.rstrip("/") + route
+    body = json.dumps(payload).encode()
     with httpx2.Client(
         transport=transport, **tls.httpx_kwargs("validator", transport=transport)
     ) as client:
-        state = _health(cfg.url)
+        state = _health(url)
         if state.down:
             if time.monotonic() < state.next_probe:
                 raise ValidatorUnavailable(state.reason)
-            why = _probe(client, cfg)
+            why = _probe(client, cfg, url)
             if why is not None:
-                _mark_down(cfg.url, why, cfg.health_check_interval_seconds)
+                _mark_down(url, why, cfg.health_check_interval_seconds)
                 raise ValidatorUnavailable(why)
         reason = "no attempt made"
         busy = False
@@ -296,7 +311,7 @@ def check_remote(
             try:
                 with client.stream(
                     "POST",
-                    f"{cfg.url}{CHECK_PATH}",
+                    f"{url}{route}",
                     content=body,
                     headers=headers,
                     timeout=timeout + cfg.request_overhead_seconds,
@@ -305,36 +320,36 @@ def check_remote(
                     answer_signature = resp.headers.get(RESPONSE_SIGNATURE_HEADER, "")
                     data = _read_capped(resp)
             except httpx2.TimeoutException:
-                # one slow or queued check says nothing about the service: no circuit
+                # one slow or queued request says nothing about the service: no circuit
                 raise ValidatorUnavailable(
-                    f"no answer within {timeout + cfg.request_overhead_seconds:g}s"
+                    f"no answer within {timeout + cfg.request_overhead_seconds:g}s",
+                    may_have_run=True,
                 ) from None
             except httpx2.HTTPError as exc:
                 reason = f"not reachable: {type(exc).__name__}"
+                if not repeatable and not isinstance(exc, httpx2.ConnectError):
+                    raise ValidatorUnavailable(reason, may_have_run=True) from None
                 continue
             if code in _RETRY_STATUS:
                 reason = f"HTTP {code}"
                 busy = code in (429, 503)
+                if not repeatable and not busy:
+                    raise ValidatorUnavailable(reason, may_have_run=True)
                 continue
             busy = False
-            if code == 422:
-                return ImportCheckResult(
-                    ok=False,
-                    import_errors=["the validator refused the check request (HTTP 422)"],
-                )
+            if code in passthrough:
+                return code, b""
             if code in (401, 403):
                 reason = (
                     f"HTTP {code}: the validator rejected the signature; both sides need "
                     "the same key (validator.secret_conn_id) and synchronised clocks"
                 )
                 break
-            if code == 413:
-                return ImportCheckResult(
-                    ok=False,
-                    import_errors=[
-                        "the DAG file is larger than the validator accepts "
-                        "(validator.max_request_bytes)"
-                    ],
+            if code == 404 and route != CHECK_PATH:
+                # a validator older than this route: up, but it cannot do this
+                raise ValidatorUnavailable(
+                    f"the validator does not offer {route} (HTTP 404): upgrade it to this "
+                    "AutoAir version, or it has validator.runs_enabled=false"
                 )
             if code >= 400:
                 reason = f"HTTP {code}"
@@ -345,23 +360,100 @@ def check_remote(
                     "(validator.secret_conn_id); it was not trusted"
                 )
                 break
-            try:
-                result = ImportCheckResult.model_validate_json(data)
-            except ValueError:
-                reason = "invalid answer"
-                break
-            _mark_up(cfg.url)
-            result.ok = not result.import_errors and bool(result.dag_ids)
-            return result
+            _mark_up(url)
+            return code, data
     if not busy:  # a busy validator is up: only outages open the circuit
-        _mark_down(cfg.url, reason, cfg.health_check_interval_seconds)
+        _mark_down(url, reason, cfg.health_check_interval_seconds)
     raise ValidatorUnavailable(reason)
+
+
+def check_remote(
+    source: str,
+    filename: str,
+    timeout: float,
+    cfg: ValidatorSettings | None = None,
+    *,
+    transport: httpx2.BaseTransport | None = None,
+    keys: KeyCache | None = None,
+) -> ImportCheckResult:
+    """Import ``source`` (as ``filename``) on the validator; :class:`ValidatorUnavailable`
+    when it cannot be asked."""
+    cfg = cfg or active(ValidatorSettings)
+    code, data = _exchange(
+        CHECK_PATH,
+        {"source": source, "filename": filename, "timeout": timeout},
+        timeout,
+        cfg,
+        transport=transport,
+        keys=keys,
+    )
+    if code == 422:
+        return ImportCheckResult(
+            ok=False, import_errors=["the validator refused the check request (HTTP 422)"]
+        )
+    if code == 413:
+        return ImportCheckResult(
+            ok=False,
+            import_errors=[
+                "the DAG file is larger than the validator accepts (validator.max_request_bytes)"
+            ],
+        )
+    try:
+        result = ImportCheckResult.model_validate_json(data)
+    except ValueError:
+        _mark_down(cfg.url, "invalid answer", cfg.health_check_interval_seconds)
+        raise ValidatorUnavailable("invalid answer") from None
+    result.ok = not result.import_errors and bool(result.dag_ids)
+    return result
+
+
+def run_remote(
+    payload: dict[str, Any],
+    timeout: float,
+    cfg: ValidatorSettings | None = None,
+    *,
+    transport: httpx2.BaseTransport | None = None,
+    keys: KeyCache | None = None,
+) -> dict[str, Any]:
+    """Run a task or DAG test (``payload`` as :class:`autoair.validation.service.RunRequest`)
+    on the validator: the JSON of a ``TaskTestResult`` / ``DagTestResult``, or
+    ``{"state": "error", "error": ...}`` when the validator refused the request.
+    :class:`ValidatorUnavailable` when it cannot be asked."""
+    cfg = cfg or active(ValidatorSettings)
+    url = cfg.runs_url
+    code, data = _exchange(
+        RUN_PATH,
+        payload,
+        timeout,
+        cfg,
+        transport=transport,
+        keys=keys,
+        base_url=url,
+        repeatable=False,
+    )
+    if code == 413:
+        return {
+            "state": "error",
+            "error": "the DAG file is larger than the validator accepts "
+            "(validator.max_request_bytes)",
+        }
+    if code == 422:
+        return {"state": "error", "error": "the validator refused the test-run request (HTTP 422)"}
+    try:
+        result = json.loads(data)
+    except ValueError:
+        result = None
+    if not isinstance(result, dict):
+        _mark_down(url, "invalid answer", cfg.health_check_interval_seconds)
+        raise ValidatorUnavailable("invalid answer")
+    return result
 
 
 __all__ = [
     "CHECK_PATH",
     "IDENTITY_HEADER",
     "RESPONSE_SIGNATURE_HEADER",
+    "RUN_PATH",
     "SIGNATURE_HEADER",
     "KeyCache",
     "KeyUnavailable",
@@ -373,6 +465,7 @@ __all__ = [
     "request_nonce",
     "reset",
     "response_signature",
+    "run_remote",
     "sign",
     "status",
     "verify_response",

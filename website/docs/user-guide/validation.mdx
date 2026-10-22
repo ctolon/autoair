@@ -160,6 +160,8 @@ A dependency into or out of any task of a task group counts as a dependency of t
 | `output_model`, `toolset` | `common.ai` structured outputs and agent toolsets. |
 | `template_locked`, `template_required`, `template_missing`, `template_updated` | Operator template constraints. |
 | `airflow_version` | A feature needs a newer Airflow than the target version. |
+| `duration` | A duration (`retry_delay_seconds`, `execution_timeout_seconds`, `dagrun_timeout_seconds`, a schedule interval, a `timedelta` argument) is infinite, not a number, or larger than a `datetime.timedelta` holds (999999999 days). |
+| `function_name_reserved` | A Python task's function name is also a name the generated file imports; the function is renamed in the code (warning). |
 | `codegen` | The DAG file could not be generated. |
 | `import` | The generated file failed to import in Airflow's `DagBag`. |
 | `import_service` | The [validator service](/docs/deployment/validator-service) could not be asked; a warning by default (`validator.fail_mode=open`: the deploy goes ahead without the import check) or, with `fail_mode=closed`, an error that blocks deploys. |

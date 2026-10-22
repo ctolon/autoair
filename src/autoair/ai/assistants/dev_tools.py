@@ -25,6 +25,8 @@ from autoair.validation import policy_from_settings
 
 #: Memory tag of each assistant's own scope (developer memories carry no tag).
 ADMIN_MEMORY_TAG = "assistant:admin"
+#: Who may store shared (team / global) memories: they reach every user's prompts.
+MEMORY_ADMIN_PERMISSION = "admin:config"
 
 
 @dataclass
@@ -137,7 +139,10 @@ def developer_tools(
     gateway_factory: Callable[[], Any] | None,
     research: bool = True,
     memory: bool = True,
+    can: Callable[[str], bool] | None = None,
 ) -> list[AgentTool]:
+    """``can`` checks one of the caller's AutoAir permissions (team memories need
+    ``admin:config``); without it the caller may only store personal memories."""
     from autoair.ai.toolbox import build_toolbox
 
     tools = build_toolbox(services, gateway_factory=gateway_factory)
@@ -213,14 +218,20 @@ def developer_tools(
         ),
     ]
     if memory:
-        tools += memory_tools(services, state=state, user=user, admin=False)
+        tools += memory_tools(services, state=state, user=user, admin=False, can=can)
     return tools
 
 
 def memory_tools(
-    services: Any, *, state: TurnState, user: str | None, admin: bool
+    services: Any,
+    *,
+    state: TurnState,
+    user: str | None,
+    admin: bool,
+    can: Callable[[str], bool] | None = None,
 ) -> list[AgentTool]:
-    """Conventions / notes of the assistant's own memory scope."""
+    """Conventions / notes of the assistant's own memory scope. ``admin``: the admin
+    assistant's scope (tag), not a permission; team memories need ``can("admin:config")``."""
     from autoair.ai.memory import memory_for
 
     team = getattr(services.settings, "team", None)
@@ -241,6 +252,12 @@ def memory_tools(
     def remember(args: RememberInput) -> Any:
         if args.scope == "team" and not team:
             raise ValueError("this server has no team; store it for the user instead")
+        if args.scope == "team" and not (can is not None and can(MEMORY_ADMIN_PERMISSION)):
+            # a team memory reaches every team member's prompts
+            raise ValueError(
+                "only an admin (admin:config) may store team memories; store it for the "
+                "user instead"
+            )
         owner = team if args.scope == "team" else user
         if not owner:
             raise ValueError("an anonymous user cannot store memories")
@@ -263,7 +280,8 @@ def memory_tools(
         ),
         AgentTool(
             "remember",
-            "Store a convention/preference the user explicitly asked you to remember.",
+            "Store a convention/preference the user explicitly asked you to remember "
+            "(scope team needs an admin). The user approves every call.",
             RememberInput,
             remember,
             kind="write",
@@ -273,6 +291,7 @@ def memory_tools(
 
 __all__ = [
     "ADMIN_MEMORY_TAG",
+    "MEMORY_ADMIN_PERMISSION",
     "ProposeSpecInput",
     "TurnState",
     "developer_tools",

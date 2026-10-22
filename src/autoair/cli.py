@@ -115,7 +115,13 @@ def serve(
     ] = None,
     dags_folder: Annotated[Path | None, typer.Option(help="Overrides AUTOAIR_DAGS_FOLDER.")] = None,
     airflow_url: Annotated[str | None, typer.Option(help="Overrides AUTOAIR_AIRFLOW_URL.")] = None,
-    no_auth: Annotated[bool, typer.Option(help="Do not require a bearer token.")] = False,
+    no_auth: Annotated[
+        bool,
+        typer.Option(
+            help="Do not require a bearer token (loopback only; callers get "
+            "iam.anonymous_roles, default Viewer)."
+        ),
+    ] = False,
     workers: Annotated[
         int | None, typer.Option(help="Worker processes (AUTOAIR_SERVER__WORKERS).")
     ] = None,
@@ -191,10 +197,19 @@ def local(
     token: Annotated[
         str | None,
         typer.Option(
-            help="Require this access token (also AUTOAIR_LOCAL__TOKEN); paste it in the UI.",
+            help="Require this access token (also AUTOAIR_LOCAL__TOKEN); paste it in the UI. "
+            "Default: a random token per run, passed to the browser opened by --open.",
             envvar="AUTOAIR_LOCAL__TOKEN",
         ),
     ] = None,
+    no_token: Annotated[
+        bool,
+        typer.Option(
+            "--no-token",
+            help="Serve without authentication (loopback only); visitors get "
+            "iam.anonymous_roles (default Viewer: read-only).",
+        ),
+    ] = False,
     open_browser: Annotated[
         bool | None, typer.Option("--open/--no-open", help="Open the UI in the browser.")
     ] = None,
@@ -206,7 +221,14 @@ def local(
     Provides the operator catalog of the installed packages, static validation (plus the
     DagBag import check when Airflow is installed) and deploys to a local folder or git.
     Runs, test runs and Airflow pickers are disabled."""
-    from autoair.server import ServeOptions, airflow_installed, is_loopback, local_preset, run
+    from autoair.server import (
+        LOCAL_TOKEN_PREFIX,
+        ServeOptions,
+        airflow_installed,
+        is_loopback,
+        local_preset,
+        run,
+    )
 
     # The operator palette of local mode comes from the installed Airflow and providers.
     _require_http_server("local", "standalone" if airflow_installed() else "standalone,airflow")
@@ -215,22 +237,59 @@ def local(
 
         add_config_files(config)
     overrides = local_preset(dags_folder=dags_folder, host=host, port=port)
+    if token and no_token:
+        typer.echo("--token and --no-token exclude each other", err=True)
+        raise typer.Exit(2)
     if token:
         overrides["local"] = {"token": token}
     if open_browser is not None:
         overrides.setdefault("local", {})["open_browser"] = open_browser
     settings = _settings(**overrides)
+    if no_token and settings.local.token is not None:
+        typer.echo("--no-token conflicts with AUTOAIR_LOCAL__TOKEN / local.token", err=True)
+        raise typer.Exit(2)
     if not is_loopback(host) and settings.local.token is None:
         typer.echo(
             f"refusing to serve {host} without --token: local mode has no other authentication",
             err=True,
         )
         raise typer.Exit(2)
+    fragment = ""
+    if settings.local.token is None and not no_token:
+        import secrets
+
+        # The single local user signs in with a per-run token handed to the browser in the
+        # URL fragment (never sent to a server): other local processes and web pages cannot
+        # use the API without it.
+        generated = f"{LOCAL_TOKEN_PREFIX}{secrets.token_urlsafe(32)}"
+        overrides.setdefault("local", {})["token"] = generated
+        settings = _settings(**overrides)
+        fragment = f"#token={generated}"
     options = ServeOptions(overrides=overrides, local=True)
-    typer.echo(f"AutoAir (local mode): http://{host}:{port}/ui/ — DAGs in {settings.output_dir}")
-    if settings.local.token is not None:
-        typer.echo("Access token required: paste it on the sign-in page.")
-    run(options, settings, host=host, port=port, open_browser=settings.local.open_browser)
+    shown = "127.0.0.1" if host in ("0.0.0.0", "::") else host  # noqa: S104 - display only
+    typer.echo(f"AutoAir (local mode): DAGs in {settings.output_dir}")
+    if fragment:
+        typer.echo(f"Open http://{shown}:{port}/ui/{fragment}")
+        typer.echo("(this per-run link signs you in; keep it to yourself)")
+    elif settings.local.token is not None:
+        typer.echo(f"http://{shown}:{port}/ui/ — paste the access token on the sign-in page.")
+    else:
+        typer.echo(
+            f"http://{shown}:{port}/ui/ — no authentication: visitors get iam.anonymous_roles "
+            f"({', '.join(settings.iam.anonymous_roles) or 'none'})"
+        )
+    try:
+        run(
+            options,
+            settings,
+            host=host,
+            port=port,
+            open_browser=settings.local.open_browser,
+            ui_fragment=fragment,
+        )
+    except ValueError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(2) from exc
 
 
 @app.command()
@@ -405,7 +464,11 @@ def marketplace_verify(
 @app.command("mcp")
 def mcp_server(
     http: Annotated[
-        bool, typer.Option(help="Serve unauthenticated streamable HTTP instead of stdio.")
+        bool,
+        typer.Option(
+            help="Serve unauthenticated streamable HTTP instead of stdio (loopback only; "
+            "callers get iam.anonymous_roles, default Viewer)."
+        ),
     ] = False,
     host: Annotated[str, typer.Option(help="HTTP bind address.")] = "127.0.0.1",
     port: Annotated[int, typer.Option(help="HTTP port.")] = 8766,
@@ -415,6 +478,8 @@ def mcp_server(
     For a shared endpoint use `autoair mcp-serve --http`, which authenticates callers."""
     from autoair.mcp.server import main
 
+    if http:
+        _refuse_public_no_auth(True, host, "autoair mcp --http")
     argv = ["--http", "--host", host, "--port", str(port)] if http else []
     main(argv)
 
@@ -424,7 +489,13 @@ def mcp_serve(
     http: Annotated[bool, typer.Option(help="Serve streamable HTTP instead of stdio.")] = False,
     host: Annotated[str, typer.Option(help="HTTP bind address.")] = "127.0.0.1",
     port: Annotated[int, typer.Option(help="HTTP port.")] = 8766,
-    no_auth: Annotated[bool, typer.Option(help="HTTP: do not require a bearer token.")] = False,
+    no_auth: Annotated[
+        bool,
+        typer.Option(
+            help="HTTP: do not require a bearer token (loopback only; callers get "
+            "iam.anonymous_roles, default Viewer)."
+        ),
+    ] = False,
 ) -> None:
     """Run a standalone MCP server.
 
@@ -436,6 +507,7 @@ def mcp_serve(
         main([])
         return
     _require_http_server("mcp-serve --http", "standalone,mcp")
+    _refuse_public_no_auth(no_auth, host, "autoair mcp-serve")
     import uvicorn
     from fastapi import FastAPI
 
@@ -453,8 +525,21 @@ def mcp_serve(
     services = build_services(settings, bearer_passthrough(verifier, required=not no_auth))
     root = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
     root.mount("/mcp", create_mcp_asgi_app(services))
+    if no_auth:
+        from autoair.net.loopback import LoopbackGuard, public_hosts
+
+        root.add_middleware(LoopbackGuard, extra_hosts=public_hosts(settings.server.public_url))
     typer.echo(f"AutoAir MCP at http://{host}:{port}/mcp/ (Airflow at {settings.airflow_url})")
     uvicorn.run(root, host=host, port=port)
+
+
+def _refuse_public_no_auth(no_auth: bool, host: str, what: str) -> None:
+    from autoair.net.loopback import refuse_public_bind
+
+    refused = refuse_public_bind(host, what) if no_auth else None
+    if refused:
+        typer.echo(refused, err=True)
+        raise typer.Exit(2)
 
 
 @app.command(
@@ -479,12 +564,19 @@ def docs_mcp(ctx: typer.Context) -> None:
 def ai_serve(
     host: Annotated[str, typer.Option(help="Bind address.")] = "127.0.0.1",
     port: Annotated[int, typer.Option(help="Port.")] = 8790,
-    no_auth: Annotated[bool, typer.Option(help="Do not require a bearer token.")] = False,
+    no_auth: Annotated[
+        bool,
+        typer.Option(
+            help="Do not require a bearer token (loopback only; callers get "
+            "iam.anonymous_roles, default Viewer)."
+        ),
+    ] = False,
 ) -> None:
     """Run the AI service on its own (AI API at /api/ai, MCP at /mcp).
 
     Point the main server at it with AUTOAIR_AI__SERVICE_URL=http://HOST:PORT."""
     _require_http_server("ai-serve")
+    _refuse_public_no_auth(no_auth, host, "autoair ai-serve")
     from autoair.ai.availability import ai_unavailable_reason
 
     reason = ai_unavailable_reason()
@@ -514,8 +606,9 @@ def validator_serve(
     ] = False,
     config: ConfigOption = None,
 ) -> None:
-    """Run the validator service: DagBag import checks of untrusted DAG code in sandboxed
-    worker processes (POST /v1/check, /health, /ready, /metrics).
+    """Run the validator service: DagBag import checks and task/DAG test runs of untrusted
+    DAG code in sandboxed worker processes (POST /v1/check, POST /v1/run, /health, /ready,
+    /metrics).
 
     Point the main server at it with AUTOAIR_VALIDATOR__URL=http://HOST:PORT. Both sides
     share an HMAC key: the password of the Airflow connection validator.secret_conn_id,
@@ -558,7 +651,7 @@ def validator_serve(
 
     configure_logging(settings.logging)
     harden_process()
-    typer.echo(f"AutoAir validator on http://{host}:{port} (POST /v1/check)")
+    typer.echo(f"AutoAir validator on http://{host}:{port} (POST /v1/check, /v1/run)")
     uvicorn.run(
         create_validator_app(cfg, no_auth=no_auth),
         host=host,

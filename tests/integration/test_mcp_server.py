@@ -136,6 +136,25 @@ def test_tools_listed_with_schemas(services: Services, airflow: FakeAirflow) -> 
     run(go)
 
 
+def test_tools_that_run_code_are_not_marked_read_only(tmp_path: Path) -> None:
+    """MCP clients skip their approval prompt for read-only tools: a tool that runs Python
+    on the server (importing a DAG file, a preserve preview) must never claim to be one."""
+    services = build_services(
+        Settings(dags_folder=tmp_path, subfolder="", allow_python_code=True), AuthBackend()
+    )
+
+    async def go() -> None:
+        async with Client(make_server(services, FakeAirflow())) as client:
+            tools = {t.name: t for t in await client.list_tools()}
+            for name in ("import_python_dag", "preview_dag_source"):
+                assert name in tools
+                annotations = tools[name].annotations
+                assert annotations is not None
+                assert annotations.read_only_hint is False, name
+
+    run(go)
+
+
 def test_catalog_validate_generate(services: Services, airflow: FakeAirflow) -> None:
     async def go() -> None:
         async with Client(make_server(services, airflow)) as client:
@@ -158,7 +177,18 @@ def test_catalog_validate_generate(services: Services, airflow: FakeAirflow) -> 
             assert "dag_id" in json.dumps(schema.structured_content)
 
             ok = await call(client, "validate_dag_spec", {"spec": spec_data()})
-            assert ok.structured_content == {"ok": True, "problems": [], "import_errors": []}
+            assert ok.structured_content == {
+                "ok": True,
+                "problems": [],
+                "import_errors": [],
+                "note": None,
+            }
+
+            # the import check is its own tool (it runs the generated file's code)
+            imported = await call(client, "import_check_dag_spec", {"spec": spec_data()})
+            assert imported.structured_content is not None
+            assert imported.structured_content["ok"] is True, imported.structured_content
+            assert imported.structured_content["import_errors"] == []
 
             bad = spec_data()
             bad["nodes"][0]["params"] = {"bash_command": 1}
@@ -224,7 +254,24 @@ def test_save_get_delete_roundtrip(
             assert kept.structured_content is not None
             assert kept.structured_content["deleted"] is False
             assert (store_dir / "mcp_dag.py").exists()
-            gone = await call(client, "delete_dag_spec", {"dag_id": "mcp_dag", "confirm": True})
+            etag = kept.structured_content["current_etag"]
+            assert etag
+            blind = await call(client, "delete_dag_spec", {"dag_id": "mcp_dag", "confirm": True})
+            assert blind.structured_content is not None
+            assert blind.structured_content["deleted"] is False
+            assert blind.structured_content["current_etag"] == etag
+            assert etag in blind.structured_content["message"]
+            stale = await call(
+                client,
+                "delete_dag_spec",
+                {"dag_id": "mcp_dag", "confirm": True, "base_etag": "0" * 64},
+            )
+            assert stale.structured_content is not None
+            assert stale.structured_content["deleted"] is False
+            assert (store_dir / "mcp_dag.py").exists()
+            gone = await call(
+                client, "delete_dag_spec", {"dag_id": "mcp_dag", "confirm": True, "base_etag": etag}
+            )
             assert gone.structured_content is not None
             assert gone.structured_content["deleted"] is True
             assert not (store_dir / "mcp_dag.py").exists()

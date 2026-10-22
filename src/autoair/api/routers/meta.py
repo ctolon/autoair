@@ -10,9 +10,11 @@ from autoair import __version__
 from autoair._compat import airflow_version_str, supports_react_apps
 from autoair.api.app import Services
 from autoair.api.deps import ServicesDep
+from autoair.api.routers.runs import db_mode_unavailable
 from autoair.iam import model as P
 from autoair.iam.deps import PrincipalDep, direct_push_roles, iam_enabled, iam_settings
 from autoair.iam.model import Principal
+from autoair.iam.proposals import write_mode
 from autoair.iam.sso import Branding, branding
 from autoair.storage import TargetStatus
 from autoair.validation import policy_from_settings
@@ -59,6 +61,21 @@ class DeployRights(BaseModel):
         description="Git targets: deploys take a token typed by the user "
         "(storage.git.request_token after the kill switch and forced-connection rule; "
         "required: the quick deploy opens the deploy dialog). Null: not a git target.",
+    )
+
+
+class TestRunInfo(BaseModel):
+    """Where test runs execute and whether ``mode=db`` is available to the caller."""
+
+    on_validator: bool = Field(
+        description="Task and DAG test runs (mode memory) run on the validator service "
+        "(validator.url and validator.test_runs), not on this host."
+    )
+    db_mode_unavailable: Literal["disabled", "admin_only"] | None = Field(
+        default=None,
+        description="Why mode=db is not available: disabled (runner.allow_db_mode is off) or "
+        "admin_only (it needs admin:config). Null: the caller may use it. mode=auto runs in "
+        "memory whenever this is set.",
     )
 
 
@@ -147,6 +164,9 @@ class MetaInfo(BaseModel):
         description="airflow_secrets_backend: connections/variables may come from a secrets "
         "backend, so ids missing from Airflow's metastore are not flagged.",
     )
+    test_runs: TestRunInfo | None = Field(
+        default=None, description="Test runs: where they execute, whether mode=db is offered."
+    )
 
 
 router = APIRouter(tags=["meta"])
@@ -199,6 +219,10 @@ async def get_meta(services: ServicesDep, principal: PrincipalDep) -> MetaInfo:
         airflow_public_url=str(s.sso.airflow_public_url or s.airflow_url).rstrip("/") or None,
         secrets_backend=s.airflow_secrets_backend,
         allow_force_overwrite=s.preserve.allow_force_overwrite,
+        test_runs=TestRunInfo(
+            on_validator=bool(s.validator.runs_url and s.validator.test_runs),
+            db_mode_unavailable=db_mode_unavailable(s, principal),
+        ),
         policy=PolicyInfo(
             allow_python_code=policy.allow_python_code,
             allow_privileged_operators=s.allow_privileged_operators,
@@ -245,9 +269,7 @@ def me_info(services: Services, principal: Principal, team: str | None = None) -
     permissions = set(principal.permissions) - {P.DEPLOY_DIRECT_PUSH}
     if direct:
         permissions.add(P.DEPLOY_DIRECT_PUSH)
-    opens_pr = git_mode == "pr" or (
-        git_mode == "push" and iam.force_pr_without_direct_push and not direct
-    )
+    opens_pr = write_mode(git_mode, direct_push=None, allowed=direct, iam=iam) == "pr"
     login = services.login
     return MeInfo(
         user=principal.user,

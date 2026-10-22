@@ -303,7 +303,8 @@
     },
     "kind": {
       "write": "changes something",
-      "read": "read-only"
+      "read": "read-only",
+      "execute": "runs code on the server"
     },
     "approve": "Approve",
     "deny": "Deny",
@@ -316,6 +317,13 @@
     "denied": "denied",
     "decidedBy": "Decided by {{user}}",
     "truncated": "Arguments shortened for display; secrets are masked.",
+    "truncatedMore_one": "1 more character not shown — review the full arguments before approving.",
+    "truncatedMore_other": "{{count}} more characters not shown — review the full arguments before approving.",
+    "showFull": "Show full arguments",
+    "showShort": "Show shortened",
+    "loadingFull": "Loading the full arguments…",
+    "fullFailed": "Could not load the full arguments",
+    "fullMismatch": "The full arguments differ from this approval; do not approve it, ask again.",
     "noArguments": "no arguments",
     "expiredHelp": "This approval expired and the tools did not run. Ask again to continue.",
     "cancelledHelp": "The conversation moved on; these tool calls did not run.",

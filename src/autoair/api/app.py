@@ -36,7 +36,7 @@ from autoair.iam import model as P
 from autoair.iam.deps import require
 from autoair.iam.login import LoginService
 from autoair.iam.model import Principal
-from autoair.iam.proposals import ProposalStore
+from autoair.iam.proposals import ProposalStore, VersionAuthors
 from autoair.icons import IconStore
 from autoair.marketplace import Marketplace
 from autoair.persistence import document_store
@@ -52,6 +52,7 @@ from autoair.storage.config import (
     UnavailableTarget,
     build_target,
     build_target_or_unavailable,
+    object_locks,
 )
 from autoair.storage.render import TargetRepository
 from autoair.templates import TemplateStore
@@ -101,6 +102,8 @@ class Services:
     login: LoginService | None = None
     # Deploy proposals + review index (iam.require_approval), see autoair.iam.proposals.
     proposals: ProposalRepository | None = None
+    # Who saved each stored spec version (four-eyes: nobody approves their own version).
+    version_authors: VersionAuthors | None = None
     # SQL database of AutoAir's state (database.backend sqlite/postgresql), else None.
     database: Database | None = None
     started_at: str = field(
@@ -113,7 +116,11 @@ class Services:
 
     def apply_storage(self, storage: StorageSettings, *, source: str) -> None:
         """Switch the default deploy target at runtime (no restart)."""
-        target = build_target(storage, default_local_path=self.settings.output_dir)
+        target = build_target(
+            storage,
+            default_local_path=self.settings.output_dir,
+            locks=object_locks(self.settings, storage),
+        )
         self.settings = self.settings.model_copy(update={"storage": storage})
         self.target = target
         self.repository = TargetRepository(target)
@@ -132,7 +139,11 @@ class Services:
             if self.target is not target:  # another request rebuilt it
                 return self.target
             try:
-                built = build_target(target.settings, default_local_path=self.settings.output_dir)
+                built = build_target(
+                    target.settings,
+                    default_local_path=self.settings.output_dir,
+                    locks=object_locks(self.settings, target.settings),
+                )
             except Exception as exc:
                 target.failed(exc)
                 log.info("deploy target still unavailable: %s", exc)
@@ -151,6 +162,7 @@ class Services:
                 self.team_targets[team] = build_target_or_unavailable(
                     self.settings.team_storage[team],
                     default_local_path=self.settings.output_dir / team,
+                    locks=object_locks(self.settings, self.settings.team_storage[team]),
                 )
             return self.team_targets[team]
         return self.ensure_target(force=True)
@@ -319,6 +331,7 @@ def build_services(settings: Settings, auth: AuthBackend) -> Services:
         size=settings.dagbag_pool_size,
         max_tasks=settings.dagbag_pool_max_tasks,
         start_timeout=settings.dagbag_pool_start_timeout,
+        read_only=(str(settings.dags_folder),),
     )
     configured_storage = settings.storage  # AUTOAIR_STORAGE__* / CLI, before any UI choice
     state = settings.state_dir
@@ -343,7 +356,11 @@ def build_services(settings: Settings, auth: AuthBackend) -> Services:
             source = "ui"
     # Never fails startup: an unbuildable target (e.g. its Airflow connection does not exist
     # yet) starts degraded, is reported by /api/ready and rebuilt on the next deploy.
-    target = build_target_or_unavailable(settings.storage, default_local_path=settings.output_dir)
+    target = build_target_or_unavailable(
+        settings.storage,
+        default_local_path=settings.output_dir,
+        locks=object_locks(settings, settings.storage),
+    )
     templates_url = settings.templates_url or str(state / "templates")
     templates = TemplateStore(
         documents=document_store(settings, "templates", file_url=templates_url),
@@ -395,6 +412,14 @@ def build_services(settings: Settings, auth: AuthBackend) -> Services:
         templates=templates,
         audit=audit,
         proposals=proposals,
+        version_authors=VersionAuthors(
+            document_store(
+                settings,
+                "spec_version_authors",
+                file_url=f"{(settings.iam.proposals_url or str(state / 'proposals')).rstrip('/')}"
+                "-authors",
+            )
+        ),
         icons=icons,
         database=database,
         deploy_target_version=deploy_store.version() if database is not None else None,
@@ -551,8 +576,12 @@ def create_api(services: Services) -> FastAPI:
     protected.include_router(
         vcs.write_router, dependencies=[*auth.write_dag, require(P.PROMOTE), feature("deploy")]
     )
-    # The task runner executes DAG code on the server.
-    protected.include_router(runs.router, dependencies=[require(P.RUN_TEST), feature("test_runs")])
+    # The task runner executes DAG code (Python task bodies, raw code DAGs) on the server:
+    # like every other code-running route it needs code:execute too.
+    protected.include_router(
+        runs.router,
+        dependencies=[require(P.RUN_TEST, P.CODE_EXECUTE), feature("test_runs")],
+    )
     protected.include_router(
         collab.router, dependencies=[*auth.write_dag, require(P.SPEC_WRITE), feature("collab")]
     )
@@ -628,7 +657,11 @@ def create_app(services: Services) -> FastAPI:
                     services.collab_secret,
                     max_rooms=services.settings.collab_max_rooms,
                     # Rooms shared between replicas (collab.sync); None keeps them in memory.
-                    sync=build_sync(services.settings, services.database),
+                    sync=build_sync(
+                        services.settings, services.database, secret=services.collab_secret
+                    ),
+                    tickets=collab.ticket_ledger(services.settings, services.database),
+                    session_seconds=services.settings.collab.session_seconds,
                 ),
                 services,
                 "collab",

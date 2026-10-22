@@ -12,10 +12,12 @@ Procedure: skill `docs-page`; larger pages: subagent `docs-writer`.
 
 - Two places, one job each. `docs/*.md` is the in-repo reference read on GitHub: the generated
   configuration reference, configuration mechanics, architecture (`docs/architecture/`), the
-  IAM/SSO security model, policy rules, MCP and AI internals, live test suites.
+  IAM/SSO security model, MCP and AI internals, live test suites.
   `website/docs/<section>/` is the Docusaurus 3.10 user site (Mermaid, local search):
-  installation, user guide, administration how-to, AI, extending, roadmap. A topic is written
-  in one place; the other links to it instead of repeating it.
+  installation, user guide, administration how-to (including the policy reference: switches,
+  secret detection, `policy.rules`, OPA in `website/docs/admin/policy.md`), AI, extending,
+  roadmap. A topic is written in one place; the other links to it instead of repeating it
+  (`docs/policy.md` is only a pointer to the policy page).
 - Cross-links: a `docs/` page opens with one line naming its website guide, as an absolute
   URL (`https://ctolon.github.io/autoair/docs/<section>/<page>`; origin and base path from
   `website/site.config.ts`). Website pages link to repository files with GitHub URLs

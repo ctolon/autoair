@@ -56,7 +56,7 @@ export default defineConfig({
       // Run from the state folder: no .env / config file of the checkout is picked up.
       command:
         `rm -rf ${sh(STATE)} && mkdir -p ${sh(STATE)}/dags && cd ${sh(STATE)} && ` +
-        `AUTOAIR_AIRFLOW_URL=http://127.0.0.1:9 AUTOAIR_FEATURES__AI=false AUTOAIR_FEATURES__COLLAB=false ` +
+        `AUTOAIR_AIRFLOW_URL=http://127.0.0.1:9 AUTOAIR_IAM__ANONYMOUS_ROLES='["Admin"]' AUTOAIR_FEATURES__AI=false AUTOAIR_FEATURES__COLLAB=false ` +
         `AUTOAIR_FEATURES__MARKETPLACE=false AUTOAIR_FEATURES__IDE_LANGUAGE_SERVER=false AUTOAIR_DAGBAG_POOL=false AUTOAIR_DISCOVER_AIRFLOW_FOLDERS=false ` +
         `AUTOAIR_POLICY__RULES='[{"id":"owner-required","severity":"warning","check":"require_owner"}]' ` +
         `uv run --project ${sh(REPO)} autoair serve --no-auth --host 127.0.0.1 --port ${API_PORT} ` +

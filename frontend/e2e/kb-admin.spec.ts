@@ -12,7 +12,7 @@ import { type Page, expect, test } from "@playwright/test";
  *     AUTOAIR_AI__API_KEY=fake AUTOAIR_AI__MODEL=fake-gpt \
  *     AUTOAIR_KB__SOURCES='[{"id":"local-docs","kind":"path","url":"<folder>","layout":"files",
  *       "component":"core","public_base_url":"https://airflow.apache.org/docs/apache-airflow/stable/"}]'
- *   autoair kb refresh && autoair serve --no-auth --port 8962 …
+ *   autoair kb refresh && AUTOAIR_IAM__ANONYMOUS_ROLES='["Admin"]' autoair serve --no-auth --port 8962 …
  *   AUTOAIR_API_PORT=8962 vite preview --port 8963
  *
  *   AUTOAIR_KB_UI      the UI (default http://127.0.0.1:8963)

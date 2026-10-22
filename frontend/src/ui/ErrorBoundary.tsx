@@ -3,7 +3,8 @@ import { Component, type ErrorInfo, type ReactNode } from "react";
 
 import { i18n } from "../i18n";
 
-type ErrorArea = "builder" | "toolbar" | "palette" | "canvas" | "codeMode" | "bottomPanel" | "inspector" | "dialog";
+type ErrorArea =
+  "app" | "builder" | "toolbar" | "palette" | "canvas" | "codeMode" | "bottomPanel" | "inspector" | "dialog";
 type Props = {
   area: ErrorArea;
   children: ReactNode;
@@ -12,6 +13,8 @@ type Props = {
   resetKey?: unknown;
   /** Offers "Undo last change": the usual way out when an edit produced a state that cannot render. */
   onUndo?: () => void;
+  /** Offers reloading the page (the root boundary: nothing else is left to retry with). */
+  reload?: boolean;
 };
 type State = { error: Error | null };
 
@@ -45,8 +48,10 @@ export class ErrorBoundary extends Component<Props, State> {
     return (
       <Box p={3} role="alert" data-testid="error-boundary">
         <Stack gap={2}>
-          <Text fontWeight="semibold" color="red.500" fontSize="sm">
-            {i18n.t("errorBoundary.title", { area: i18n.t(`errorBoundary.areas.${this.props.area}`) })}
+          <Text fontWeight="semibold" color="fg.error" fontSize="sm">
+            {this.props.area === "app"
+              ? i18n.t("errorBoundary.appTitle")
+              : i18n.t("errorBoundary.title", { area: i18n.t(`errorBoundary.areas.${this.props.area}`) })}
           </Text>
           <Code fontSize="xs" whiteSpace="pre-wrap">
             {error.message}
@@ -67,9 +72,29 @@ export class ErrorBoundary extends Component<Props, State> {
             <Button size="xs" variant="outline" onClick={this.reset}>
               {i18n.t("errorBoundary.retry")}
             </Button>
+            {this.props.reload ? (
+              <Button size="xs" variant="ghost" onClick={() => window.location.reload()}>
+                {i18n.t("errorBoundary.reload")}
+              </Button>
+            ) : null}
           </Stack>
         </Stack>
       </Box>
     );
   }
+}
+
+/**
+ * Last line of defence at the app roots (plugin and standalone): an error outside every
+ * area boundary (providers, login gate, start-up) shows a recoverable message instead of an
+ * empty page.
+ */
+export function RootErrorBoundary({ children }: { children: ReactNode }) {
+  return (
+    <Box h="100%" w="100%" bg="bg" color="fg">
+      <ErrorBoundary area="app" reload>
+        {children}
+      </ErrorBoundary>
+    </Box>
+  );
 }

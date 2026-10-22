@@ -69,7 +69,9 @@ The AI role comes from IAM: `admin` with `ai:admin`, `editor` with `code:execute
 }
 ```
 
-So viewers cannot run tools that execute DAG code (deploy dry run, Python import). A role missing from
+So viewers cannot run tools that execute DAG code (deploy dry run, Python import). Those tools
+(class `execute`) are also withheld from every caller without `code:execute`, even when the
+allow-list names them, and their calls wait for [approval](/docs/ai/tool-approval). A role missing from
 the map falls back to the `viewer` patterns. The developer assistant is additionally limited by
 `ai.assistants.developer.tools`; see [Chat assistants](/docs/ai/assistants).
 

@@ -3,7 +3,10 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { LuCheck, LuShieldQuestion, LuX } from "react-icons/lu";
 
+import { getToolCallArguments } from "../api/gen/sdk.gen";
 import type { PendingToolCall, ToolApprovalView, ToolDecision } from "../api/gen/types.gen";
+
+const KIND_PALETTE: Record<string, string> = { write: "orange", execute: "red" };
 
 const STATUS_PALETTE: Record<string, string> = {
   pending: "orange",
@@ -14,20 +17,20 @@ const STATUS_PALETTE: Record<string, string> = {
   failed: "red",
 };
 
-/** Characters of the arguments shown before the block scrolls (the server already cut them). */
+/** Characters of the card's (server-cut) arguments shown; the full view shows everything. */
 const MAX_SHOWN_CHARS = 20_000;
 
 /** Tool arguments as display text: any JSON value (or anything else) renders, never throws. */
-export function formatArguments(value: unknown): string {
+export function formatArguments(value: unknown, limit: number = MAX_SHOWN_CHARS): string {
   if (value === undefined || value === null) return "";
-  if (typeof value === "string") return value.slice(0, MAX_SHOWN_CHARS);
+  if (typeof value === "string") return value.slice(0, limit);
   let text: string;
   try {
     text = JSON.stringify(value, null, 2) ?? String(value);
   } catch {
     text = String(value);
   }
-  return text.slice(0, MAX_SHOWN_CHARS);
+  return text.slice(0, limit);
 }
 
 export type Choice = { approved: boolean; reason: string };
@@ -45,7 +48,13 @@ export function decisionsFor(
     const choice = choices[call.id];
     if (!choice) return null;
     const reason = choice.reason.trim().slice(0, maxReason);
-    out.push({ id: call.id, approved: choice.approved, ...(!choice.approved && reason ? { reason } : {}) });
+    out.push({
+      id: call.id,
+      approved: choice.approved,
+      // An approval is bound to the exact arguments shown: the server refuses it otherwise.
+      ...(choice.approved && call.arguments_sha256 ? { arguments_sha256: call.arguments_sha256 } : {}),
+      ...(!choice.approved && reason ? { reason } : {}),
+    });
   }
   return out;
 }
@@ -76,7 +85,10 @@ function relativeTime(iso: string | undefined, locale: string): string {
   }
 }
 
+type FullArguments = { state: "loading" } | { state: "error" } | { state: "done"; text: string; matches: boolean };
+
 function CallView({
+  approvalId,
   call,
   decision,
   choice,
@@ -84,6 +96,7 @@ function CallView({
   busy,
   onChoice,
 }: {
+  approvalId: string;
   call: PendingToolCall;
   decision: ToolDecision | undefined;
   choice: Choice | undefined;
@@ -92,8 +105,26 @@ function CallView({
   onChoice: (c: Choice) => void;
 }) {
   const { t } = useTranslation("ai");
-  const args = formatArguments(call.arguments);
+  const [full, setFull] = useState<FullArguments | null>(null);
+  const args = full?.state === "done" ? full.text : formatArguments(call.arguments);
   const kind = call.kind ?? "write";
+  const omitted = typeof call.omitted_chars === "number" && call.omitted_chars > 0 ? call.omitted_chars : 0;
+  const loadFull = async () => {
+    setFull({ state: "loading" });
+    try {
+      const { data } = await getToolCallArguments({
+        path: { approval_id: approvalId, call_id: call.id },
+        throwOnError: true,
+      });
+      setFull({
+        state: "done",
+        text: formatArguments(data.arguments, Number.MAX_SAFE_INTEGER),
+        matches: !call.arguments_sha256 || data.arguments_sha256 === call.arguments_sha256,
+      });
+    } catch {
+      setFull({ state: "error" });
+    }
+  };
   return (
     <Box borderWidth="1px" rounded="md" p={2} bg="bg" data-testid="tool-approval-call">
       <HStack gap={2} wrap="wrap" justify="space-between">
@@ -101,7 +132,7 @@ function CallView({
           <Text fontFamily="mono" fontSize="xs" fontWeight="semibold" wordBreak="break-all">
             {String(call.tool ?? "")}
           </Text>
-          <Badge size="xs" variant="subtle" colorPalette={kind === "write" ? "orange" : "gray"}>
+          <Badge size="xs" variant="subtle" colorPalette={KIND_PALETTE[String(kind)] ?? "gray"}>
             {t(`approval.kind.${kind}`, { defaultValue: String(kind) })}
           </Badge>
         </HStack>
@@ -130,7 +161,7 @@ function CallView({
         rounded="sm"
         fontSize="2xs"
         fontFamily="mono"
-        maxH="40"
+        maxH={full?.state === "done" ? "80" : "40"}
         overflow="auto"
         whiteSpace="pre-wrap"
         wordBreak="break-all"
@@ -139,9 +170,43 @@ function CallView({
         {args || t("approval.noArguments")}
       </Box>
       {call.truncated ? (
-        <Text fontSize="2xs" color="fg.subtle" mt={0.5}>
-          {t("approval.truncated")}
-        </Text>
+        <Stack gap={0.5} mt={0.5} data-testid="tool-approval-truncated">
+          <Text fontSize="2xs" color={full?.state === "done" ? "fg.subtle" : "fg.warning"}>
+            {full?.state === "done"
+              ? t("approval.truncated")
+              : omitted
+                ? t("approval.truncatedMore", { count: omitted })
+                : t("approval.truncated")}
+          </Text>
+          <HStack gap={1}>
+            {full?.state === "done" ? (
+              <Button size="2xs" variant="ghost" onClick={() => setFull(null)} data-testid="tool-approval-show-short">
+                {t("approval.showShort")}
+              </Button>
+            ) : (
+              <Button
+                size="2xs"
+                variant="outline"
+                loading={full?.state === "loading"}
+                loadingText={t("approval.loadingFull")}
+                onClick={() => void loadFull()}
+                data-testid="tool-approval-show-full"
+              >
+                {t("approval.showFull")}
+              </Button>
+            )}
+          </HStack>
+          {full?.state === "error" ? (
+            <Text fontSize="2xs" color="fg.error" role="alert">
+              {t("approval.fullFailed")}
+            </Text>
+          ) : null}
+          {full?.state === "done" && !full.matches ? (
+            <Text fontSize="2xs" color="fg.error" role="alert" data-testid="tool-approval-mismatch">
+              {t("approval.fullMismatch")}
+            </Text>
+          ) : null}
+        </Stack>
       ) : null}
       {decision && !decision.approved && decision.reason ? (
         <Text fontSize="2xs" color="fg.muted" mt={1}>
@@ -263,6 +328,7 @@ export function ToolApprovalCard({
         {calls.map((call) => (
           <CallView
             key={call.id}
+            approvalId={approval.id}
             call={call}
             decision={decisions.get(call.id)}
             choice={choices[call.id]}

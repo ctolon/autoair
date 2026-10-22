@@ -30,17 +30,19 @@ def _kept(c: TestClient) -> dict[str, Any]:
 
 
 def test_deployer_cannot_deploy_an_imported_python_dag(tmp_path: Path) -> None:
-    """Documented: preserving needs code:execute (round trip) and, for the imported file
-    itself, code:raw -- neither is in the Deployer role."""
+    """Documented: storing the imported file (source.code) needs code:raw, which the
+    Deployer role lacks; the save is refused (403) before anything is planned or written."""
     c = client(tmp_path)
     spec = imported(c)
-    res = deploy(c, spec, "Deployer").json()
-    assert res["status"] == "source_refused"
-    assert "code:execute" in res["message"]
-    assert "CodeDeployer" in res["message"]  # the role that can
+    res = deploy(c, spec, "Deployer")
+    assert res.status_code == 403, res.text
+    assert "code:raw" in res.text  # the missing permission
+    assert "CodeDeployer" in res.text  # the role that can
     assert (tmp_path / "dags" / "hand_load.py").exists() is False
     generated = copy.deepcopy(spec)
-    generated["source"]["policy"] = "generate"  # the other documented way out
+    # the other documented way out: the generated file, without the hand-written code
+    generated["source"]["policy"] = "generate"
+    generated["source"]["code"] = None
     assert deploy(c, generated, "Deployer").json()["deployed"]
 
 
@@ -67,7 +69,9 @@ def test_kept_hand_written_file_needs_the_permission_to_regenerate_or_delete(
     denied = deploy(c, spec, "Writer", base_etag=stored["etag"], source_resolution="overwrite")
     assert "deploy:overwrite_ejected" in denied.json()["message"]
     assert path.read_text() == HAND
-    gone = c.delete("/api/specs/hand_load", headers=as_role("Writer"))
+    gone = c.delete(
+        "/api/specs/hand_load", headers={**as_role("Writer"), "If-Match": stored["etag"]}
+    )
     assert gone.status_code == 409
     assert "deploy:overwrite_ejected" in gone.text
     assert path.read_text() == HAND
@@ -97,8 +101,10 @@ def test_kept_hand_written_file_is_not_regenerated_without_allow_force_overwrite
 
 def test_admin_can_delete_the_kept_file(tmp_path: Path) -> None:
     c = client(tmp_path)
-    _kept(c)
-    response = c.delete("/api/specs/hand_load", headers=as_role("Admin"))
+    stored = _kept(c)
+    response = c.delete(
+        "/api/specs/hand_load", headers={**as_role("Admin"), "If-Match": stored["etag"]}
+    )
     assert response.status_code == 200
     assert not (tmp_path / "dags" / "hand_load.py").exists()
 
@@ -124,9 +130,11 @@ def test_proposals_check_code_raw(tmp_path: Path) -> None:
     roles = {"Proposer": ["builder:use", "spec:*", "deploy", "code:execute"]}
     c = client(tmp_path, iam={"roles": roles, "require_approval": True})
     spec = imported(c)
-    res = deploy(c, spec, "Proposer")
-    assert res.json()["status"] == "source_refused"
-    assert "code:raw" in res.json()["message"]
+    res = deploy(c, spec, "Proposer")  # refused at save time: no proposal is stored
+    assert res.status_code == 403, res.text
+    assert "code:raw" in res.text
+    assert "CodeDeployer" in res.text
+    assert c.get("/api/specs/hand_load/proposals", headers=as_role("Admin")).json() == []
 
 
 def test_admin_switch_turns_preserve_off_at_runtime(tmp_path: Path) -> None:

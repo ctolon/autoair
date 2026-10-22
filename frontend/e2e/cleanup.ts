@@ -25,9 +25,12 @@ export class DeployedDags {
     const left: string[] = [];
     for (const [key, { api, dagId, headers }] of this.items) {
       try {
-        const res = await request.delete(`${api}/specs/${encodeURIComponent(dagId)}`, {
-          headers: headers ?? (auth ? await auth() : {}),
-        });
+        const url = `${api}/specs/${encodeURIComponent(dagId)}`;
+        const sent = headers ?? (auth ? await auth() : {});
+        let res = await request.delete(url, { headers: sent });
+        // 428: deleting needs the stored version's etag (If-Match); the answer names it.
+        const etag = res.status() === 428 ? res.headers()["etag"] : undefined;
+        if (etag) res = await request.delete(url, { headers: { ...sent, "If-Match": etag } });
         // 404: never stored (a refused deploy) or already removed by the test itself.
         if (res.ok() || res.status() === 404) this.items.delete(key);
         else left.push(`${dagId} (${api}): HTTP ${res.status()} ${(await res.text()).slice(0, 200)}`);

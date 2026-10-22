@@ -36,6 +36,8 @@ def _reset_sections():
 
 
 def client(tmp_path: Path, **settings: object) -> TestClient:
+    # Unauthenticated callers are Viewers by default; these tests sync and deploy code.
+    settings.setdefault("iam", {"anonymous_roles": ["Admin"]})
     s = Settings(dags_folder=tmp_path, subfolder="", **settings)  # type: ignore[arg-type]
     return TestClient(create_app(build_services(s, AuthBackend())))
 

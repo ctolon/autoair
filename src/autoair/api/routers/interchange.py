@@ -12,10 +12,11 @@ from pydantic import BaseModel, Field, ValidationError, model_validator
 from autoair.api.app import Services
 from autoair.api.deps import GatewayDep, ServicesDep, http_error
 from autoair.api.features import requires_feature
+from autoair.api.source_plans import source_code_of
 from autoair.codegen.yaml_dag import YamlExport, YamlIssue, export_yaml_dag, import_yaml_dag
 from autoair.gateway import AirflowError
 from autoair.iam.deps import require, require_permission
-from autoair.iam.model import AIRFLOW_READ, CODE_EXECUTE, SPEC_WRITE
+from autoair.iam.model import AIRFLOW_READ, CODE_EXECUTE, CODE_RAW, SPEC_WRITE
 from autoair.importer.bulk import (
     BulkDag,
     BulkImportError,
@@ -158,6 +159,10 @@ async def sync_python_code(
     in an isolated subprocess). Problems come back located when possible; nothing is saved."""
     await require_permission(request, SPEC_WRITE, action="editing the DAG code")
     await require_permission(request, CODE_EXECUTE, action="applying DAG code")
+    if body.source != source_code_of(body.current):
+        # The applied file becomes the spec's source.code (hand-written Python a deploy may
+        # write as the DAG file): the same 'code:raw' a save of that spec needs.
+        await require_permission(request, CODE_RAW, action="applying DAG code")
     _check_size(body.source, services)
     if not _python_allowed(services):
         raise HTTPException(

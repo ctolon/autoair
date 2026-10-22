@@ -15,7 +15,7 @@ Use them when AutoAir runs next to Airflow as its own service on its own host na
 | `base/` | `autoair serve`: Deployment, Service, ServiceAccount, PodDisruptionBudget, ConfigMap `autoair-config` from `settings.env`. One replica, file state, local deploy target on an `emptyDir` |
 | `components/postgresql` | AutoAir state in PostgreSQL, `autoair db upgrade` as an init container, `migrate_on_start=false` |
 | `components/git-target` | Deploy target git: specs and generated DAGs go to a repository by pull request |
-| `components/validator` | `autoair validator-serve` with a NetworkPolicy that allows no egress; the server's import checks go to it with `fail_mode=open` (the default; set `closed` in `client.env` to block deploys while it is down) |
+| `components/validator` | `autoair validator-serve` with a NetworkPolicy that allows no egress; the server's import checks go to it with `fail_mode=open` (the application default; `overlays/production` sets `closed`, which blocks deploys while the validator is down) |
 | `components/ai-service` | `autoair ai-serve`; the server proxies `/api/ai/*` and `/mcp` to it |
 | `components/mcp-http` | `autoair mcp-serve --http` on port 8766 (optional: the server and the AI service already serve `/mcp`) |
 | `components/ingress` | Ingress with timeouts and unbuffered responses for AI streams, plus the public URL settings; use it instead of `gateway-api` with an Ingress controller |
@@ -25,7 +25,7 @@ Use them when AutoAir runs next to Airflow as its own service on its own host na
 | `components/service-monitor` | Prometheus Operator `ServiceMonitor`s for `/api/metrics` and the validator's `/metrics` |
 | `components/airflow-plugin` | Plugin mode for an Airflow deployed from plain manifests (see [below](#plugin-mode-with-kustomize)) |
 | `overlays/dev` | One replica, file state and DAGs on a 1 GiB PersistentVolumeClaim, no Secrets |
-| `overlays/production` | PostgreSQL, git, validator, Gateway API `HTTPRoute`, HPA, PDB with `minAvailable: 1`, NetworkPolicies |
+| `overlays/production` | PostgreSQL, git, validator (`fail_mode=closed`), Gateway API `HTTPRoute`, HPA, PDB with `minAvailable: 1`, NetworkPolicies |
 | `overlays/airflow-plugin` | The `airflow-plugin` component applied to a stand-in api-server Deployment |
 
 ## Development overlay

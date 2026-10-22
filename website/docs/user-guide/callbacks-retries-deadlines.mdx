@@ -23,6 +23,8 @@ Retry settings are in the task's **Execution** tab under **Retries**:
 
 Empty fields inherit the DAG default, shown as **DAG default: …**.
 
+The backoff multiplier needs Airflow 3.2 or later. On a target Airflow before 3.2, `retry_exponential_backoff` is an on/off switch whose backoff doubles the delay, so the generated code writes `True` for any value above `0`. A value other than `0` or `2` there is reported as an `airflow_version` warning on the field, because the DAG would retry with base 2 instead of the multiplier you set; set it to `2` or target Airflow 3.2+.
+
 `max_retry_delay` (the cap on the delay when exponential backoff is on) has no field in the builder, and it is not part of DAG defaults:
 
 - **Operator tasks**: it is a `BaseOperator` argument, so it is not in the operator's parameter list. Adding it to an operator's parameters (for example in code mode or the spec JSON) is reported as the error `unknown parameter 'max_retry_delay' for <Operator>`.

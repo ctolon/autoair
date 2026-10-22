@@ -234,12 +234,23 @@ def test_explicit_timedelta_response_timeout_is_unchanged():
     assert "response_timeout=datetime.timedelta(seconds=60)" in generate_source(spec)
 
 
-def test_yaml_dag_reports_numeric_hitl_timeout_instead_of_emitting_it():
+def test_yaml_dag_writes_a_timedelta_argument_as_a_duration_string():
+    import yaml
+
     from autoair.codegen.yaml_dag import export_yaml_dag
 
+    # Airflow's YAML importer parses duration strings for arguments typed timedelta.
     spec = _single_operator(
         "airflow.providers.standard.operators.hitl.HITLOperator",
         {"subject": "s", "options": ["ok"], "response_timeout": 3600},
+    )
+    result = export_yaml_dag(spec)
+    assert result.lossless, result.issues
+    assert yaml.safe_load(result.yaml)["tasks"][0]["with"]["response_timeout"] == "1h"
+    # a fraction of a second has no duration string
+    spec = _single_operator(
+        "airflow.providers.standard.operators.hitl.HITLOperator",
+        {"subject": "s", "options": ["ok"], "response_timeout": 0.5},
     )
     result = export_yaml_dag(spec)
     assert any("timedelta" in i.message and i.severity == "error" for i in result.issues)

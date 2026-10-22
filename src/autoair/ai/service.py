@@ -166,7 +166,13 @@ def build_ai_service(*, no_auth: bool = False) -> FastAPI:
         settings.airflow_url, ttl=settings.auth_cache_ttl, timeout=settings.auth_timeout
     )
     auth = bearer_passthrough(verifier, required=not no_auth)
-    return create_ai_service(build_services(settings, auth))
+    app = create_ai_service(build_services(settings, auth))
+    if no_auth:
+        from autoair.net.loopback import LoopbackGuard, public_hosts
+
+        # Unauthenticated: only loopback Host/Origin (DNS rebinding, cross-site pages).
+        app.add_middleware(LoopbackGuard, extra_hosts=public_hosts(settings.server.public_url))
+    return app
 
 
 def main() -> None:  # pragma: no cover - CLI entry

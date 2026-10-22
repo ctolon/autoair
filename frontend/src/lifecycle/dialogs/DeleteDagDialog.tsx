@@ -13,6 +13,7 @@ import { gitTokenToast } from "../actions";
 import { DialogShell } from "../components/DialogShell";
 import { GitTokenField } from "../components/GitTokenField";
 import { syncDeepLink } from "../lib/deepLink";
+import { deleteToast, deleteWentLive, ifMatch } from "../lib/deleteOutcome";
 import { gitTokenHeaders, tokenMissing, useGitTokenInfo } from "../lib/gitToken";
 import { useLifecycle } from "../store";
 
@@ -38,12 +39,19 @@ export default function DeleteDagDialog({ dagId }: { dagId: string }) {
     setBusy(true);
     try {
       // The token goes in this request's header only (no mutation variables, no query key).
-      await deleteSpec({ path: { dag_id: dagId }, headers: gitTokenHeaders(token), throwOnError: true });
+      const { data } = await deleteSpec({
+        path: { dag_id: dagId },
+        headers: { ...gitTokenHeaders(token), ...ifMatch(useBuilder.getState().baseEtag) },
+        throwOnError: true,
+      });
       await qc.invalidateQueries({ queryKey: listSpecsQueryKey() });
-      useBuilder.getState().reset();
-      useLifecycle.getState().setSelectedRunId(null);
-      syncDeepLink(null);
-      toaster.create({ type: "info", title: t("toolbar.deleted", { dagId }) });
+      // A delete proposal (four-eyes) or a pull request leaves the DAG live: keep it open.
+      if (deleteWentLive(data)) {
+        useBuilder.getState().reset();
+        useLifecycle.getState().setSelectedRunId(null);
+        syncDeepLink(null);
+      }
+      toaster.create(deleteToast(data, dagId, t));
       close();
     } catch (e) {
       toaster.create(

@@ -25,6 +25,7 @@ import type { BuilderNode } from "../lib/types";
 import { type BuilderState, absolutePosition, useBuilder, clearHistory } from "../store/builder";
 import { toaster } from "../ui/toaster";
 import { syncDeepLink } from "./lib/deepLink";
+import { deleteToast, deleteWentLive, ifMatch } from "./lib/deleteOutcome";
 import { gitTokenErrorCode, gitTokenHeaders } from "./lib/gitToken";
 import { downloadText } from "./lib/download";
 import { fitViewSoon, runtime } from "./runtime";
@@ -150,7 +151,7 @@ export async function deploy(opts: DeployOptions = {}, secret: { gitToken?: stri
   deploying = true;
   const pending = toaster.create({ type: "loading", title: t("deploy.running", { dagId: spec.dag_id }) });
   try {
-    const { data: res } = await deploySpec({
+    const sent = await deploySpec({
       path: { dag_id: spec.dag_id },
       body: {
         spec,
@@ -165,8 +166,25 @@ export async function deploy(opts: DeployOptions = {}, secret: { gitToken?: stri
         ...(opts.sourceTargetSha != null ? { source_target_sha: opts.sourceTargetSha } : {}),
       },
       headers,
-      throwOnError: true,
+      throwOnError: false,
     });
+    if (sent.response?.status === 428) {
+      // The DAG exists but this document never loaded it (a new document with a taken
+      // dag_id, a rename onto one): the server wants the etag. Show what is stored and let
+      // the user merge or overwrite through the conflict dialog.
+      const stored = await getSpec({ path: { dag_id: spec.dag_id }, throwOnError: false });
+      if (stored.data) {
+        useLifecycle.getState().openDialog({
+          kind: "conflict",
+          conflict: { current_etag: stored.data.etag, current_spec: stored.data.spec },
+          request: { ...opts, environment },
+          spec,
+        });
+        return false;
+      }
+    }
+    if (!sent.data) throw sent.error;
+    const res = sent.data;
     useBuilder.getState().setProblems(res.report.problems);
     if (!res.deployed) {
       // The source policy stopped it: a DAG file changed outside AutoAir, or a change the
@@ -202,12 +220,22 @@ export async function deploy(opts: DeployOptions = {}, secret: { gitToken?: stri
     const prev = useBuilder.getState().savedDagId;
     if (prev && prev !== spec.dag_id) {
       // Renamed DAG: remove the old files so Airflow does not keep both.
-      await deleteSpec({ path: { dag_id: prev }, headers, throwOnError: true }).catch((e: unknown) =>
-        toaster.create({
-          type: "warning",
-          title: t("deploy.oldNotRemoved", { dagId: prev }),
-          description: errorMessage(e),
-        }),
+      // If-Match: the version this document loaded; a changed old DAG is kept (409).
+      await deleteSpec({
+        path: { dag_id: prev },
+        headers: { ...headers, ...ifMatch(st.baseEtag) },
+        throwOnError: true,
+      }).then(
+        // A delete proposal (four-eyes) or a pull request: the old DAG stays live for now.
+        ({ data }) => {
+          if (!deleteWentLive(data)) toaster.create(deleteToast(data, prev, t));
+        },
+        (e: unknown) =>
+          toaster.create({
+            type: "warning",
+            title: t("deploy.oldNotRemoved", { dagId: prev }),
+            description: errorMessage(e),
+          }),
       );
     }
     // A preserve deploy merged changes made to the file outside AutoAir: the stored spec

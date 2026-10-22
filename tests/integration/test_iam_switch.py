@@ -38,14 +38,22 @@ STRICT_IAM: dict[str, Any] = {
 }
 
 
-def services(tmp_path: Path, *, iam_on: bool, **settings: Any) -> Any:
+# Standalone cannot check Airflow's permissions; these tests let such users write (as the
+# features.iam=off rights of 0.2.2) through airflow_permission_roles.unverified.
+WRITERS = {"unverified": ["Admin"]}
+
+
+def services(
+    tmp_path: Path, *, iam_on: bool, unverified: dict[str, Any] | None = WRITERS, **settings: Any
+) -> Any:
+    iam = {**STRICT_IAM, "airflow_permission_roles": unverified or {}}
     s = Settings(  # type: ignore[call-arg]
         dags_folder=tmp_path / "dags",
         subfolder="",
         ai={"enabled": False},
         airflow_url=AIRFLOW,
         import_check_on_deploy=False,
-        iam=IamSettings(**STRICT_IAM),
+        iam=IamSettings(**iam),
         features={"iam": iam_on},
         **settings,
     )
@@ -81,10 +89,20 @@ def test_flag_is_on_by_default(tmp_path: Path) -> None:
     assert me["strategies"] == ["role_mapping"]
 
 
-def test_iam_off_standalone_keeps_pre_iam_rights(tmp_path: Path) -> None:
-    """Standalone cannot check Airflow's DAG permissions: as before IAM, every signed-in
-    user may use everything (Airflow enforces its RBAC on proxied calls); the token's role
-    claim, custom roles and approvals are ignored."""
+def test_iam_off_standalone_is_read_only_by_default(tmp_path: Path) -> None:
+    """Standalone cannot check Airflow's DAG permissions: with features.iam off (no role
+    mapping) users get Authenticated + airflow_permission_roles.unverified (Viewer)."""
+    off = client(services(tmp_path, iam_on=False, unverified=None))
+    me = off.get("/api/me", headers=as_role("Admin")).json()
+    assert me["iam_enabled"] is False
+    assert set(me["roles"]) == {"Authenticated", "Viewer"}
+    denied = off.put("/api/specs/simple", json={"spec": SIMPLE}, headers=as_role("Admin"))
+    assert denied.status_code == 403
+
+
+def test_iam_off_standalone_keeps_configured_unverified_roles(tmp_path: Path) -> None:
+    """airflow_permission_roles.unverified keeps its configured value with IAM off; the
+    token's role claim, custom roles and approvals are ignored."""
     on = client(services(tmp_path / "on", iam_on=True))
     assert (
         on.put("/api/specs/simple", json={"spec": SIMPLE}, headers=as_role("Viewer")).status_code
@@ -211,9 +229,10 @@ def test_mcp_follows_the_iam_switch(tmp_path: Path) -> None:
     viewer = _mcp_save(on, "Viewer")
     assert viewer["isError"]
     assert "spec:write" in viewer["content"][0]["text"]
-    admin = _mcp_save(on, "Admin")  # four-eyes rule: agents cannot deploy live
-    assert admin["isError"]
-    assert "approved" in admin["content"][0]["text"]
+    admin = _mcp_save(on, "Admin")  # four-eyes rule: stored as a proposal, not live
+    assert not admin["isError"], admin
+    assert admin["structuredContent"]["status"] == "pending_approval"
+    assert not list((tmp_path / "on").rglob("simple.py"))
 
     off = client(services(tmp_path / "off", iam_on=False))
     saved = _mcp_save(off, "Viewer")  # features.iam off: every signed-in user, no approvals

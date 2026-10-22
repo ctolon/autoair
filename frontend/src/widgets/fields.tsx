@@ -316,6 +316,7 @@ export function JsonField({
   required,
   dtype,
   acceptsText,
+  onValidityChange,
 }: Base & {
   value: unknown;
   onChange: (v: unknown) => void;
@@ -323,6 +324,9 @@ export function JsonField({
   validate?: (v: unknown) => string | undefined;
   /** The value may be a plain string: text is kept as-is unless it looks like JSON. */
   acceptsText?: boolean;
+  /** Told whether the text being edited is valid: invalid text is never committed, so a form
+   * submitting `value` would otherwise send the last valid value instead. */
+  onValidityChange?: (valid: boolean) => void;
 }) {
   const { t: tr } = useTranslation("inspector");
   const serialize = (v: unknown) =>
@@ -365,11 +369,13 @@ export function JsonField({
         setText(t);
         if (t.trim() === "") {
           setError(undefined);
+          onValidityChange?.(true);
           commit(undefined);
           return;
         }
         if (acceptsText && !/^\s*[[{"]/.test(t)) {
           setError(undefined);
+          onValidityChange?.(true);
           commit(t);
           return;
         }
@@ -377,10 +383,12 @@ export function JsonField({
           const parsed: unknown = JSON.parse(t);
           const problem = validate?.(parsed);
           setError(problem);
+          onValidityChange?.(!problem);
           if (!problem) commit(parsed);
         } catch {
           // Never show the parser's own wording ("Unexpected token…") to users.
           setError(tr("params.invalidJson"));
+          onValidityChange?.(false);
         }
       }}
     />

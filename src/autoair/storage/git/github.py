@@ -292,8 +292,11 @@ class GitHubProvider:
             error = AuthError if resp.status_code in (401, 403) else StorageError
             raise error(f"GitHub API error {resp.status_code}: {_message(resp)}")
 
-    def reset_branch(self, name: str, to_sha: str) -> None:
+    def reset_branch(self, name: str, to_sha: str, *, expect: str | None = None) -> None:
         check_branch(name)
+        if expect is not None and self.head(name) != expect:
+            # The host's API has no compare-and-swap for this: checked just before the move.
+            raise ConflictError(None, f"branch {name!r} moved; reload and retry")
         self._request(
             "PATCH",
             f"{self._repo}/git/refs/heads/{quote(name)}",

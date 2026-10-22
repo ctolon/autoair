@@ -65,6 +65,8 @@ def _template(**over: Any) -> dict[str, Any]:
 
 
 def _services(tmp_path: Path, **settings: Any):
+    # AuthBackend(): anonymous callers, who get iam.anonymous_roles (Viewer by default)
+    settings.setdefault("iam", {"anonymous_roles": ["Admin"]})
     s = Settings(dags_folder=tmp_path, subfolder="", **settings)  # type: ignore[call-arg]
     return build_services(s, AuthBackend())
 

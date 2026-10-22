@@ -41,6 +41,39 @@ def test_secret_assign_regex_still_detects(line):
     assert _SECRET_ASSIGN.search(f"import os\n{line}\n")
 
 
+@pytest.mark.parametrize(
+    "line",
+    [
+        'conn = Connection(conn_id="db", password="hunter2hunter2")',
+        'hook.run(sql, api_key="sk-0123456789")',
+        "x = 1; token = 'abcdef123456'",
+        "cmd = 'mysql --password=\"hunter2hunter2\"'",
+    ],
+)
+def test_secret_assign_regex_detects_inline_assignments(line):
+    assert _SECRET_ASSIGN.search(f"import os\n{line}\n")
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        'conn = BaseHook.get_connection("db"); pw = conn.password',
+        'password = os.environ["DB_PASSWORD"]',
+        'hook = Hook(password=Variable.get("db_password"))',
+        'if token == "abcdef123456":',
+        'if token != "abcdef123456":',
+        'token = f"Bearer {conn.password}"',
+        'run(password="{{ conn.db.password }}")',
+        'call(token="")',
+        "secret_ref = SECRET",
+        'label = "Enter your password here"',
+        'mypasswordless_flag = "yes"',
+    ],
+)
+def test_secret_assign_regex_no_false_positives_on_common_code(line):
+    assert not _SECRET_ASSIGN.search(f"import os\n{line}\n")
+
+
 def test_secret_assign_regex_ignores_templates_and_short_values():
     assert not _SECRET_ASSIGN.search("token = '{{ var.value.t }}'")
     assert not _SECRET_ASSIGN.search("token = 'abc'")

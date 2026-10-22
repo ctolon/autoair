@@ -211,6 +211,17 @@ def blueprint_problems(problems: Iterable[Problem], blueprint: OperatorBlueprint
     ]
 
 
+def carries_raw_code(template: TemplateInput) -> bool:
+    """A DAG template holding hand-written DAG code: a raw code DAG (``spec.raw_code``) or
+    the hand-written file kept with the spec (``spec.source.code``). Both are arbitrary
+    Python written as-is, so saving such a template needs ``code:raw`` like saving the spec.
+    Python task bodies are not raw code: as in specs, ``allow_python_code`` governs them."""
+    spec = template.spec
+    if spec is None:
+        return False
+    return spec.raw_code is not None or (spec.source is not None and spec.source.code is not None)
+
+
 class TemplateError(Exception):
     pass
 

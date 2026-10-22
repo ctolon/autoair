@@ -9,11 +9,16 @@ Four-eyes deploys (``iam.require_approval``): a deploy that would go live withou
 user's approval of that exact version is stored as a *proposal* (HTTP 202) instead; it is
 reviewed (``POST /specs/{dag_id}/reviews`` with the proposal's etag) and then deployed by
 anyone holding ``deploy`` (``POST /specs/{dag_id}/proposals/{etag}/deploy``). Pull requests
-are exempt: on git targets in PR mode the pull request is the proposal.
+are exempt: on git targets in PR mode the pull request is the proposal. Deletes follow the
+same rules: a live delete needs ``deploy`` too, becomes a delete proposal without an
+approval (executed with ``POST /specs/{dag_id}/proposals/{etag}/delete``), and follows the
+target's mode and ``iam.force_pr_without_direct_push``. The rule itself is in
+:mod:`autoair.iam.proposals` (``write_mode``, ``needs_approval``, ``approvers_for``).
 """
 
 from __future__ import annotations
 
+import logging
 from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Body, Depends, Header, HTTPException, Query, Request, Response
@@ -25,7 +30,14 @@ from autoair.api.deps import ServicesDep, get_gateway, policy_of
 from autoair.api.features import ensure_feature
 from autoair.api.git_token import GitTokenHeader, accept_token, http_error, scrubbed_errors
 from autoair.api.routers.ops import DEPLOYS
-from autoair.api.source_plans import existing_file, plan_for, writes_client_code
+from autoair.api.source_plans import (
+    SOURCE_CODE_DETAIL,
+    changes_source_code,
+    existing_file,
+    plan_for,
+    stored_spec,
+    writes_client_code,
+)
 from autoair.audit import request_user
 from autoair.gateway import AirflowError, AirflowGateway
 from autoair.governance import (
@@ -41,12 +53,21 @@ from autoair.iam.deps import PrincipalDep, check, deny, direct_push_roles, iam_s
 from autoair.iam.model import Principal
 from autoair.iam.proposals import (
     Proposal,
+    ProposalAction,
     ProposalError,
     ProposalStore,
     ReviewRecord,
+    SavedBy,
+    VersionAuthors,
+    approvers_for,
+    delete_etag,
     latest_verdicts,
+    may_approve,
+    needs_approval,
     new_proposal,
     now_iso,
+    proposal_approvers,
+    write_mode,
 )
 from autoair.persistence.protocols import ProposalRepository
 from autoair.preserve.service import SourcePlan, applicable, can_force_overwrite
@@ -78,6 +99,8 @@ from autoair.telemetry import span
 from autoair.validation import Problem, ValidationReport, validate_spec
 
 # Split so the auth backend can guard writes with DAG-level permissions.
+log = logging.getLogger(__name__)
+
 read_router = APIRouter(prefix="/specs", tags=["specs"])
 write_router = APIRouter(prefix="/specs", tags=["specs"])
 
@@ -92,7 +115,12 @@ class StoredSpecResponse(BaseModel):
 
 class DeployRequest(BaseModel):
     spec: DagSpec
-    base_etag: str | None = None
+    base_etag: str | None = Field(
+        default=None,
+        description="Etag of the spec this edit started from (or the If-Match header). "
+        "Required to overwrite an existing DAG (storage.require_base_etag); a stale one "
+        "returns status 'conflict'.",
+    )
     environment: str | None = None
     message: str | None = Field(
         default=None,
@@ -230,6 +258,11 @@ class ProposalSummary(BaseModel):
     environment: str | None = None
     base_etag: str | None = None
     direct_push: bool | None = None
+    action: ProposalAction = Field(
+        default="deploy",
+        description="'deploy' deploys the proposed spec; 'delete' deletes the DAG "
+        "(POST .../proposals/{etag}/delete).",
+    )
     approved_by: list[str] = Field(
         default_factory=list, description="Other users whose latest verdict is 'approve'."
     )
@@ -245,8 +278,9 @@ class ProposalDetail(ProposalSummary):
     current_etag: str | None = None
     stale: bool = Field(
         default=False,
-        description="The stored spec changed since the author's base version (deploying "
-        "would conflict unless forced).",
+        description="The stored spec changed since the author's base version, or the DAG "
+        "exists now and the proposal records no base version: deploying, executing or "
+        "approving it is refused (409) until it is proposed again.",
     )
     reviews: list[Review] = Field(default_factory=list)
 
@@ -260,8 +294,21 @@ class ProposalDeployRequest(BaseModel):
     )
 
 
+DeleteStatus = Literal["deleted", "not_found", "pending_approval", "pr_opened"]
+
+
 class DeleteResult(BaseModel):
-    deleted: bool
+    deleted: bool = Field(description="Something was deleted or a deleting pull request opened.")
+    status: DeleteStatus = Field(
+        default="deleted",
+        description="'deleted': gone from the target; 'pr_opened': a pull request removes it "
+        "(still live until merged); 'pending_approval' (HTTP 202): stored as a delete "
+        "proposal that needs another user's approval (iam.require_approval); 'not_found'.",
+    )
+    proposal_etag: str | None = Field(
+        default=None, description="Etag of the stored delete proposal (pending_approval)."
+    )
+    message: str | None = None
 
 
 def _force_refusal(services: Services, principal: Principal) -> str | None:
@@ -302,6 +349,32 @@ def _store(services: Services) -> ProposalRepository:
             ttl=iam.proposal_ttl_seconds,
         )
     return services.proposals
+
+
+def record_saver(services: Any, dag_id: str, etags: list[str], user: str | None) -> None:
+    """Remember who saved these versions of ``dag_id`` (four-eyes: the saver's approval of
+    them never counts). A failure is logged, never fails the write that already happened."""
+    authors: VersionAuthors | None = getattr(services, "version_authors", None)
+    if authors is None:
+        return
+    try:
+        authors.record(dag_id, [e for e in etags if e], user)
+    except Exception:
+        log.warning("cannot record who saved %s", dag_id, exc_info=True)
+
+
+def _saved_by(services: Any, dag_id: str, etag: str) -> SavedBy | None:
+    authors = version_authors(services)
+    try:
+        return authors.saved_by(dag_id, etag) if authors is not None else None
+    except Exception:  # unreadable: an unknown saver (the other four-eyes rules still apply)
+        log.warning("cannot read who saved %s@%s", dag_id, etag, exc_info=True)
+        return None
+
+
+def version_authors(services: Any) -> VersionAuthors | None:
+    authors: VersionAuthors | None = getattr(services, "version_authors", None)
+    return authors
 
 
 def _user(request: Request, principal: Principal) -> str | None:
@@ -417,6 +490,23 @@ async def check_raw_write(request: Request, principal: Principal, spec: DagSpec)
     )
 
 
+async def check_source_code_write(
+    request: Request,
+    principal: Principal,
+    spec: DagSpec,
+    target: DeployTarget,
+    env: str | None,
+) -> None:
+    """Storing new or changed hand-written ``source.code`` needs ``code:raw``, whatever the
+    source policy: a later deploy (by anyone) may write that code as the DAG file, so the
+    check cannot wait for the deploy that does."""
+    if spec.source is None or spec.source.code is None or principal.has(P.CODE_RAW):
+        return
+    stored = await run_in_threadpool(stored_spec, target, spec.dag_id, env)
+    if changes_source_code(spec, stored):
+        await check(request, principal, P.CODE_RAW, detail=SOURCE_CODE_DETAIL)
+
+
 def _environment(services: Services, spec: DagSpec, environment: str | None) -> str | None:
     env = environment or services.settings.default_environment
     if env and spec.environments and env not in spec.environments:
@@ -433,7 +523,11 @@ def _environment(services: Services, spec: DagSpec, environment: str | None) -> 
             "model": DeployResult,
             "description": "Stored as a deploy proposal awaiting approval (status "
             "'pending_approval'); nothing went live.",
-        }
+        },
+        428: {
+            "description": "The DAG already exists and the request carries no base_etag / "
+            "If-Match (storage.require_base_etag); the ETag header holds the current etag."
+        },
     },
 )
 async def deploy_spec(
@@ -453,6 +547,7 @@ async def deploy_spec(
     await check_raw_write(request, principal, spec)
     env = _environment(services, spec, body.environment)
     target = services.target_for(spec.team)
+    await check_source_code_write(request, principal, spec, target, env)
     token = accept_token(
         services, request, git_token, kind=target.kind, cfg=_git_cfg(services, spec.team)
     )
@@ -472,13 +567,23 @@ async def deploy_spec(
     user = _user(request, principal)
     approvers: list[str] = []
     if push_mode != "pr":  # goes live: not a pull request
-        if iam_settings(services).require_approval:
-            approvers = await run_in_threadpool(_approvers, services, dag_id, etag, user)
+        if needs_approval(iam_settings(services), push_mode):
+            approvers = await run_in_threadpool(
+                lambda: approvers_for(
+                    _store(services),
+                    dag_id,
+                    etag,
+                    actor=user,
+                    authors=version_authors(services),
+                )
+            )
             if not approvers:
+                await _require_base_etag(services, target, dag_id, env, base_etag)
                 return await _propose(
                     request, response, services, principal, spec, etag, env, body, base_etag
                 )
         await check(request, principal, P.DEPLOY)
+    await _require_base_etag(services, target, dag_id, env, base_etag)
     result = await _deploy(
         request,
         services,
@@ -505,15 +610,21 @@ async def deploy_spec(
     return result
 
 
-def _approvers(services: Services, dag_id: str, etag: str, user: str | None) -> list[str]:
-    """Approvals that let ``user`` deploy version ``etag`` live: by another user than the
-    author — the author of a pending proposal of that version, else the deployer."""
-    store = _store(services)
-    proposal = store.get(dag_id, etag)
-    author = proposal.author if proposal is not None else user
-    if not user:
-        return []
-    return store.approvers(dag_id, etag, exclude=author)
+async def _require_base_etag(
+    services: Services, target: DeployTarget, dag_id: str, env: str | None, base_etag: str | None
+) -> None:
+    """428 when the write would overwrite an existing spec without the etag it was loaded
+    with: a blind overwrite silently drops a concurrent edit (storage.require_base_etag)."""
+    if base_etag or not services.settings.storage.require_base_etag:
+        return
+    stored = await run_in_threadpool(_stored_etag, target, dag_id, env)
+    if stored is not None:
+        raise HTTPException(
+            status_code=428,
+            detail=f"DAG {dag_id!r} already exists: send the etag it was loaded with "
+            f"(base_etag or If-Match); its current etag is {stored}",
+            headers={"ETag": f'"{stored}"'},
+        )
 
 
 async def _propose(
@@ -1054,6 +1165,15 @@ async def _deploy(
     await run_in_threadpool(
         lambda: services.audit.record("deploy", user=user, dag_id=dag_id, **details)
     )
+    # The author of the version is whoever wrote it: the proposal's author when an approved
+    # proposal is deployed, else the caller.
+    await run_in_threadpool(
+        record_saver,
+        services,
+        dag_id,
+        [spec_etag(spec), result.etag],
+        proposed_by if proposed_by is not None else user,
+    )
     reparsed = False
     msg = result.message or f"written to {result.path}"
     if target.kind == "local" and not result.pr_url and not services.settings.feature("airflow"):
@@ -1328,10 +1448,27 @@ async def preview_source(
     return plan
 
 
-@write_router.delete("/{dag_id}", operation_id="deleteSpec", dependencies=[require(P.SPEC_DELETE)])
+@write_router.delete(
+    "/{dag_id}",
+    operation_id="deleteSpec",
+    dependencies=[require(P.SPEC_DELETE)],
+    responses={
+        202: {
+            "model": DeleteResult,
+            "description": "Stored as a delete proposal awaiting approval (status "
+            "'pending_approval'); nothing was deleted.",
+        },
+        409: {"description": "The If-Match etag is stale: the DAG changed since it was loaded."},
+        428: {
+            "description": "The DAG exists and the request carries no If-Match "
+            "(storage.require_base_etag); the ETag header holds the current etag."
+        },
+    },
+)
 async def delete_spec(
     dag_id: str,
     request: Request,
+    response: Response,
     services: ServicesDep,
     principal: PrincipalDep,
     gateway: Annotated[AirflowGateway, Depends(get_gateway)],
@@ -1342,6 +1479,38 @@ async def delete_spec(
         Query(max_length=250, description="per_user git credentials: connection to use."),
     ] = None,
 ) -> DeleteResult:
+    """Delete a DAG (spec and DAG files). Governed like a deploy: on git targets it follows
+    the target's mode and iam.force_pr_without_direct_push (a pull request removes the
+    file), a delete that goes live needs 'deploy', and with iam.require_approval it needs
+    another user's approval first (else it is stored as a delete proposal, HTTP 202)."""
+    return await _delete_dag(
+        request,
+        response,
+        services,
+        principal,
+        gateway,
+        dag_id,
+        git_token=git_token,
+        base_etag=_etag(if_match),
+        git_conn_id=git_conn_id,
+    )
+
+
+async def _delete_dag(
+    request: Request,
+    response: Response,
+    services: Services,
+    principal: Principal,
+    gateway: AirflowGateway,
+    dag_id: str,
+    *,
+    git_token: str | None,
+    base_etag: str | None,
+    git_conn_id: str | None,
+    proposal: Proposal | None = None,
+) -> DeleteResult:
+    """Delete ``dag_id`` under the deploy governance; ``proposal``: executing that approved
+    delete proposal."""
     user = _user(request, principal)
     # Storage lookups block (files, git, object stores): keep them off the event loop.
     unreadable = False
@@ -1378,6 +1547,54 @@ async def delete_spec(
                 stored = await run_in_threadpool(writer.get, dag_id)
         except StorageError as exc:
             raise HTTPException(status_code=409, detail=mask(str(exc))) from exc
+    iam = iam_settings(services)
+    push_mode = write_mode(
+        writer.mode if isinstance(writer, GitTarget) else None,
+        direct_push=None,
+        allowed=principal.can_direct_push(direct_push_roles(services, team)),
+        iam=iam,
+    )
+    approvers: list[str] = []
+    proposed_by: str | None = None
+    key: str | None = None
+    if push_mode != "pr":  # goes live: not a pull request
+        if stored is not None and needs_approval(iam, push_mode):
+            store = _store(services)
+            key = wanted = delete_etag(stored.spec)
+            if proposal is not None:  # executing it: anyone holding the permissions may
+                if proposal.etag != key:
+                    raise HTTPException(
+                        status_code=409,
+                        detail=f"{dag_id!r} changed since this delete was proposed; propose "
+                        "deleting the current version",
+                    )
+                proposed_by = proposal.author
+                approvers = await run_in_threadpool(
+                    proposal_approvers, store, proposal, version_authors(services)
+                )
+            else:
+                pending = await run_in_threadpool(store.get, dag_id, key)
+                proposed_by = pending.author if pending is not None else None
+                approvers = await run_in_threadpool(
+                    lambda: approvers_for(
+                        store, dag_id, wanted, actor=user, authors=version_authors(services)
+                    )
+                )
+            if not approvers:
+                if proposal is not None:
+                    raise await deny(
+                        request,
+                        principal,
+                        P.REVIEW,
+                        detail="this proposal needs an approval by another user than its author",
+                    )
+                _require_delete_etag(services, dag_id, stored.etag, base_etag)
+                return await _propose_delete(
+                    request, response, services, principal, stored, key, writer
+                )
+        await check(request, principal, P.DEPLOY)
+    if proposal is None and stored is not None:
+        _require_delete_etag(services, dag_id, stored.etag, base_etag)
     context: DeployContext | None = None
     if stored is not None:
         context = _context(
@@ -1388,40 +1605,143 @@ async def delete_spec(
             action="delete",
             env=None,
             target=writer,
-            push_mode=writer.mode if isinstance(writer, GitTarget) else None,
+            push_mode=push_mode,
             etag_before=stored.etag,
             report=None,
+            approvals=approvers,
+            proposed_by=proposed_by,
         )
     as_service = _commit_as_service(services, team, resolved)
-    kwargs: dict[str, Any] = {"base_etag": _etag(if_match), "author": user}
+    kwargs: dict[str, Any] = {"base_etag": base_etag, "author": user}
     if principal.has(P.DEPLOY_OVERWRITE_EJECTED):
         kwargs["allow_hand_written"] = True  # a hand-written file AutoAir keeps
-    if isinstance(writer, GitTarget) and context is not None:
-        kwargs.update(context=context, co_author=as_service)
-        if not as_service:
-            kwargs["author"] = context.user.git_author() or user
+    if isinstance(writer, GitTarget):
+        kwargs["mode"] = push_mode
+        if context is not None:
+            kwargs.update(context=context, co_author=as_service)
+            if not as_service:
+                kwargs["author"] = context.user.git_author() or user
     try:
         with scrubbed_errors(token):
             deleted = await run_in_threadpool(lambda: writer.delete(dag_id, **kwargs))
     except NotFoundError:
-        return DeleteResult(deleted=False)
+        return DeleteResult(deleted=False, status="not_found")
     except StorageError as exc:
         raise HTTPException(status_code=409, detail=mask(str(exc))) from exc
-    if deleted:
-        credential = await _credential_audit(resolved)
-        await run_in_threadpool(
-            lambda: services.audit.record(
-                "delete",
-                user=user,
-                dag_id=dag_id,
-                **{
-                    **(context.audit() if context else {}),
-                    "target": owner.kind,
-                    **credential,
-                },
-            )
+    if not deleted:
+        return DeleteResult(deleted=False, status="not_found")
+    credential = await _credential_audit(resolved)
+    await run_in_threadpool(
+        lambda: services.audit.record(
+            "delete",
+            user=user,
+            dag_id=dag_id,
+            **{
+                **(context.audit() if context else {}),
+                "target": owner.kind,
+                **credential,
+            },
         )
-    return DeleteResult(deleted=deleted)
+    )
+    done = proposal.etag if proposal is not None else (key if approvers else None)
+    if done is not None:  # the (approved) delete proposal is executed
+        await run_in_threadpool(_store(services).delete, dag_id, done)
+    if push_mode == "pr":
+        return DeleteResult(
+            deleted=True,
+            status="pr_opened",
+            message="a pull request removes the DAG; it stays live until the pull request "
+            "is merged",
+        )
+    return DeleteResult(deleted=True)
+
+
+def _require_delete_etag(
+    services: Services, dag_id: str, stored_etag: str, base_etag: str | None
+) -> None:
+    """A delete must name the version it removes, like an overwrite: 428 without one
+    (storage.require_base_etag), 409 for a stale one, so a concurrent edit is never
+    deleted unseen. The target checks the etag again under its lock."""
+    if base_etag is None:
+        if services.settings.storage.require_base_etag:
+            raise HTTPException(
+                status_code=428,
+                detail=f"deleting {dag_id!r} needs the etag it was loaded with (If-Match); "
+                f"its current etag is {stored_etag}",
+                headers={"ETag": f'"{stored_etag}"'},
+            )
+        return
+    if base_etag != stored_etag:
+        raise HTTPException(
+            status_code=409,
+            detail=f"{dag_id!r} was changed since it was loaded (current etag {stored_etag}): "
+            "reload it before deleting",
+            headers={"ETag": f'"{stored_etag}"'},
+        )
+
+
+async def _propose_delete(
+    request: Request,
+    response: Response,
+    services: Services,
+    principal: Principal,
+    stored: StoredSpec,
+    key: str,
+    target: DeployTarget,
+) -> DeleteResult:
+    """Store a delete proposal of ``stored`` (four-eyes): nothing is deleted."""
+    dag_id = stored.spec.dag_id
+    user = _user(request, principal)
+    store = _store(services)
+    response.status_code = 202
+    existing = await run_in_threadpool(store.get, dag_id, key)
+    if existing is not None:  # already proposed: keep its author
+        return DeleteResult(
+            deleted=False,
+            status="pending_approval",
+            proposal_etag=key,
+            message=f"deleting this DAG is already proposed (by {existing.author or 'unknown'}) "
+            "and awaits an approval by another reviewer",
+        )
+    proposal = new_proposal(
+        stored.spec,
+        key,
+        author=user,
+        message=None,
+        base_etag=stored.etag,
+        environment=None,
+        force=False,
+        direct_push=None,
+        action="delete",
+    )
+    await run_in_threadpool(store.save, proposal)
+    context = _context(
+        services,
+        request,
+        principal,
+        stored.spec,
+        action="delete",
+        env=None,
+        target=target,
+        push_mode=None,
+        etag_before=stored.etag,
+        report=None,
+    )
+    await run_in_threadpool(
+        lambda: services.audit.record(
+            "propose",
+            user=user,
+            dag_id=dag_id,
+            **{**context.audit(), "etag": key, "base_etag": stored.etag, "proposal": "delete"},
+        )
+    )
+    return DeleteResult(
+        deleted=False,
+        status="pending_approval",
+        proposal_etag=key,
+        message="deleting this DAG needs an approval by another reviewer: stored as a delete "
+        "proposal; once approved, anyone holding 'deploy' and 'spec:delete' can execute it",
+    )
 
 
 @read_router.get(
@@ -1457,15 +1777,9 @@ async def _push_mode(
         )
     if not isinstance(target, GitTarget):
         return None
-    if direct_push is not None:
-        return "push" if direct_push else "pr"
-    if (
-        target.mode == "push"
-        and not allowed
-        and iam_settings(services).force_pr_without_direct_push
-    ):
-        return "pr"
-    return target.mode
+    return write_mode(
+        target.mode, direct_push=direct_push, allowed=allowed, iam=iam_settings(services)
+    )
 
 
 def _direct_push_base(
@@ -1510,10 +1824,29 @@ async def review_spec(
         proposal = await run_in_threadpool(store.get, dag_id, body.etag)
     except (StorageError, ProposalError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    if proposal is not None and body.verdict == "approve" and (not user or proposal.author == user):
-        raise await deny(
-            request, principal, P.REVIEW, detail="you cannot approve your own deploy proposal"
-        )
+    saved_by = (
+        await run_in_threadpool(_saved_by, services, dag_id, body.etag)
+        if body.verdict == "approve" and iam_settings(services).require_approval
+        else None
+    )
+    if body.verdict == "approve" and not may_approve(user, proposal, saved_by):
+        if saved_by is not None and saved_by.user and saved_by.user == user:
+            detail = (
+                "you cannot approve a version you saved yourself (iam.require_approval): "
+                "another user must review it"
+            )
+        elif saved_by is not None:
+            detail = (
+                "this version was saved or is reviewed without a user name, so four-eyes "
+                "cannot tell the reviewer from its author: sign in, and save it again signed in"
+            )
+        else:
+            detail = "you cannot approve your own deploy proposal"
+        raise await deny(request, principal, P.REVIEW, detail=detail)
+    if body.verdict == "approve" and proposal is not None:
+        # Approving a proposal the stored spec moved past would endorse an overwrite of a
+        # version the reviewer never saw.
+        await _refuse_stale_proposal(services, proposal)
     rec = ReviewRecord(
         timestamp=now_iso(),
         user=user,
@@ -1541,12 +1874,14 @@ async def review_spec(
 
 
 # --------------------------------------------------------------------------- proposals
-def _summary_fields(store: ProposalRepository, proposal: Proposal) -> dict[str, Any]:
+def _summary_fields(
+    store: ProposalRepository, proposal: Proposal, authors: VersionAuthors | None = None
+) -> dict[str, Any]:
     import datetime
 
     reviews = store.reviews(proposal.dag_id, proposal.etag)
     verdicts = latest_verdicts(reviews, proposal.etag)
-    approved_by = sorted(u for u, v in verdicts.items() if v == "approve" and u != proposal.author)
+    approved_by = proposal_approvers(store, proposal, authors)
     try:
         expires = (
             datetime.datetime.fromisoformat(proposal.timestamp)
@@ -1564,6 +1899,7 @@ def _summary_fields(store: ProposalRepository, proposal: Proposal) -> dict[str, 
         "environment": proposal.environment,
         "base_etag": proposal.base_etag,
         "direct_push": proposal.direct_push,
+        "action": proposal.action,
         "approved_by": approved_by,
         "changes_requested_by": sorted(u for u, v in verdicts.items() if v == "request_changes"),
         "approved": bool(approved_by),
@@ -1581,7 +1917,7 @@ async def list_proposals(dag_id: str, services: ServicesDep) -> list[ProposalSum
     def load() -> list[ProposalSummary]:
         out = []
         for proposal in store.pending(dag_id):
-            fields = _summary_fields(store, proposal)
+            fields = _summary_fields(store, proposal, version_authors(services))
             fields.pop("_reviews")
             out.append(ProposalSummary(**fields))
         return out
@@ -1590,6 +1926,45 @@ async def list_proposals(dag_id: str, services: ServicesDep) -> list[ProposalSum
         return await run_in_threadpool(load)
     except (StorageError, ProposalError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+def _stale_reason(proposal: Proposal, current_etag: str | None) -> str | None:
+    """Why ``proposal`` no longer applies to the stored spec (``current_etag``), else None.
+
+    A proposal records the version its author edited (``base_etag``); deploying it over any
+    other version would silently drop that change. A proposal without one was made for a
+    DAG that did not exist yet, or before proposals recorded it: once the DAG exists it
+    cannot be told apart from a blind overwrite, so it must be proposed again."""
+    if current_etag is None:
+        return None  # nothing stored (yet): the target refuses a stale write itself
+    what = "deleting this DAG" if proposal.action == "delete" else "this version"
+    if proposal.base_etag is None:
+        return (
+            f"{proposal.dag_id!r} exists now, but the proposal does not record which version "
+            f"it was made from (a proposal for a new DAG, or one stored by an older AutoAir): "
+            f"propose {what} again from the current version"
+        )
+    if proposal.base_etag != current_etag:
+        return (
+            f"{proposal.dag_id!r} changed since this proposal was made (proposed from "
+            f"{proposal.base_etag}, stored now {current_etag}): propose {what} again from the "
+            "current version"
+        )
+    return None
+
+
+async def _refuse_stale_proposal(services: Services, proposal: Proposal) -> None:
+    """409 when ``proposal`` was made from another version than the one stored now."""
+    if proposal.action == "delete":  # looked up like the delete route does
+        stored = await run_in_threadpool(_find, services, proposal.dag_id)
+        current = stored.etag if stored is not None else None
+    else:
+        target = services.target_for(proposal.spec.team)
+        env = proposal.environment or services.settings.default_environment
+        current = await run_in_threadpool(_stored_etag, target, proposal.dag_id, env)
+    reason = _stale_reason(proposal, current)
+    if reason is not None:
+        raise HTTPException(status_code=409, detail=reason)
 
 
 def _load_proposal(store: ProposalRepository, dag_id: str, etag: str) -> Proposal:
@@ -1611,7 +1986,7 @@ async def get_proposal(dag_id: str, etag: str, services: ServicesDep) -> Proposa
 
     def load() -> ProposalDetail:
         proposal = _load_proposal(store, dag_id, etag)
-        fields = _summary_fields(store, proposal)
+        fields = _summary_fields(store, proposal, version_authors(services))
         reviews = fields.pop("_reviews")
         current = _find(services, dag_id)
         return ProposalDetail(
@@ -1619,7 +1994,7 @@ async def get_proposal(dag_id: str, etag: str, services: ServicesDep) -> Proposa
             spec=proposal.spec,
             current_spec=current.spec if current else None,
             current_etag=current.etag if current else None,
-            stale=bool(current and proposal.base_etag and current.etag != proposal.base_etag),
+            stale=_stale_reason(proposal, current.etag if current else None) is not None,
             reviews=[_review(r) for r in reviews],
         )
 
@@ -1647,10 +2022,17 @@ async def deploy_proposal(
     store = _store(services)
     proposal = await run_in_threadpool(_load_proposal, store, dag_id, etag)
     spec = proposal.spec
+    if proposal.action == "delete":
+        raise HTTPException(
+            status_code=409,
+            detail="this proposal deletes the DAG: execute it with "
+            f"POST /specs/{dag_id}/proposals/{etag}/delete",
+        )
     if spec.dag_id != dag_id or spec_etag(spec) != proposal.etag:
         raise HTTPException(status_code=409, detail="the stored proposal is inconsistent")
+    await _refuse_stale_proposal(services, proposal)
     approvers = await run_in_threadpool(
-        lambda: store.approvers(dag_id, proposal.etag, exclude=proposal.author)
+        proposal_approvers, store, proposal, version_authors(services)
     )
     if not approvers:
         raise await deny(
@@ -1685,3 +2067,48 @@ async def deploy_proposal(
     if result.deployed:
         await run_in_threadpool(store.delete, dag_id, proposal.etag)
     return result
+
+
+@write_router.post(
+    "/{dag_id}/proposals/{etag}/delete",
+    operation_id="executeDeleteProposal",
+    dependencies=[require(P.SPEC_DELETE, P.DEPLOY)],
+)
+async def execute_delete_proposal(
+    dag_id: str,
+    etag: str,
+    request: Request,
+    response: Response,
+    services: ServicesDep,
+    principal: PrincipalDep,
+    gateway: Annotated[AirflowGateway, Depends(get_gateway)],
+    git_token: GitTokenHeader,
+    git_conn_id: Annotated[
+        str | None,
+        Query(max_length=250, description="per_user git credentials: connection to use."),
+    ] = None,
+) -> DeleteResult:
+    """Execute an approved delete proposal. Anyone holding ``spec:delete`` and ``deploy``
+    may, including its author, once another user approved it; the delete conflicts (409)
+    when the DAG changed since it was proposed."""
+    store = _store(services)
+    proposal = await run_in_threadpool(_load_proposal, store, dag_id, etag)
+    if proposal.action != "delete":
+        raise HTTPException(
+            status_code=409,
+            detail="this proposal deploys a spec: deploy it with "
+            f"POST /specs/{dag_id}/proposals/{etag}/deploy",
+        )
+    await _refuse_stale_proposal(services, proposal)
+    return await _delete_dag(
+        request,
+        response,
+        services,
+        principal,
+        gateway,
+        dag_id,
+        git_token=git_token,
+        base_etag=proposal.base_etag,
+        git_conn_id=git_conn_id,
+        proposal=proposal,
+    )

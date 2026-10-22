@@ -1,6 +1,10 @@
 # Ingress only from the AutoAir pods (and the Airflow api-servers when the plugin
 # uses the same validator); no egress at all, DNS included: the validator needs no network,
 # and DAG code it imports must not reach any.
+# Test runs (POST /v1/run) execute here too, so a task test that calls a service fails
+# with this policy. For such tests deploy a second validator for runs only, with a policy
+# that allows that egress, and set AUTOAIR_VALIDATOR__RUN_URL on the server; do not widen
+# this one (a NetworkPolicy applies to the whole pod, import checks included).
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:

@@ -163,8 +163,30 @@ def writes_client_code(
     return sha256_text(code) not in (existing.source_sha, sha256_text(existing.content))
 
 
+def source_code_of(spec: DagSpec | None) -> str | None:
+    return spec.source.code if spec is not None and spec.source is not None else None
+
+
+def changes_source_code(spec: DagSpec, stored: DagSpec | None) -> bool:
+    """Would storing ``spec`` store new or changed hand-written ``source.code`` (arbitrary
+    Python a later deploy may write as the DAG file)? Removing it or keeping the stored
+    code unchanged does not."""
+    code = source_code_of(spec)
+    return code is not None and code != source_code_of(stored)
+
+
+SOURCE_CODE_DETAIL = (
+    "this spec carries hand-written Python (source.code: imported or edited in the code mode) "
+    "that differs from the stored one; storing it needs the AutoAir permission 'code:raw' "
+    "(for example the CodeDeployer or Author role); without it, deploy the generated file "
+    "instead: set the source policy to 'generate' and remove source.code"
+)
+
+
 __all__ = [
+    "SOURCE_CODE_DETAIL",
     "can_execute",
+    "changes_source_code",
     "existing_file",
     "plan_context",
     "plan_for",

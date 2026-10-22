@@ -54,10 +54,10 @@ env:
   # Isolated import checks: the validator service (chart deploy/helm/autoair-validator).
   # Import checks then no longer run DAG code in the api-server (Python DAG import and test
   # runs still do); the HMAC key is the Airflow connection
-  # autoair_validator (secret below). fail_mode open (default) deploys without
-  # the import check while it is down; closed blocks deploys instead.
+  # autoair_validator (secret below). Production: fail_mode closed blocks deploys while
+  # the validator is down (the application default, open, deploys without the import check).
   # - { name: AUTOAIR_VALIDATOR__URL, value: "http://autoair-validator:8791" }
-  # - { name: AUTOAIR_VALIDATOR__FAIL_MODE, value: "open" }
+  # - { name: AUTOAIR_VALIDATOR__FAIL_MODE, value: "closed" }
   # Config exposure for admins (like Airflow's [api] expose_config)
   - { name: AUTOAIR_EXPOSE_CONFIG, value: "non-sensitive-only" }
 

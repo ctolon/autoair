@@ -89,7 +89,8 @@ results are truncated (`max_output_chars`) and treated as untrusted. A server th
 reached is reported and the analysis continues without it. TLS options come from
 `outbound` (client name `mcp`).
 
-A tool the server does not mark read-only (`readOnlyHint`) is a write tool: its calls pause
+A tool the admin has not listed in the server's `read_only_tools` is a write tool (the
+server's own `readOnlyHint` is not trusted): its calls pause
 the analysis until the user approves them (`ai.approvals`; always in `hitl` mode). The
 analysis is stored with `status="awaiting_approval"` and resumes under the same id; see
 [Tool-call approval](ai-assistants.md#tool-call-approval).

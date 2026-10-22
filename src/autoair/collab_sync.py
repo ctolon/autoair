@@ -16,6 +16,11 @@ several replicas need sticky sessions (every editor of a DAG on the same replica
   ``collab.snapshot_seconds`` and when they close; a snapshot younger than
   ``collab.snapshot_ttl_seconds`` is restored when the room opens again (e.g. after a rolling
   restart). Older snapshots are ignored: the stored spec is the source of truth.
+
+Every relayed message is signed (HMAC-SHA256 with a key derived from the collaboration
+ticket key, :func:`bus_key`): a message written to the relay table or Redis channel by
+anyone else (a database or Redis user without AutoAir's key) is dropped, so it cannot
+inject edits into a room.
 """
 
 from __future__ import annotations
@@ -24,6 +29,8 @@ import asyncio
 import base64
 import contextlib
 import datetime
+import hashlib
+import hmac
 import importlib
 import json
 import logging
@@ -46,6 +53,7 @@ log = logging.getLogger("autoair.collab")
 AWARENESS = 1  # y-protocols message type (pycrdt.YMessageType.AWARENESS)
 GRACE_SECONDS = 10.0  # relay rows may commit out of id order within this window
 PRUNE_EVERY = 60.0
+MAC_SIZE = 32  # bytes of an HMAC-SHA256 signature
 
 
 @dataclass(frozen=True)
@@ -102,36 +110,68 @@ class LocalBus:
             self.hub.buses.remove(self)
 
 
-def _encode(msg: BusMessage) -> str:
+def bus_key(secret: bytes) -> bytes:
+    """The signing key of relayed messages, derived from the ticket key (the same on every
+    replica) so that a ticket can never pass as a message signature or the reverse."""
+    return hmac.new(secret, b"autoair-collab-bus", hashlib.sha256).digest()
+
+
+def sign(key: bytes, room: str, origin: str, kind: str, payload: bytes) -> bytes:
+    mac = hmac.new(key, digestmod=hashlib.sha256)
+    for part in (room.encode(), origin.encode(), kind.encode(), payload):
+        mac.update(len(part).to_bytes(8, "big"))  # length-prefixed: no ambiguous joins
+        mac.update(part)
+    return mac.digest()
+
+
+def _authentic(key: bytes, msg: BusMessage, signature: bytes) -> bool:
+    expected = sign(key, msg.room, msg.origin, msg.kind, msg.payload)
+    if hmac.compare_digest(signature, expected):
+        return True
+    log.warning(
+        "collab: dropped a relayed message with a missing or wrong signature (room %s); "
+        "every replica needs the same AUTOAIR_COLLAB_SECRET",
+        msg.room[:64],
+    )
+    return False
+
+
+def _encode(msg: BusMessage, key: bytes) -> str:
     return json.dumps(
         {
             "room": msg.room,
             "origin": msg.origin,
             "kind": msg.kind,
             "payload": base64.b64encode(msg.payload).decode(),
+            "sig": base64.b64encode(
+                sign(key, msg.room, msg.origin, msg.kind, msg.payload)
+            ).decode(),
         }
     )
 
 
-def _decode(raw: str | bytes) -> BusMessage | None:
+def _decode(raw: str | bytes, key: bytes) -> BusMessage | None:
     try:
         data = json.loads(raw)
-        return BusMessage(
+        msg = BusMessage(
             str(data["room"]),
             str(data["origin"]),
             str(data["kind"]),
             base64.b64decode(data["payload"]),
         )
-    except (ValueError, KeyError, TypeError):
+        signature = base64.b64decode(data.get("sig") or "")
+    except (ValueError, KeyError, TypeError, AttributeError):
         return None
+    return msg if _authentic(key, msg, signature) else None
 
 
 class RedisBus:
     """Redis pub/sub (``collab.redis_url``, ``pip install 'autoair[collab-redis]'``)."""
 
-    def __init__(self, url: str, channel: str) -> None:
+    def __init__(self, url: str, channel: str, *, key: bytes) -> None:
         self.url = url
         self.channel = channel
+        self.key = key
         self.origin = uuid.uuid4().hex
         self._client: Any = None
         self._task: asyncio.Task[None] | None = None
@@ -146,7 +186,7 @@ class RedisBus:
             async for message in pubsub.listen():
                 if message.get("type") != "message":
                     continue
-                msg = _decode(message.get("data") or b"")
+                msg = _decode(message.get("data") or b"", self.key)
                 if msg is not None and msg.origin != self.origin:
                     try:
                         await deliver(msg)
@@ -157,7 +197,7 @@ class RedisBus:
 
     async def publish(self, room: str, kind: str, payload: bytes) -> None:
         await self._client.publish(
-            self.channel, _encode(BusMessage(room, self.origin, kind, payload))
+            self.channel, _encode(BusMessage(room, self.origin, kind, payload), self.key)
         )
 
     async def stop(self) -> None:
@@ -172,10 +212,13 @@ class DatabaseBus:
     """Relay table ``<prefix>collab_updates`` polled every ``poll_seconds``; on PostgreSQL a
     ``NOTIFY`` wakes the readers at once (the poll is then only a fallback)."""
 
-    def __init__(self, db: Database, *, poll_seconds: float, retention_seconds: float) -> None:
+    def __init__(
+        self, db: Database, *, poll_seconds: float, retention_seconds: float, key: bytes
+    ) -> None:
         from autoair.persistence.sql import SqlCollabLog
 
         self.db = db
+        self.key = key
         self.relay = SqlCollabLog(db)
         self.origin = uuid.uuid4().hex
         self.poll = poll_seconds * (20 if db.dialect == "postgresql" else 1)
@@ -195,7 +238,9 @@ class DatabaseBus:
             self._tasks.append(loop.create_task(self._listen()))
 
     def _publish_sync(self, room: str, kind: str, payload: bytes) -> None:
-        self.relay.append(room, self.origin, kind, payload)
+        # The signature is stored in front of the payload (no schema change).
+        signed = sign(self.key, room[:255], self.origin[:64], kind, payload) + payload
+        self.relay.append(room, self.origin, kind, signed)
         if self.db.dialect == "postgresql":
             from sqlalchemy import text
 
@@ -229,8 +274,11 @@ class DatabaseBus:
                 continue
             self._seen.add(row_id)
             if origin != self.origin:
+                msg = BusMessage(room, origin, kind, payload[MAC_SIZE:])
+                if not _authentic(self.key, msg, payload[:MAC_SIZE]):
+                    continue
                 try:
-                    await deliver(BusMessage(room, origin, kind, payload))
+                    await deliver(msg)
                 except Exception:
                     log.warning("collab: cannot apply a relayed message", exc_info=True)
         # Rows older than the grace window are final: forget them, read only newer ones.
@@ -553,8 +601,9 @@ def shared_server(
     return SharedWebsocketServer()
 
 
-def build_sync(settings: Any, db: Database | None) -> RoomSync | None:
-    """The :class:`RoomSync` for ``settings.collab`` (``None``: rooms stay in memory)."""
+def build_sync(settings: Any, db: Database | None, *, secret: bytes) -> RoomSync | None:
+    """The :class:`RoomSync` for ``settings.collab`` (``None``: rooms stay in memory);
+    relayed messages are signed with a key derived from ``secret`` (the ticket key)."""
     cfg: CollabSettings = getattr(settings, "collab", None) or CollabSettings()
     mode = cfg.sync
     if mode == "auto":
@@ -571,12 +620,15 @@ def build_sync(settings: Any, db: Database | None) -> RoomSync | None:
     if mode == "redis":
         if cfg.redis_url is None:
             raise ValueError("collab.sync=redis needs collab.redis_url")
-        bus = RedisBus(cfg.redis_url.get_secret_value(), cfg.redis_channel)
+        bus = RedisBus(cfg.redis_url.get_secret_value(), cfg.redis_channel, key=bus_key(secret))
     else:
         if db is None:
             raise ValueError("collab.sync=database needs a SQL database.backend")
         bus = DatabaseBus(
-            db, poll_seconds=cfg.poll_seconds, retention_seconds=cfg.retention_seconds
+            db,
+            poll_seconds=cfg.poll_seconds,
+            retention_seconds=cfg.retention_seconds,
+            key=bus_key(secret),
         )
     return RoomSync(cfg, bus=bus, snapshots=snapshots, holders=holders)
 
@@ -590,5 +642,6 @@ __all__ = [
     "RedisBus",
     "RoomSync",
     "build_sync",
+    "bus_key",
     "shared_server",
 ]

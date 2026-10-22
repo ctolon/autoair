@@ -11,7 +11,7 @@ import sys
 from dataclasses import dataclass, field
 from typing import Any
 
-from autoair._compat import sdk_symbol_module
+from autoair._compat import airflow_version, sdk_symbol_module
 from autoair.spec import (
     AssetAliasLeaf,
     AssetCombination,
@@ -36,6 +36,55 @@ from autoair.spec import (
 )
 
 SDK = "airflow.sdk"
+# Modules the generated file may ``import`` by name: a function, task or variable with one of
+# these names would shadow the module for every later use (the materialised-script helper
+# runs ``os.path`` at parse time).
+PLAIN_MODULES = frozenset({"datetime", "pendulum", "hashlib", "os", "tempfile"})
+# ``datetime.timedelta(seconds=...)`` raises OverflowError beyond timedelta.max / .min.
+MAX_TIMEDELTA_SECONDS = 999_999_999 * 86_400 + 86_399
+
+
+def timedelta_problem(seconds: float) -> str | None:
+    """Why ``datetime.timedelta(seconds=seconds)`` cannot be generated, or None."""
+    if not math.isfinite(seconds):
+        return f"duration {seconds!r} is not a finite number of seconds"
+    if abs(seconds) > MAX_TIMEDELTA_SECONDS:
+        return (
+            f"duration of {seconds:g} seconds is larger than a datetime.timedelta can hold "
+            f"(at most {MAX_TIMEDELTA_SECONDS} seconds)"
+        )
+    return None
+
+
+def inline_import_names(source: str) -> set[str]:
+    """Module-level names the imports of an inline function bind (they are emitted at the
+    top of the generated file)."""
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return set()
+    names: set[str] = set()
+    for stmt in tree.body:
+        if isinstance(stmt, (ast.Import, ast.ImportFrom)):
+            names |= {(a.asname or a.name).split(".")[0] for a in stmt.names if a.name != "*"}
+    return names
+
+
+def spec_inline_import_names(spec: DagSpec) -> set[str]:
+    names: set[str] = set()
+    stack: list[Any] = [spec.model_dump(by_alias=True, include={"nodes"})]
+    while stack:
+        value = stack.pop()
+        if isinstance(value, dict):
+            if value.get("$type") == "function" and isinstance(value.get("source"), str):
+                names |= inline_import_names(value["source"])
+            else:
+                stack.extend(value.values())
+        elif isinstance(value, list):
+            stack.extend(value)
+    return names
+
+
 COMMON_AI_TOOLSETS = {
     "sql": ("airflow.providers.common.ai.toolsets.sql", "SQLToolset", "db_conn_id"),
     "mcp": ("airflow.providers.common.ai.toolsets.mcp", "MCPToolset", "mcp_conn_id"),
@@ -115,7 +164,7 @@ class CodegenContext:
     # module -> {name -> local alias}
     _from_imports: dict[str, dict[str, str]] = field(default_factory=dict)
     _plain_imports: set[str] = field(default_factory=set)
-    _used_names: set[str] = field(default_factory=lambda: {"dag", "datetime"})
+    _used_names: set[str] = field(default_factory=lambda: {"dag", *PLAIN_MODULES})
     _node_vars: dict[str, str] = field(default_factory=dict)
     # Tasks defined inside a loop group's @task_group function: the group is implicit.
     in_loop_body: set[str] = field(default_factory=set)
@@ -127,6 +176,11 @@ class CodegenContext:
     _materialize: str | None = None
     # spec.node_map() once per render: looking nodes up per reference was O(n^2) on large DAGs.
     _node_map: dict[str, Node] | None = None
+
+    def __post_init__(self) -> None:
+        # Names bound by inline functions' imports are module-level too: reserve them before
+        # any task function or variable takes one.
+        self._used_names |= spec_inline_import_names(self.spec)
 
     @property
     def nodes(self) -> dict[str, Node]:
@@ -152,6 +206,7 @@ class CodegenContext:
 
     def import_module(self, module: str) -> ast.Name:
         self._plain_imports.add(module)
+        self._used_names.add(module.split(".")[0])
         return ast.Name(id=module, ctx=ast.Load())
 
     def sdk(self, name: str) -> ast.Name:
@@ -207,6 +262,9 @@ class CodegenContext:
         return base
 
     def timedelta(self, seconds: float) -> ast.expr:
+        problem = timedelta_problem(float(seconds))
+        if problem is not None:
+            raise CodegenError(problem)
         mod = self.import_module("datetime")
         return ast.Call(
             func=ast.Attribute(value=mod, attr="timedelta", ctx=ast.Load()),
@@ -224,6 +282,7 @@ class CodegenContext:
         if value.tzinfo is not None:
             value = value.astimezone(zoneinfo.ZoneInfo(tz))
         parts = [value.year, value.month, value.day, value.hour, value.minute, value.second]
+        parts.append(value.microsecond)  # pendulum.datetime(..., second, microsecond, tz=)
         while len(parts) > 3 and parts[-1] == 0:
             parts.pop()
         return ast.Call(
@@ -500,11 +559,16 @@ class CodegenContext:
             "executor",
             "max_active_tis_per_dagrun",
             "depends_on_past",
-            "retry_exponential_backoff",
         ):
             val = getattr(node, attr)
             if val is not None:
                 add(attr, ast.Constant(val))
+        if node.retry_exponential_backoff is not None:
+            backoff: float | bool = node.retry_exponential_backoff
+            if (self.airflow_version or airflow_version() or (3, 2, 0)) < (3, 2, 0):
+                # Before 3.2 the argument is a bool (backoff with base 2), not a multiplier.
+                backoff = backoff > 0
+            add("retry_exponential_backoff", ast.Constant(backoff))
         if node.executor_config is not None:
             add("executor_config", self.value(node.executor_config))
         if node.mapping and node.mapping.map_index_template:

@@ -10,7 +10,6 @@ process rebuilds the app from the options passed in :data:`OPTIONS_ENV`.
 from __future__ import annotations
 
 import functools
-import ipaddress
 import json
 import os
 import ssl
@@ -21,6 +20,8 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from autoair.net.loopback import is_loopback, refuse_public_bind
+
 if TYPE_CHECKING:
     from fastapi import FastAPI
 
@@ -28,6 +29,9 @@ if TYPE_CHECKING:
 
 
 OPTIONS_ENV = "AUTOAIR__SERVE_OPTIONS"  # internal: options of worker processes
+# Per-run tokens of `autoair local`: the UI adopts a `#token=` fragment only with this
+# prefix (frontend/src/api/setup.ts), so a crafted link cannot sign a user in elsewhere.
+LOCAL_TOKEN_PREFIX = "autoair-local-"  # noqa: S105 - a prefix, not a secret
 _TLS_VERSIONS = {"TLSv1.2": ssl.TLSVersion.TLSv1_2, "TLSv1.3": ssl.TLSVersion.TLSv1_3}
 _CERT_REQS = {"none": ssl.CERT_NONE, "optional": ssl.CERT_OPTIONAL, "required": ssl.CERT_REQUIRED}
 
@@ -101,13 +105,26 @@ def build_app(options: ServeOptions, settings: Settings | None = None) -> FastAP
     auth: AuthBackend
     if options.local:
         token = settings.local.token.get_secret_value() if settings.local.token else None
-        auth = static_token(token) if token else AuthBackend(name="none")
+        auth = static_token(token, roles=settings.local.roles) if token else AuthBackend()
     else:
         verifier = TokenVerifier(
             settings.airflow_url, ttl=settings.auth_cache_ttl, timeout=settings.auth_timeout
         )
         auth = bearer_passthrough(verifier, required=not options.no_auth)
-    return create_app(build_services(settings, auth))
+    app = create_app(build_services(settings, auth))
+    if unauthenticated(options, settings):
+        from autoair.net.loopback import LoopbackGuard, public_hosts
+
+        # Whoever reaches the port is trusted: only loopback Host/Origin (DNS rebinding).
+        app.add_middleware(LoopbackGuard, extra_hosts=public_hosts(settings.server.public_url))
+    return app
+
+
+def unauthenticated(options: ServeOptions, settings: Settings) -> bool:
+    """The server trusts every caller: ``--no-auth``, or ``autoair local`` without a token."""
+    if options.local:
+        return settings.local.token is None
+    return options.no_auth
 
 
 def app_factory() -> FastAPI:
@@ -177,15 +194,6 @@ def uvicorn_options(settings: Settings, *, host: str, port: int) -> dict[str, An
     return out
 
 
-def is_loopback(host: str) -> bool:
-    if host == "localhost":
-        return True
-    try:
-        return ipaddress.ip_address(host).is_loopback
-    except ValueError:
-        return False
-
-
 def _open_when_ready(url: str, health: str, timeout: float = 60) -> None:
     import httpx2
 
@@ -207,13 +215,19 @@ def run(
     host: str,
     port: int,
     open_browser: bool = False,
+    ui_fragment: str = "",
 ) -> None:
-    """Configure logging and run uvicorn (blocking)."""
+    """Configure logging and run uvicorn (blocking). ``ui_fragment`` (``#token=…``) is
+    appended to the UI address opened in the browser; a fragment never reaches a server."""
     import uvicorn
 
     from autoair.logging_setup import configure_logging
     from autoair.validation.sandbox import harden_server_process
 
+    if unauthenticated(options, settings):
+        refused = refuse_public_bind(host, "autoair local" if options.local else "autoair serve")
+        if refused:
+            raise ValueError(refused)
     configure_logging(settings.logging)
     harden_server_process(
         "local" if options.local else "server", enabled=settings.server.harden_process
@@ -224,7 +238,9 @@ def run(
     if open_browser:
         base = f"{scheme}://{shown}:{port}"
         threading.Thread(
-            target=_open_when_ready, args=(f"{base}/ui/", f"{base}/api/health"), daemon=True
+            target=_open_when_ready,
+            args=(f"{base}/ui/{ui_fragment}", f"{base}/api/health"),
+            daemon=True,
         ).start()
     if settings.server.workers > 1:
         os.environ[OPTIONS_ENV] = options.to_env()
@@ -235,6 +251,7 @@ def run(
 
 
 __all__ = [
+    "LOCAL_TOKEN_PREFIX",
     "OPTIONS_ENV",
     "ServeOptions",
     "app_factory",
@@ -244,5 +261,6 @@ __all__ = [
     "run",
     "settings_for",
     "tls_context",
+    "unauthenticated",
     "uvicorn_options",
 ]

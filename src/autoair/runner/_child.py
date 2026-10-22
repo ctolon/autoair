@@ -1,6 +1,12 @@
 """Executed in an isolated interpreter by :mod:`autoair.runner` (never imported by the API).
 
-``python -m autoair.runner._child <request.json> <result.json>``
+``python -m autoair.runner._child <request.json> <result.json> [<sandbox.json>]``
+
+With a sandbox (a :class:`~autoair.validation.sandbox.WorkerSandbox` of profile ``run``)
+the child first re-executes itself as PID 1 of fresh PID + user + mount namespaces when
+``process_isolation`` asks for it (and the kernel allows it), then applies the resource
+limits, ``PR_SET_NO_NEW_PRIVS``, non-dumpable and the run profile of the audit hook before
+it imports the DAG file.
 
 Runs one task (or a whole DAG) **without the metadata DB**: the task is taken from a
 ``DagBag`` import of the generated file, its templates are rendered against a
@@ -248,7 +254,7 @@ def run_task(
     return out
 
 
-def _load_dag(source_file: str, dag_id: str) -> tuple[Any, str | None]:
+def _load_bag(source_file: str) -> Any:
     import inspect
 
     from autoair._compat import dagbag_class
@@ -257,13 +263,17 @@ def _load_dag(source_file: str, dag_id: str) -> tuple[Any, str | None]:
     kwargs: dict[str, object] = {"dag_folder": source_file}
     if "include_examples" in inspect.signature(cls.__init__).parameters:
         kwargs["include_examples"] = False
-    bag = cls(**kwargs)
+    return cls(**kwargs)
+
+
+def _load_dag_and_bag(source_file: str, dag_id: str) -> tuple[Any, str | None, Any]:
+    bag = _load_bag(source_file)
     if bag.import_errors:
-        return None, "\n".join(str(e) for e in bag.import_errors.values())
+        return None, "\n".join(str(e) for e in bag.import_errors.values()), bag
     dag = bag.dags.get(dag_id)
     if dag is None:
-        return None, f"DAG {dag_id!r} not found (found: {sorted(bag.dags)})"
-    return dag, None
+        return None, f"DAG {dag_id!r} not found (found: {sorted(bag.dags)})", bag
+    return dag, None, bag
 
 
 def _store_from_mocks(mocks: dict[str, Any]) -> dict[tuple[str, str], Any]:
@@ -333,8 +343,127 @@ def run_dag_in_memory(dag: Any, conf: dict[str, Any], logical_date: Any) -> dict
     return {"state": "failed" if failed else "success", "tasks": results, "mode": "memory"}
 
 
-def run_dag_with_db(dag: Any, conf: dict[str, Any]) -> dict[str, Any]:
-    dr = dag.test(run_conf=conf or None)
+def _serialize_to_db(bag: Any, dag_id: str) -> None:
+    """Write the DAG under test to the metadata DB when it is not there yet.
+
+    Since Airflow 3.1 ``dag.test()`` creates its DAG run from the *serialized* DAG and looks
+    for it by parsing the configured DAG bundles; the generated file lives in the run's
+    scratch folder, outside every bundle, so the run failed with "the dag is not
+    serialized". Changing the bundle configuration for the child is no way out:
+    ``dag.test()`` reconciles the configured bundles into the metadata DB and would mark the
+    real ones inactive. The DAG is written under the first configured bundle instead (the
+    one ``dag.test()`` walks first; the DAG processor later marks it stale because its file
+    is not in that bundle). A DAG that is already serialized (deployed under the same id)
+    is left alone, the way ``dag.test()`` itself treats it. Airflow 3.0 needs nothing:
+    its ``dag.test()`` builds the run from the in-memory DAG."""
+    try:  # Airflow >= 3.2
+        from airflow.dag_processing.dagbag import sync_bag_to_db
+    except ImportError:
+        try:  # Airflow 3.1
+            from airflow.models.dagbag import sync_bag_to_db
+        except ImportError:  # Airflow 3.0
+            return
+    from airflow.dag_processing.bundles.manager import DagBundlesManager
+    from airflow.models.dag_version import DagVersion
+
+    if DagVersion.get_version(dag_id):
+        return
+    manager = DagBundlesManager()
+    manager.sync_bundles_to_db()
+    bundles = list(manager.get_all_dag_bundles())
+    if not bundles:
+        return  # dag.test() reports the missing serialized DAG itself
+    # the bag holds the generated file only: no DAG of the real bundle is rewritten
+    sync_bag_to_db(bag, bundles[0].name, None)
+
+
+def _json_content_type_for_execution_api() -> None:
+    """Airflow 3.0's Task SDK client sends JSON bodies without a ``Content-Type`` header,
+    which newer FastAPI releases reject (422 "Input should be a valid dictionary"): every
+    task of a ``dag.test()`` run failed on ``PATCH /task-instances/{id}/run``. Airflow 3.1+
+    sets the header itself; there the hook is left alone."""
+    import inspect
+
+    try:
+        from airflow.sdk.api import client as sdk_client
+    except ImportError:  # pragma: no cover - Task SDK missing
+        return
+    try:
+        source = inspect.getsource(sdk_client.Client.request)
+    except (OSError, TypeError, AttributeError):
+        source = ""
+    original = getattr(sdk_client, "add_correlation_id", None)
+    if "content-type" in source.lower() or original is None:
+        return
+
+    def add_correlation_id(request: Any) -> None:
+        original(request)
+        try:
+            body = request.content
+        except Exception:  # a streamed body: leave it as it is
+            return
+        if body and "content-type" not in request.headers:
+            request.headers["content-type"] = "application/json"
+
+    sdk_client.add_correlation_id = add_correlation_id
+
+
+def _keep_execution_api_running(timeout: float = 30.0) -> None:
+    """Up to Airflow 3.2 the in-process execution API (what ``dag.test()`` talks to) starts
+    its lifespan on a background loop without waiting for it, and the lifespan lives only as
+    long as the ``InProcessExecutionAPI`` object, which the Task SDK drops right after taking
+    its ``transport``. Once that object is collected the lifespan exits and recent ``svcs``
+    releases remove the services registry from the app, so tasks failed with "'State'
+    object has no attribute 'svcs_registry'" (always on 3.2, by timing on 3.0 / 3.1).
+    Airflow 3.3+ waits for the start and ties the lifespan to the transport itself; there
+    nothing is changed. Elsewhere the transport keeps its API object alive and is handed
+    out once the registry exists."""
+    import inspect
+
+    try:
+        from airflow.api_fastapi.execution_api.app import InProcessExecutionAPI
+        from airflow.sdk.execution_time import supervisor
+    except ImportError:  # pragma: no cover - API server code missing
+        return
+    original = getattr(supervisor, "in_process_api_server", None)
+    try:
+        source = inspect.getsource(InProcessExecutionAPI)
+    except (OSError, TypeError):
+        return
+    if original is None or ".result()" in source or "start_lifespan" not in source:
+        return
+
+    def in_process_api_server() -> Any:
+        api = original()
+        api.transport  # noqa: B018 - starts the lifespan
+        _KEEP_ALIVE.append(api)  # the lifespan's exit stack lives on the API object
+        deadline = time.monotonic() + timeout
+        while getattr(api.app.state, "svcs_registry", None) is None:
+            if time.monotonic() > deadline:
+                break
+            time.sleep(0.01)
+        return api
+
+    supervisor.in_process_api_server = in_process_api_server
+
+
+# In-process execution API objects of a db-mode run (see _keep_execution_api_running).
+_KEEP_ALIVE: list[Any] = []
+
+
+def run_dag_with_db(dag: Any, conf: dict[str, Any], bag: Any = None) -> dict[str, Any]:
+    _json_content_type_for_execution_api()
+    _keep_execution_api_running()
+    if bag is not None:
+        _serialize_to_db(bag, dag.dag_id)
+    try:
+        dr = dag.test(run_conf=conf or None)
+    finally:
+        # unwind the kept lifespans while the interpreter still runs (no shutdown noise)
+        import gc
+
+        _KEEP_ALIVE.clear()
+        gc.collect()
     tasks: list[dict[str, Any]] = []
     try:
         tis = dr.get_task_instances()
@@ -352,7 +481,7 @@ def run_dag_with_db(dag: Any, conf: dict[str, Any]) -> dict[str, Any]:
     return {"state": state, "tasks": tasks, "mode": "db"}
 
 
-def main(req_path: str, res_path: str) -> None:
+def main(req_path: str, res_path: str, *, process_isolated: bool | None = None) -> None:
     logging.basicConfig(
         level=logging.INFO,
         stream=sys.stderr,
@@ -368,7 +497,7 @@ def main(req_path: str, res_path: str) -> None:
     try:
         import pendulum
 
-        dag, error = _load_dag(req["source_file"], req["dag_id"])
+        dag, error, bag = _load_dag_and_bag(req["source_file"], req["dag_id"])
         if dag is None:
             result = {"state": "import_error", "error": error}
         else:
@@ -392,7 +521,7 @@ def main(req_path: str, res_path: str) -> None:
                 mode = req.get("mode", "memory")
                 if mode in ("db", "auto"):
                     try:
-                        result = run_dag_with_db(dag, conf)
+                        result = run_dag_with_db(dag, conf, bag)
                     except Exception as exc:
                         if mode == "db":
                             raise
@@ -405,11 +534,73 @@ def main(req_path: str, res_path: str) -> None:
     except BaseException as exc:
         result = {"state": "failed", "error": "".join(traceback.format_exception(exc)[-30:])}
     result["total_duration"] = round(time.perf_counter() - started, 4)
+    result["process_isolated"] = process_isolated
     sys.stdout.flush()
     sys.stderr.flush()
     with open(res_path, "w", encoding="utf-8") as fh:
         json.dump(result, fh, default=_repr)
 
 
+def _write_error(res_path: str, error: str) -> None:
+    with open(res_path, "w", encoding="utf-8") as fh:
+        json.dump({"state": "error", "error": error}, fh)
+
+
+def entry(argv: list[str]) -> int:  # pragma: no cover - subprocess
+    """Command-line entry: sandbox (when given), then :func:`main`. Returns the exit code."""
+    req_path, res_path = argv[0], argv[1]
+    raw = json.loads(argv[2]) if len(argv) > 2 and argv[2] else None
+    isolated: bool | None = None
+    if raw is not None:
+        isolated = bool(raw.get("inside_namespace"))
+        from autoair.validation.sandbox import (
+            SandboxError,
+            WorkerSandbox,
+            apply_limits,
+            install_audit_hook,
+            run_in_process_namespace,
+        )
+
+        cfg = WorkerSandbox.from_dict(raw)
+        if cfg.process_isolation != "off" and not raw.get("inside_namespace"):
+            inner = json.dumps({**raw, "inside_namespace": True})
+            code = run_in_process_namespace(
+                [sys.executable, "-m", "autoair.runner._child", req_path, res_path, inner],
+                mask_root=cfg.scratch_root,
+                keep_dir=cfg.scratch_dir,
+                deny=cfg.deny_paths,
+                read_only=cfg.read_only_paths,
+            )
+            if code is not None:
+                return code
+            if cfg.process_isolation == "required":
+                _write_error(
+                    res_path,
+                    "process isolation is required (runner.process_isolation or "
+                    "validator.run_process_isolation) but this kernel or container does not "
+                    "allow unprivileged user and PID namespaces; the test did not run. Run "
+                    "test runs on the validator service (validator.url), or set "
+                    "runner.process_isolation=auto to run them with the audit hook only",
+                )
+                return 0
+            print(
+                "[autoair] process isolation is not available on this host (unprivileged "
+                "user namespaces are off or restricted): the run is not hidden from other "
+                "processes (not fully isolated; configure validator.url for isolated test "
+                "runs)",
+                file=sys.stderr,
+                flush=True,
+            )
+        try:
+            apply_limits(cfg)
+        except SandboxError as exc:
+            _write_error(res_path, f"{exc}; the test did not run")
+            return 0
+        if cfg.audit_hook:
+            install_audit_hook(cfg)
+    main(req_path, res_path, process_isolated=isolated)
+    return 0
+
+
 if __name__ == "__main__":  # pragma: no cover
-    main(sys.argv[1], sys.argv[2])
+    sys.exit(entry(sys.argv[1:]))

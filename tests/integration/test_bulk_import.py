@@ -25,6 +25,8 @@ with DAG("{dag_id}", schedule=None, default_args={{"owner": DEFAULT_OWNER}}):
 
 
 def _client(tmp_path, **settings) -> TestClient:
+    # Unauthenticated callers are Viewers by default; these tests import and deploy.
+    settings.setdefault("iam", {"anonymous_roles": ["Admin"]})
     services = build_services(
         Settings(dags_folder=tmp_path / "dags", subfolder="", **settings), AuthBackend()
     )

@@ -66,8 +66,11 @@ class GitProvider(Protocol):
 
     def create_branch(self, name: str, from_sha: str) -> None: ...
 
-    def reset_branch(self, name: str, to_sha: str) -> None:
-        """Force-move an existing branch (used to recycle merged PR branches)."""
+    def reset_branch(self, name: str, to_sha: str, *, expect: str | None = None) -> None:
+        """Move an existing branch to ``to_sha`` (used to recycle merged PR branches), only
+        while it still points at ``expect`` (the head the caller decided on; ``None``: the
+        head last seen). Raises :class:`~autoair.storage.base.ConflictError` when it moved,
+        so a commit pushed meanwhile is never thrown away."""
         ...
 
     def commit_files(

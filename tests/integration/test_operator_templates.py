@@ -30,7 +30,8 @@ def _reset_sections():
 
 
 def client(tmp_path: Path) -> TestClient:
-    s = Settings(dags_folder=tmp_path, subfolder="")  # type: ignore[call-arg]
+    # AuthBackend(): anonymous callers, who get iam.anonymous_roles (Viewer by default)
+    s = Settings(dags_folder=tmp_path, subfolder="", iam={"anonymous_roles": ["Admin"]})  # type: ignore[call-arg]
     return TestClient(create_app(build_services(s, AuthBackend())))
 
 

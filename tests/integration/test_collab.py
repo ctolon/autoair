@@ -65,6 +65,7 @@ def server(tmp_path_factory):
         ai={"enabled": False},
         features={"mcp": False},
         collab_secret="test-secret",
+        iam={"anonymous_roles": ["Admin"]},  # AuthBackend(): anonymous callers edit
     )
     app = create_app(build_services(settings, AuthBackend()))
     with socket.socket() as s:
@@ -83,11 +84,11 @@ def server(tmp_path_factory):
     thread.join(timeout=5)
 
 
-async def _sync(url: str, ticket: str) -> dict[str, str]:
+async def _sync(url: str, tickets: tuple[str, str]) -> dict[str, str]:
     room = "/collab/collab_demo"
     async with (
-        websockets.connect(f"{url}{room}?ticket={ticket}") as ws_a,
-        websockets.connect(f"{url}{room}?ticket={ticket}") as ws_b,
+        websockets.connect(f"{url}{room}?ticket={tickets[0]}") as ws_a,
+        websockets.connect(f"{url}{room}?ticket={tickets[1]}") as ws_b,
     ):
         doc_a, doc_b = Doc(), Doc()
         nodes_a = doc_a.get("nodes", type=Map)
@@ -108,9 +109,12 @@ async def _sync(url: str, ticket: str) -> dict[str, str]:
 
 def test_two_clients_converge(server):
     ws_url, http_url = server
-    resp = httpx2.post(f"{http_url}/api/collab/collab_demo/ticket")
-    assert resp.status_code == 200, resp.text
-    result = asyncio.run(_sync(ws_url, resp.json()["ticket"]))
+    tickets = []
+    for _ in range(2):  # a ticket opens one connection
+        resp = httpx2.post(f"{http_url}/api/collab/collab_demo/ticket")
+        assert resp.status_code == 200, resp.text
+        tickets.append(resp.json()["ticket"])
+    result = asyncio.run(_sync(ws_url, (tickets[0], tickets[1])))
     assert result["n1"] == '{"id":"n1","task_id":"extract"}'
     assert result["n2"] == '{"id":"n2","task_id":"load"}'
     assert result["b:n1"] == result["n1"]

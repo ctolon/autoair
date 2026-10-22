@@ -127,7 +127,9 @@ def cloned(source: GitSource, *, allowed_hosts: Sequence[str], timeout: float) -
         raise BulkImportError(f"invalid git ref {source.ref!r}")
     tmp = Path(tempfile.mkdtemp(prefix="autoair-bulk-"))
     try:
-        env = dict(os.environ)
+        from autoair.storage.git.local_git import git_base_env
+
+        env = git_base_env()  # not the server's settings, secrets or credentials
         env.update(
             GIT_TERMINAL_PROMPT="0",
             GIT_ASKPASS="echo",

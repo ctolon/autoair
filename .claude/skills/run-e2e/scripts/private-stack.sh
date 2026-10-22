@@ -52,20 +52,30 @@ start)
     (cd "$ROOT/frontend" && npx vite build --mode standalone --outDir "$state/dist" --emptyOutDir \
       --logLevel warn) >&2
   fi
+  # `autoair serve` replaces this placeholder with the API base when it serves /ui/; vite
+  # preview serves the file as built, and without it the app looks for the plugin's
+  # /autoair/api. /api is proxied to the private server (AUTOAIR_API_PORT, vite.config.ts).
+  index="$state/dist/index.html"
+  sed 's#<!--AUTOAIR_CONFIG-->#<script>window.__AUTOAIR_CONFIG__={"apiBase":"/api"}</script>#' \
+    "$index" > "$index.tmp" && mv "$index.tmp" "$index"
   serve_args=(serve --host 127.0.0.1 --port "$api" --dags-folder "$state/dags")
   if [ "$auth" = 1 ]; then
     serve_args+=(--airflow-url "$airflow")
   else
     serve_args+=(--no-auth --airflow-url http://127.0.0.1:9)
+    # --no-auth visitors are Viewers by default; the specs edit and deploy.
+    export AUTOAIR_IAM__ANONYMOUS_ROLES='["Admin"]'
   fi
   # setsid makes each server the leader of its own process group; the leader writes its PID
   # (= the group id) before exec'ing, so stop can kill the whole tree and nothing else.
+  # `exec`: the background subshell must not keep this script's stdout open, or
+  # `eval "$(private-stack.sh start)"` waits until the servers exit.
   (cd "$state" && AIRFLOW_HOME="$state/home" AUTOAIR_DAGBAG_POOL=false \
     AUTOAIR_DISCOVER_AIRFLOW_FOLDERS=false \
-    setsid bash -c 'echo $$ > "$0"; exec "$@"' "$state/serve.pid" \
+    exec setsid bash -c 'echo $$ > "$0"; exec "$@"' "$state/serve.pid" \
     uv run --project "$ROOT" autoair "${serve_args[@]}" > "$state/serve.log" 2>&1 < /dev/null &)
   (cd "$ROOT/frontend" && AUTOAIR_API_PORT="$api" \
-    setsid bash -c 'echo $$ > "$0"; exec "$@"' "$state/preview.pid" \
+    exec setsid bash -c 'echo $$ > "$0"; exec "$@"' "$state/preview.pid" \
     npx vite preview --mode standalone --outDir "$state/dist" --host 127.0.0.1 --port "$ui" \
     --strictPort > "$state/preview.log" 2>&1 < /dev/null &)
   for _ in $(seq 1 120); do

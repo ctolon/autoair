@@ -23,7 +23,7 @@ from fastapi.params import Depends as DependsParam
 from autoair.auth import _soft, forwarded_credentials
 from autoair.governance import identity_from_claims, identity_from_user, merge_identity
 from autoair.iam.config import IamSettings
-from autoair.iam.model import CODE_EXECUTE, Principal
+from autoair.iam.model import CODE_EXECUTE, CODE_RAW, Principal
 from autoair.iam.resolver import (
     CustomViewCheck,
     Identity,
@@ -71,14 +71,18 @@ def iam_without_roles(configured: IamSettings) -> IamSettings:
     roles Airflow's DAG read/edit and configuration edit permissions grant (the built-in
     ``airflow_permissions`` defaults); no role mapping, custom roles or custom views, no
     four-eyes approvals, and nobody may bypass a git target's mode (no direct pushes, no
-    forced pull requests). Sign-in, auditing and the anonymous (``--no-auth``) roles keep
-    their configured values."""
+    forced pull requests). Sign-in, auditing, the anonymous (``--no-auth``) roles and
+    ``airflow_permission_roles.unverified`` (standalone) keep their configured values."""
     from autoair.iam.config import AirflowPermissionRoles
 
     return configured.model_copy(
         update={
             "strategies": ["airflow_permissions"],
-            "airflow_permission_roles": AirflowPermissionRoles(),
+            # What an uncheckable permission grants (standalone) stays configurable: the
+            # default is Viewer, and nothing else could grant more with IAM off.
+            "airflow_permission_roles": AirflowPermissionRoles(
+                unverified=list(configured.airflow_permission_roles.unverified)
+            ),
             "role_mapping": {},
             "role_prefix": "",
             "roles": {},
@@ -158,6 +162,8 @@ def _identity(
     iam = iam_settings(services)
     if auth.name == "none" and not auth.app:
         return Identity(user=None, authenticated=False)
+    if auth.roles is not None:  # autoair local: the token holder's configured roles
+        return Identity(user=None, fixed_roles=list(auth.roles))
     if user is not None:  # plugin mode: Airflow's auth manager user
         custom = None
         name = airflow_user_name(user)
@@ -204,16 +210,13 @@ def principal_resolver(services: Services) -> Any:
             "dag_edit": list(auth.write_dag),
             "configuration_edit": list(auth.admin),
         }
-    if (
-        "airflow_permissions" in iam.strategies
-        and "role_mapping" in iam.strategies
-        and not any(groups.values())
-    ):
-        log.warning(
-            "iam.strategies combines 'airflow_permissions' with 'role_mapping' but Airflow's "
-            "DAG/configuration permissions cannot be checked here (standalone mode): "
-            "'airflow_permissions' grants every signed-in user all of its roles, so the "
-            "role mapping restricts nothing. Use iam.strategies=['role_mapping'] alone."
+    if "airflow_permissions" in iam.strategies and not all(groups.values()):
+        log.info(
+            "Airflow's DAG/configuration permissions cannot be checked here (standalone "
+            "mode): the 'airflow_permissions' strategy grants signed-in users only "
+            "iam.airflow_permission_roles.unverified (%s); use the 'role_mapping' strategy or "
+            "iam.default_roles to grant more",
+            iam.airflow_permission_roles.unverified,
         )
     cache = CustomViewCache(iam.custom_view_cache_seconds)
     params = [
@@ -314,4 +317,9 @@ async def require_permission(request: Request, permission: str, *, action: str) 
     detail = None
     if permission == CODE_EXECUTE:
         detail = f"{action} requires DAG edit permission (AutoAir permission {permission!r})"
+    elif permission == CODE_RAW:
+        detail = (
+            f"{action} stores hand-written Python (source.code), which needs the AutoAir "
+            f"permission {permission!r}"
+        )
     await check(request, principal, permission, detail=detail)

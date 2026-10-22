@@ -51,6 +51,13 @@ class AirflowPermissionRoles(BaseModel):
         description="Roles granted by configuration edit (PUT); plugin mode only — standalone "
         "cannot check it and never infers direct-push rights from it.",
     )
+    unverified: list[str] = Field(
+        default_factory=lambda: ["Viewer"],
+        description="Roles granted instead when AutoAir cannot ask Airflow for one of the "
+        "permissions above (standalone `autoair serve` only verifies the token): a permission "
+        "that cannot be checked never grants its own roles. Grant more with the "
+        "'role_mapping' strategy (the token's role claim) or iam.default_roles.",
+    )
 
 
 class IamSettings(BaseModel):
@@ -95,9 +102,10 @@ class IamSettings(BaseModel):
         default_factory=list, description="Roles every signed-in user gets, whatever the strategy."
     )
     anonymous_roles: list[str] = Field(
-        default_factory=lambda: ["Admin"],
-        description="Roles when authentication is disabled (autoair serve --no-auth); such "
-        "users never get direct-push rights through storage.git.direct_push_roles.",
+        default_factory=lambda: ["Viewer"],
+        description="Roles of unauthenticated callers (serve/mcp-serve/ai-serve --no-auth, "
+        "which only bind to loopback); such users never get direct-push rights through "
+        "storage.git.direct_push_roles. Set e.g. ['Admin'] to let them edit and deploy.",
     )
     custom_view_prefix: str = Field(
         default="AutoAir",

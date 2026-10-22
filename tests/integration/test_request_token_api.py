@@ -152,9 +152,10 @@ def test_delete_and_promote_take_the_token(tmp_path: Path, host: GitHttpServer) 
     assert audit[0]["action"] == "promote"
     assert audit[0]["details"]["credential"] == "request-token"
 
-    response = c.delete("/api/specs/simple", headers=headers(token=None))
+    loaded = {"If-Match": ok.json()["etag"]}
+    response = c.delete("/api/specs/simple", headers={**headers(token=None), **loaded})
     assert response.status_code == 400
-    gone = c.delete("/api/specs/simple", headers=headers())
+    gone = c.delete("/api/specs/simple", headers={**headers(), **loaded})
     assert gone.status_code == 200, gone.text
 
 
@@ -311,7 +312,8 @@ def test_token_never_reaches_logs_audit_or_responses(
     assert exploded.status_code == 502
     responses.append(exploded)
     monkeypatch.undo()
-    responses.append(c.delete("/api/specs/simple", headers=headers()))
+    loaded = {"If-Match": responses[0].json()["etag"]}
+    responses.append(c.delete("/api/specs/simple", headers={**headers(), **loaded}))
     responses.append(c.get("/api/specs/simple/audit", headers=as_role("Admin")))
     responses.append(c.get("/api/deploy-target", headers=as_role("Admin")))
 

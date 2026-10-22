@@ -55,7 +55,9 @@
       "dialog": "dialog",
       "codeMode": "code editor"
     },
-    "undo": "Undo last change"
+    "undo": "Undo last change",
+    "appTitle": "Something went wrong in AutoAir.",
+    "reload": "Reload page"
   },
   "codeEditor": {
     "expand": "Open {{name}} in a large editor",

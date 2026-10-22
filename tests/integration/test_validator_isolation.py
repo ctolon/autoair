@@ -425,3 +425,135 @@ def test_checks_get_private_homes(validator: Validator) -> None:
 def test_ctypes_symbol_lookup_is_blocked(validator: Validator) -> None:
     code = MARK + "import ctypes\nctypes.pythonapi.Py_GetVersion\nraise RuntimeError('LEAK')\n"
     assert "LEAK" not in _error(validator.check(code))
+
+
+# --------------------------------------------------------------------------- test runs
+
+RUN_DAG = """import os
+import socket
+from airflow.sdk import DAG, task
+from airflow.providers.standard.operators.bash import BashOperator
+
+with DAG("remote_run", schedule=None):
+    BashOperator(task_id="hello", bash_command="echo hi from the validator")
+
+    @task
+    def add():
+        return 40 + 2
+
+    @task
+    def parent_env():
+        return open(f"/proc/{os.getppid()}/environ", "rb").read().decode(errors="replace")
+
+    @task
+    def key_env():
+        return sorted(k for k in os.environ if k.startswith("AIRFLOW_CONN_"))
+
+    @task
+    def call_service(port: int = 0):
+        with socket.create_connection(("127.0.0.1", int(os.environ.get("PROBE_PORT", port)))) as s:
+            return s.recv(16).decode()
+
+    add()
+    parent_env()
+    key_env()
+    call_service({port})
+"""
+
+
+def _run(validator: Validator, task_id: str, port: int = 0) -> Any:
+    from autoair.runner import run_task_test
+
+    return run_task_test(
+        RUN_DAG.replace("{port}", str(port)),
+        "remote_run",
+        task_id,
+        timeout=60,
+        validator=validator.cfg(),
+    )
+
+
+def test_task_runs_execute_on_the_validator(
+    validator: Validator, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from autoair import runner
+
+    def no_local(*a: Any, **kw: Any) -> Any:
+        raise AssertionError("the test run ran on the main server")
+
+    monkeypatch.setattr(runner, "_run_child", no_local)
+    hello = _run(validator, "hello")
+    assert hello.state == "success", hello.log
+    assert hello.return_value == "hi from the validator"
+    assert _run(validator, "add").return_value == 42
+    metrics = httpx2.get(f"{validator.url}/metrics", timeout=5).text
+    assert 'autoair_validator_runs_total{kind="task",state="success"}' in metrics
+
+
+def test_a_run_cannot_read_the_validator_environment(validator: Validator) -> None:
+    leak = _run(validator, "parent_env")
+    assert leak.state == "failed"
+    assert KEY not in (leak.error or "") + leak.log + str(leak.return_value)
+    assert _run(validator, "key_env").return_value == []
+
+
+def test_runs_may_reach_the_network_by_default(validator: Validator) -> None:
+    import threading
+
+    with socket.socket() as server:
+        server.bind(("127.0.0.1", 0))
+        server.listen(1)
+
+        def answer() -> None:
+            conn, _ = server.accept()
+            with conn:
+                conn.sendall(b"pong")
+
+        thread = threading.Thread(target=answer, daemon=True)
+        thread.start()
+        result = _run(validator, "call_service", server.getsockname()[1])
+        thread.join(5)
+    assert result.state == "success", result.error
+    assert result.return_value == "pong"
+
+
+def test_dag_runs_execute_on_the_validator(validator: Validator) -> None:
+    from autoair.runner import run_dag_test
+
+    src = (
+        RUN_DAG.replace("{port}", "1")
+        .replace("    call_service(1)\n", "")
+        .replace("    parent_env()\n", "")
+    )
+    result = run_dag_test(src, "remote_run", timeout=120, validator=validator.cfg())
+    states = {t.task_id: t.state for t in result.tasks}
+    assert result.mode == "memory"
+    assert states["hello"] == states["add"] == "success", result.log
+
+
+def test_api_test_run_fails_closed_when_the_validator_is_down(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from autoair import runner
+
+    def no_local(*a: Any, **kw: Any) -> Any:
+        raise AssertionError("fail_mode=open must not run the test on the main server")
+
+    monkeypatch.setattr(runner, "_run_child", no_local)
+    client = _api(tmp_path, f"http://127.0.0.1:{_free_port()}")  # fail_mode open (default)
+    spec = {
+        "dag_id": "down",
+        "nodes": [
+            {
+                "kind": "operator",
+                "id": "a",
+                "task_id": "a",
+                "operator": "airflow.providers.standard.operators.bash.BashOperator",
+                "params": {"bash_command": "echo hi"},
+            }
+        ],
+    }
+    resp = client.post("/api/runner/test-task", json={"spec": spec, "task_node_id": "a"})
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["state"] == "error"
+    assert "test-run service is unavailable" in resp.json()["error"]

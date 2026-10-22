@@ -29,6 +29,17 @@ HTTP 413 is not an outage: it becomes an `import` error ("larger than the valida
 `POST <validator.url>/v1/check`, body `{"source", "filename", "timeout"}`, answer
 `ImportCheckResult` (`ok`, `dag_ids`, `task_ids`, `import_errors`).
 
+`POST <validator.run_url or url>/v1/run` (test runs, `validation/service.py::RunRequest`):
+`{"kind", "source", "dag_id", "task_id", "conf", "mock_xcoms", "logical_date", "timeout",
+"max_log_chars", "max_value_chars"}`, answer a `TaskTestResult` / `DagTestResult`, signed the
+same way. The service runs each request in a one-shot `autoair.runner._child` process with the
+`run` profile of `validation/sandbox.py` (no subprocess/socket/write denials; `/proc` and
+scratch reads denied; optional PID namespace; network unless `validator.run_network=false`),
+never forwarding it again (`remote=False`). Client side (`runner._on_validator`): an
+unavailable validator fails the run for `fail_mode` `open` and `closed`, and only `local` runs
+it on the main server. A 404 (validator older than `/v1/run`) is reported as "upgrade it"
+without opening the circuit.
+
 - Authentication reuses the AI service scheme (`ai/access.py`: `sign_identity`,
   `verify_identity`) with its own headers `x-autoair-validator-identity` / `-signature` and
   role `validator`: HMAC-SHA256 over base64 JSON claims binding method, path, query, body hash,
@@ -141,6 +152,18 @@ Parent and worker exchange JSON over a socket pair (`Connection.send_bytes` /
 end of the pipe; unpickling that in the parent would execute code in the AutoAir (or validator)
 process. A reply that is not JSON, too long or of the wrong shape counts as a crashed worker.
 This applies to the local pool too.
+
+## Local pool sandbox
+
+Without a validator the process's own pool (`get_pool`) starts its workers with
+`local_pool_sandbox()` (`runner.local_check_sandbox`): the **run** profile of the audit hook when
+`runner.audit_hook` is on (no reads of other processes' `/proc/<pid>` entries, of other workers'
+and test runs' folders below `<tmp>/autoair-runs-<uid>` or of Airflow's secret files; no writes
+into Airflow's DAG and plugin folders or AutoAir's output folder), `PR_SET_NO_NEW_PRIVS`,
+non-dumpable, and a private `AIRFLOW_HOME` with a copy of `airflow.cfg` without its secrets
+(Airflow's DAG and plugin folders are passed on as `AIRFLOW__CORE__*`, so helper modules still
+import). Not the check profile's process, network and write denials, no PID namespace and no
+private `HOME`: those would change what parses locally. Workers stay warm as before.
 
 ## Known limits
 

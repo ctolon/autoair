@@ -99,6 +99,9 @@ class ProposalRow(BaseModel):
     timestamp: str
     message: str | None = None
     environment: str | None = None
+    action: Literal["deploy", "delete"] = Field(
+        default="deploy", description="'delete': the proposal deletes the DAG."
+    )
     approvals: list[str] = Field(default_factory=list)
 
 
@@ -400,14 +403,14 @@ async def admin_ai_usage(
 
 def proposals_overview(services: Any) -> ProposalsOverview:
     """Pending deploy proposals of every DAG and recent review verdicts (blocking I/O)."""
-    from autoair.iam.proposals import approvers
+    from autoair.iam.deps import iam_settings
+    from autoair.iam.proposals import proposal_approvers
 
     store = services.proposals
     proposals = all_pending_proposals(store)
     rows: list[ProposalRow] = []
     reviews: list[ReviewRow] = []
     for p in proposals:
-        found = store.reviews(p.dag_id) if store is not None else []
         rows.append(
             ProposalRow(
                 dag_id=p.dag_id,
@@ -416,7 +419,8 @@ def proposals_overview(services: Any) -> ProposalsOverview:
                 timestamp=p.timestamp,
                 message=p.message,
                 environment=p.environment,
-                approvals=approvers(found, p.etag, exclude=p.author),
+                action=p.action,
+                approvals=proposal_approvers(store, p, getattr(services, "version_authors", None)),
             )
         )
     listing = getattr(store, "all_reviews", None)
@@ -438,7 +442,8 @@ def proposals_overview(services: Any) -> ProposalsOverview:
         )
     reviews.sort(key=lambda r: r.timestamp, reverse=True)
     return ProposalsOverview(
-        require_approval=bool(services.settings.iam.require_approval),
+        # what the deploy route enforces (features.iam off turns approvals off)
+        require_approval=bool(iam_settings(services).require_approval),
         proposals=rows,
         reviews=reviews[:200],
     )

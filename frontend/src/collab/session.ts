@@ -120,18 +120,36 @@ export async function startCollab(room = useBuilder.getState().dag.dag_id): Prom
   const doc = new Y.Doc();
   const provider = new WebsocketProvider(collabServerUrl(), room, doc, {
     params: { ticket },
-    maxBackoffTime: 10_000,
+    connect: false,
+    // A ticket opens one connection, and the server ends sessions after
+    // collab.session_seconds: every reconnect asks the API for a new ticket instead
+    // (which re-checks the permission to edit the DAG).
+    shouldReconnect: () => false,
   });
-  // Tickets expire (only the handshake checks them): keep a fresh one for reconnects.
-  const refresh = setInterval(() => {
-    fetchTicket(room)
-      .then((t) => (provider.params = { ticket: t }))
-      .catch(() => undefined);
-  }, 4 * 60_000);
-  doc.on("destroy", () => clearInterval(refresh));
   const color = COLORS[doc.clientID % COLORS.length] ?? "#2563eb";
   const s: Session = { room, doc, provider, binding: null, color };
   session = s;
+  let failures = 0;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  doc.on("destroy", () => clearTimeout(timer));
+  provider.on("sync", (synced: boolean) => {
+    if (synced) failures = 0;
+  });
+  provider.on("closed", () => {
+    if (session !== s) return;
+    timer = setTimeout(() => {
+      fetchTicket(room)
+        .then((t) => {
+          if (session !== s) return;
+          provider.params = { ticket: t };
+          provider.connect();
+        })
+        .catch((err: unknown) => {
+          // Typically the permission was revoked: stop instead of retrying forever.
+          if (session === s) useCollab.setState({ status: "error", error: errorMessage(err) });
+        });
+    }, reconnectDelay(failures++));
+  });
 
   provider.awareness.setLocalStateField("user", { name: displayName(), color });
   provider.awareness.setLocalStateField("selection", []);
@@ -168,6 +186,12 @@ export async function startCollab(room = useBuilder.getState().dag.dag_id): Prom
     if (current.join() !== selection.join()) provider.awareness.setLocalStateField("selection", selection);
   });
   doc.on("destroy", unsubscribe);
+  provider.connect();
+}
+
+/** Wait before reconnect attempt ``failures`` (0: at once after a session ended). */
+export function reconnectDelay(failures: number): number {
+  return failures <= 0 ? 0 : Math.min(200 * 2 ** (failures - 1), 10_000);
 }
 
 export function stopCollab(): void {

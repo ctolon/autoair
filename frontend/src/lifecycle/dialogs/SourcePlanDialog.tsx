@@ -66,7 +66,7 @@ export default function SourcePlanDialog({
   };
   const switchToGenerate = () => {
     const st = useBuilder.getState();
-    st.setDag({ source: withPolicy(st.dag, "generate") });
+    st.setDag({ source: withPolicy(st.dag, "generate", { dropCode: !access.can("code:raw") }) });
     close();
     useLifecycle.getState().openDialog({ kind: "deploy", focus: "message" });
   };

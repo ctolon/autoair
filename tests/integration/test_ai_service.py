@@ -408,7 +408,15 @@ def test_tool_approval_through_the_ai_service(tmp_path: Path) -> None:
     resumed = frames(
         client.post(
             f"/api/ai/approvals/{approval['id']}/stream",
-            json={"decisions": [{"id": approval["calls"][0]["id"], "approved": True}]},
+            json={
+                "decisions": [
+                    {
+                        "id": approval["calls"][0]["id"],
+                        "approved": True,
+                        "arguments_sha256": approval["calls"][0]["arguments_sha256"],
+                    }
+                ]
+            },
             headers=alice,
         )
     )

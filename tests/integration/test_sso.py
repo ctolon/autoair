@@ -78,7 +78,7 @@ def make(tmp_path: Path, airflow: FakeAirflow | None = None, **settings: Any) ->
         ai={"enabled": False},
         airflow_url=AIRFLOW,
         import_check_on_deploy=False,
-        iam=IamSettings(),
+        iam=settings.pop("iam", None) or IamSettings(),
         **settings,
     )
     transport = httpx2.MockTransport(fake)
@@ -153,7 +153,8 @@ def test_cookie_name_and_switch(tmp_path: Path) -> None:
 
 
 def test_cookie_requests_need_the_csrf_header(tmp_path: Path) -> None:
-    c = make(tmp_path)
+    # standalone verifies only the token: grant the writer role explicitly
+    c = make(tmp_path, iam=IamSettings(default_roles=["Deployer"]))
     c.cookies.set("_token", GOOD)
     body = {"spec": SIMPLE}
     refused = c.put("/api/specs/simple", json=body)
@@ -166,6 +167,7 @@ def test_cookie_requests_need_the_csrf_header(tmp_path: Path) -> None:
     assert same.status_code == 200, same.text
     # bearer tokens are never sent by the browser on its own: no CSRF header needed
     c.cookies.clear()
+    body = {**body, "base_etag": same.json()["etag"]}  # an overwrite names what it replaces
     bearer = c.put("/api/specs/simple", json=body, headers={"Authorization": f"Bearer {GOOD}"})
     assert bearer.status_code == 200, bearer.text
     # safe methods are never blocked
@@ -296,6 +298,49 @@ def test_plugin_mode_session_follows_airflows_cookie(tmp_path: Path) -> None:
     cfg = c.get("/api/auth/config").json()
     assert cfg["mode"] == "plugin"
     assert cfg["sso"]["cookie_name"] == "_token"
-    # no CSRF middleware in plugin mode (Airflow's SameSite=Lax model) and no security
-    # headers of the standalone server
+    # no security headers of the standalone server (Airflow serves the page)
     assert "content-security-policy" not in c.get("/api/health").headers
+
+
+def test_plugin_cookie_requests_need_the_csrf_header(tmp_path: Path) -> None:
+    """Airflow >= 3.1 accepts its ``_token`` cookie in ``get_user`` when no bearer header is
+    sent: a SameSite=Lax cookie still reaches the plugin from sibling sites of the same
+    registrable domain (or other ports of the host), so plugin requests authenticated by
+    the cookie need the same CSRF marker and Origin check as standalone cookie sessions."""
+    from autoair.auth import AuthBackend
+
+    s = Settings(  # type: ignore[call-arg]
+        mode="plugin",
+        dags_folder=tmp_path / "dags",
+        subfolder="",
+        ai={"enabled": False},
+        import_check_on_deploy=False,
+        iam=IamSettings(strategies=["role_mapping"], default_roles=["Admin"]),
+    )
+    c = TestClient(create_app(build_services(s, AuthBackend(name="airflow"))))
+
+    def body(dag_id: str) -> dict[str, Any]:  # a new DAG each time: no etag needed
+        return {"spec": {**SIMPLE, "dag_id": dag_id}}
+
+    c.cookies.set("_token", GOOD)
+    refused = c.put("/api/specs/one", json=body("one"))
+    assert refused.status_code == 403
+    assert "X-AutoAir-CSRF" in refused.json()["detail"]
+    csrf = {"X-AutoAir-CSRF": "1"}
+    cross = c.put(
+        "/api/specs/one", json=body("one"), headers={**csrf, "Origin": "http://evil.example"}
+    )
+    assert cross.status_code == 403
+    same = c.put(
+        "/api/specs/one", json=body("one"), headers={**csrf, "Origin": "http://testserver"}
+    )
+    assert same.status_code == 200, same.text
+    assert c.get("/api/specs").status_code == 200  # safe methods are never blocked
+    c.cookies.clear()
+    bearer = c.put("/api/specs/two", json=body("two"), headers={"Authorization": f"Bearer {GOOD}"})
+    assert bearer.status_code == 200, bearer.text
+    # the switch also covers plugin mode
+    s.sso.require_csrf_header = False
+    off = TestClient(create_app(build_services(s, AuthBackend(name="airflow"))))
+    off.cookies.set("_token", GOOD)
+    assert off.put("/api/specs/three", json=body("three")).status_code == 200

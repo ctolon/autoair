@@ -68,7 +68,7 @@ def test_explicit_direct_push_needs_a_trusted_grant() -> None:
         Identity(user="u", airflow_roles=["push"]), s, auth="t", mode="sa", direct_push_roles=[]
     )
     assert mapped.has(P.DEPLOY_DIRECT_PUSH)
-    # the same role from an unverified airflow_permissions check grants nothing special
+    # an unverifiable airflow_permissions check never grants its own roles...
     s2 = s.model_copy(
         update={
             "strategies": ["airflow_permissions"],
@@ -80,8 +80,20 @@ def test_explicit_direct_push_needs_a_trusted_grant() -> None:
     unverified = resolve(
         Identity(user="u", checks=UNVERIFIED), s2, auth="t", mode="sa", direct_push_roles=[]
     )
-    assert unverified.has(P.DEPLOY)
-    assert not unverified.has(P.DEPLOY_DIRECT_PUSH)
+    assert not unverified.has(P.DEPLOY)
+    # ...and the role granted in its place (unverified) never brings direct push
+    s3 = s2.model_copy(
+        update={
+            "airflow_permission_roles": s2.airflow_permission_roles.model_copy(
+                update={"unverified": ["Pusher"]}
+            ),
+        }
+    )
+    fallback = resolve(
+        Identity(user="u", checks=UNVERIFIED), s3, auth="t", mode="sa", direct_push_roles=[]
+    )
+    assert fallback.has(P.DEPLOY)
+    assert not fallback.has(P.DEPLOY_DIRECT_PUSH)
 
 
 # --------------------------------------------------------------------------- 18: JWT payloads
@@ -270,16 +282,21 @@ def test_sync_fab_refuses_to_touch_builtin_roles() -> None:
         sync_fab(object(), IamSettings(role_prefix=""), create_roles=True)
 
 
-def test_standalone_airflow_permissions_with_role_mapping_warns(
+def test_standalone_airflow_permissions_with_role_mapping_restricts(
     tmp_path: Path, caplog: pytest.LogCaptureFixture
 ) -> None:
-    caplog.set_level(logging.WARNING)
+    """Standalone cannot check Airflow's permissions: airflow_permissions adds only the
+    unverified roles (Viewer), so a combined role mapping really restricts."""
+    caplog.set_level(logging.INFO)
     c = make_client(
         make_services(tmp_path, iam={"strategies": ["airflow_permissions", "role_mapping"]})
     )
-    assert "restricts nothing" in caplog.text
+    assert "airflow_permission_roles.unverified" in caplog.text
     me = c.get("/api/me", headers=as_role("Viewer")).json()
-    assert "Admin" in me["roles"]  # documented: every user gets every role
+    assert "Admin" not in me["roles"]
+    assert set(me["roles"]) == {"Authenticated", "Viewer"}
+    deployer = c.get("/api/me", headers=as_role("Deployer")).json()
+    assert "Deployer" in deployer["roles"]
 
 
 # --------------------------------------------------------------------------- 15: [] = nobody

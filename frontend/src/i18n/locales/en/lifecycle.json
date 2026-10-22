@@ -11,6 +11,7 @@
     "remove": "Remove",
     "deployFirst": "Deploy the DAG first: this needs it in Airflow.",
     "mustBeObject": "Must be a JSON object",
+    "confInvalid": "The conf JSON is not valid: fix it to continue.",
     "nothingAffected": "Nothing would be affected.",
     "affected_one": "{{count}} item affected:",
     "affected_other": "{{count}} items affected:"
@@ -102,6 +103,10 @@
     "selectNodesFirst": "Select one or more nodes on the canvas first",
     "selectTaskFirst": "Select a task on the canvas first",
     "deleted": "{{dagId}} deleted",
+    "deletePending": "Deleting {{dagId}} needs another reviewer's approval",
+    "deletePendingBody": "Stored as a delete proposal; once approved, anyone allowed to deploy can execute it.",
+    "deletePrOpened": "Pull request opened to delete {{dagId}}",
+    "deletePrOpenedBody": "The DAG stays live until the pull request is merged.",
     "deleteFailed": "Delete failed",
     "selectPythonTask": "Select a Python task first",
     "aiConfigureModel": "Set up your AI model to use AI features…",
@@ -317,6 +322,11 @@
       "db": "dag.test() (writes a run)",
       "auto": "Auto"
     },
+    "dbUnavailable": {
+      "disabled": "dag.test() is turned off on this server (runner.allow_db_mode): it would give the DAG code the metadata DB and the Fernet key. Auto runs in memory.",
+      "admin_only": "dag.test() gives the DAG code the metadata DB and the Fernet key, so only administrators (admin:config) may use it. Auto runs in memory."
+    },
+    "onValidator": "Test runs execute on the isolated validator service, not on this server.",
     "duration": "Duration: {{value}}",
     "durationCol": "Duration",
     "state": "State",
@@ -325,7 +335,11 @@
     "xcomPushes": "XCom pushes",
     "skippedDownstream": "Skipped downstream: {{list}}",
     "log": "Log",
-    "confHelp": "JSON used as dag_run.conf / params while testing, without touching the metadata DB."
+    "confHelp": "JSON used as dag_run.conf / params while testing, without touching the metadata DB.",
+    "notIsolated": {
+      "title": "Not fully isolated",
+      "body": "This test ran on the server without its own process namespace (the host does not allow it): its code could see other processes there. Configure validator.url for isolated test runs."
+    }
   },
   "templates": {
     "title": "Templates",

@@ -3,13 +3,18 @@
 The browser asks the authenticated HTTP API for a short-lived ticket
 (``POST /api/lsp/session``, ``builder:use``) and opens ``/api/lsp/ws/{language}?ticket=…``;
 the WebSocket checks the ticket (an HMAC, like the collaboration rooms), so no long-lived
-credential appears in a URL and every Airflow auth manager works. See
-:mod:`autoair.lsp.proxy` for the session itself.
+credential appears in a URL and every Airflow auth manager works. A ticket names the user it
+was issued to (the session runs as that user) and opens one socket: its nonce is claimed in
+the shared :class:`~autoair.collab.TicketLedger` (collection ``lsp_tickets``), so a leaked
+ticket cannot be replayed on any replica within its TTL. See :mod:`autoair.lsp.proxy` for the
+session itself.
 """
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
+import logging
 from typing import Literal
 
 from fastapi import APIRouter, Response, WebSocket, WebSocketDisconnect
@@ -19,12 +24,14 @@ from pydantic import BaseModel, Field
 from autoair.api.app import Services
 from autoair.api.deps import ServicesDep
 from autoair.api.features import requires_feature
-from autoair.collab import issue_ticket, verify_ticket
+from autoair.collab import TicketLedger, issue_ticket, ticket_ledger, verify_ticket
 from autoair.iam.deps import PrincipalDep
 from autoair.lsp.proxy import LspError, LspSessionManager, server_status
 
 FEATURE = "ide_language_server"
 TICKET_TTL = 60  # seconds; only checked when the socket opens
+
+log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/lsp", tags=["lsp"], dependencies=[requires_feature(FEATURE)])
 ws_router = APIRouter(prefix="/lsp")
@@ -81,6 +88,26 @@ def _manager(websocket: WebSocket, services: Services) -> LspSessionManager:
     return manager
 
 
+def _ledger(websocket: WebSocket, services: Services) -> TicketLedger:
+    state = websocket.app.state
+    cached = getattr(state, "lsp_tickets", None)
+    if isinstance(cached, tuple) and cached[0] is services:
+        ledger: TicketLedger = cached[1]
+        return ledger
+    ledger = ticket_ledger(services.settings, services.database, collection="lsp_tickets")
+    state.lsp_tickets = (services, ledger)
+    return ledger
+
+
+async def _claimed(websocket: WebSocket, services: Services, claims: dict[str, object]) -> bool:
+    """``True`` the first time this ticket opens a socket, on any replica."""
+    try:
+        return await asyncio.to_thread(_ledger(websocket, services).claim, dict(claims))
+    except Exception:  # the ledger is unreachable: fail closed
+        log.warning("lsp: cannot record the ticket; refusing", exc_info=True)
+        return False
+
+
 async def _deny(websocket: WebSocket, status: int, detail: str) -> None:
     try:
         await websocket.send_denial_response(Response(detail, status_code=status))
@@ -99,6 +126,9 @@ async def lsp_socket(websocket: WebSocket, language: str) -> None:
     )
     if claims is None:
         await _deny(websocket, 403, "missing, invalid or expired ticket (POST /api/lsp/session)")
+        return
+    if not await _claimed(websocket, services, claims):
+        await _deny(websocket, 403, "ticket already used (POST /api/lsp/session for a new one)")
         return
     manager = _manager(websocket, services)
     await websocket.accept()
