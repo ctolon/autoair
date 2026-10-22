@@ -19,6 +19,8 @@ AutoAir supports Apache Airflow 3.0 or newer, below 4, on Python 3.10 to 3.14. A
 
 CI installs exactly these combinations: the Airflow 3.1 job runs without `mcp` and its MCP tests are skipped with the reason; every other job installs `all,mcp,sqlite,postgres,kb-pgvector`. The versions tested are 3.0.6, 3.1.8, 3.2.2, 3.3.2 and 3.4.0b2.
 
+The required test jobs hold Airflow's core dependencies to the versions in Airflow's own constraints file for that release. [`scripts/airflow_constraints.py`](https://github.com/ctolon/autoair/blob/main/scripts/airflow_constraints.py) derives those pins: it keeps the pins of the packages `apache-airflow-core` and `apache-airflow-task-sdk` depend on directly, drops the ones that conflict with AutoAir's requirements together with the pins that depend on a dropped package, and lists both in the job summary. A separate, non-blocking job (`nox -s "fresh(3.x)"`) installs without them, as a plain `pip install` does, and reports an upstream release that breaks Airflow or AutoAir.
+
 ## The pins behind it
 
 What `apache-airflow-core` requires, and what a fresh resolver picks today:
@@ -32,6 +34,7 @@ What `apache-airflow-core` requires, and what a fresh resolver picks today:
 | 3.4.0b2 | `>=2.0.50,!=2.1.0` | `>=0.129,<0.137` | `>=1.3.1` | `>=2.12` |
 
 - **MCP on Airflow 3.1.** Every FastMCP 4 release requires Starlette 1.0.1 or newer. Airflow 3.1 caps FastAPI below 0.118, and those FastAPI releases cap Starlette below 0.49, so `autoair[mcp]` cannot be resolved next to Airflow 3.1. Older FastMCP lines are not an option: FastMCP 3 and 2 are built on the `mcp` SDK 1.x and `httpx` (AutoAir uses `mcp` 2.x and `httpx2`), and the newest FastMCP 3 releases need Starlette 1.0.1 as well.
+- **FastAPI on Airflow 3.2.** Airflow 3.2 sets no upper bound on FastAPI, but its execution API does not build with FastAPI 0.156.1 or newer (`PydanticUserError: Model 'TITerminalStatePayload' needs a discriminator field`): every task call fails, including AutoAir's DB-mode test runs. Airflow's 3.2 constraints file pins FastAPI 0.136. When you resolve Airflow 3.2 without that file, add `"fastapi<0.137"` (the cap Airflow 3.3 declares) to the install command. AutoAir itself needs only `fastapi>=0.115` and does not upgrade an installed FastAPI.
 - **SQLAlchemy on Airflow 3.0.** Airflow 3.0 keeps SQLAlchemy below 2.0. AutoAir's SQL state backends and the pgvector store use only APIs that SQLAlchemy 1.4 and 2.x share, so the `sqlite`, `postgres` and `kb-pgvector` extras accept SQLAlchemy 1.4.49 or newer and use whatever Airflow has installed.
 
 ## Airflow 3.4

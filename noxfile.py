@@ -35,16 +35,36 @@ def extras_for(airflow: str) -> str:
     return EXTRAS_BY_MINOR.get(".".join(airflow.split(".")[:2]), EXTRAS)
 
 
-def _install(session: nox.Session, airflow: str, *extra_args: str) -> None:
-    session.install(
-        *extra_args,
+def _install(
+    session: nox.Session, airflow: str, *extra_args: str, constrained: bool = True
+) -> None:
+    """Install AutoAir next to ``airflow``; ``constrained`` applies the pins Airflow's own
+    constraints file sets for its core dependencies (scripts/airflow_constraints.py), as the
+    blocking CI matrix does. Unconstrained is a fresh resolve, as `pip install` does."""
+    requirements = [
         "-e",
         f".[{extras_for(airflow)}]",
         f"apache-airflow=={airflow}",
         *PROVIDERS,
         "pytest",
         "ruff",
-    )
+    ]
+    constraints: list[str] = []
+    if constrained:
+        # Not session.create_tmp(), which would also move pytest's TMPDIR (see _pytest).
+        folder = tempfile.mkdtemp(prefix="autoair-nox-constraints-")
+        path = os.path.join(folder, f"airflow-{airflow}-constraints.txt")
+        flags = ["--prerelease"] if "--prerelease=allow" in extra_args else []
+        session.run(
+            "python",
+            "scripts/airflow_constraints.py",
+            *("--airflow", airflow, "--python", str(session.python), "--output", path),
+            *flags,
+            "--",
+            *requirements,
+        )
+        constraints = ["--constraint", path]
+    session.install(*extra_args, *requirements, *constraints)
 
 
 def _pytest(session: nox.Session) -> None:
@@ -65,6 +85,15 @@ def _pytest(session: nox.Session) -> None:
 @nox.parametrize("airflow", AIRFLOW_VERSIONS, ids=[v.rsplit(".", 1)[0] for v in AIRFLOW_VERSIONS])
 def tests(session: nox.Session, airflow: str) -> None:
     _install(session, airflow)
+    _pytest(session)
+
+
+@nox.session(python="3.12")
+@nox.parametrize("airflow", AIRFLOW_VERSIONS, ids=[v.rsplit(".", 1)[0] for v in AIRFLOW_VERSIONS])
+def fresh(session: nox.Session, airflow: str) -> None:
+    """Without Airflow's constraints: the newest releases a plain `pip install` picks, which
+    shows an upstream release breaking Airflow or AutoAir before users report it."""
+    _install(session, airflow, constrained=False)
     _pytest(session)
 
 

@@ -68,7 +68,8 @@ Single sessions and focused runs:
 
 ```bash
 uv run pytest tests/unit/test_codegen.py -q -k branch
-uv run nox -s "tests(3.0)"                 # one Airflow minor
+uv run nox -s "tests(3.0)"                 # one Airflow minor (Airflow's core pins)
+uv run nox -s "fresh(3.2)"                 # same, unpinned: newest upstream releases
 uv run nox -s oldest                       # Python 3.10 + Airflow 3.0
 cd frontend && npx vitest run src/lib      # one vitest folder
 cd frontend && npm run test:visual         # visual regression (light and dark)

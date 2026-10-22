@@ -99,14 +99,19 @@ jobs:
             pyproject.toml
             uv.lock
           cache-suffix: af${{ matrix.airflow }}
-      # uv pip resolves afresh for this Airflow (UV_FROZEN applies to uv sync/run only).
+      # uv pip resolves afresh for this Airflow (UV_FROZEN applies to uv sync/run only), held
+      # to the versions Airflow's constraints file pins for its core dependencies, minus those
+      # that conflict with AutoAir (listed in the job summary). test-fresh runs without them.
       - name: Install AutoAir [${{ matrix.extras }}] + Airflow ${{ matrix.airflow }}
         run: |
           uv venv --python "${{ matrix.python }}"
-          uv pip install -e ".[${{ matrix.extras }}]" \
-            "apache-airflow==${{ matrix.airflow }}" \
-            apache-airflow-providers-standard apache-airflow-providers-git \
-            apache-airflow-providers-common-messaging pytest
+          requirements=(-e ".[${{ matrix.extras }}]" "apache-airflow==${{ matrix.airflow }}"
+            apache-airflow-providers-standard apache-airflow-providers-git
+            apache-airflow-providers-common-messaging pytest)
+          .venv/bin/python scripts/airflow_constraints.py --airflow "${{ matrix.airflow }}" \
+            --python "${{ matrix.python }}" --output "$RUNNER_TEMP/airflow-constraints.txt" \
+            -- "${requirements[@]}"
+          uv pip install "${requirements[@]}" --constraint "$RUNNER_TEMP/airflow-constraints.txt"
       - name: pytest
         run: |
           export AIRFLOW_HOME="$RUNNER_TEMP/airflow"
@@ -118,6 +123,25 @@ jobs:
           name: junit-py${{ matrix.python }}-af${{ matrix.airflow }}
           path: ${{ runner.temp }}/junit.xml
           retention-days: 14
+
+  # The newest releases a plain `pip install` picks, without Airflow's constraints: shows an
+  # upstream release breaking Airflow or AutoAir early. Not required (ci-ok does not need it).
+  test-fresh:
+    name: Test · fresh resolve · Airflow ${{ matrix.airflow }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        airflow: ["3.0", "3.1", "3.2", "3.3"]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@18d369b23da25a81e9458561248e1aafff6a70fa  # v10.3.1
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          enable-cache: true
+      - run: uv run --only-group dev nox -s "fresh(${{ matrix.airflow }})"
 
   test-prerelease:
     name: Test · Airflow pre-release

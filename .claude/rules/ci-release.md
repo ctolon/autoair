@@ -32,7 +32,9 @@ subagent `release-checker`. Only the user tags and pushes.
   `src/autoair/__init__.py`, `frontend/package.json`, `website/package.json`.
 - `CHANGELOG.md` follows Keep a Changelog; user-visible changes go under `[Unreleased]`, and the
   release job needs a `## [X.Y.Z]` section.
-- Nox sessions (`uv run nox --list`): `tests(3.0)` ... `tests(3.3)`, `prerelease(3.4.0b2)`,
+- Nox sessions (`uv run nox --list`): `tests(3.0)` ... `tests(3.3)` with Airflow's core pins
+  from its constraints file (`scripts/airflow_constraints.py`; never pin by hand), `fresh(3.0)`
+  ... `fresh(3.3)` unpinned (the non-blocking `test-fresh` CI job), `prerelease(3.4.0b2)`,
   `oldest` (Python 3.10 + Airflow 3.0.6), `noai` (no `autoair[ai]`), `lint`. Never raise the
   Airflow floor (`apache-airflow>=3.0`) or drop a CI version without the owner.
 - New dependencies are justified, pinned with a floor, and an optional extra when not core.

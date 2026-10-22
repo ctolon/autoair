@@ -476,10 +476,10 @@ def mcp_server(
     """Run the AutoAir MCP server (stdio, or streamable HTTP for local use).
 
     For a shared endpoint use `autoair mcp-serve --http`, which authenticates callers."""
-    from autoair.mcp.server import main
-
     if http:
         _refuse_public_no_auth(True, host, "autoair mcp --http")
+    from autoair.mcp.server import main
+
     argv = ["--http", "--host", host, "--port", str(port)] if http else []
     main(argv)
 
