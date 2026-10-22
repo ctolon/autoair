@@ -254,10 +254,15 @@ def test_tls12_offers_modern_ciphers(tmp_path: Path) -> None:
             str(cert), str(key), None, ssl.PROTOCOL_TLS_SERVER, ssl.CERT_NONE, None, "TLSv1"
         )
 
+    def tls12(ctx: ssl.SSLContext) -> set[str]:
+        return {c["name"] for c in ctx.get_ciphers() if c["protocol"] != "TLSv1.3"}
+
     ctx = tls_context(None, uvicorn_default)
-    names = {c["name"] for c in ctx.get_ciphers()}
-    assert "ECDHE-RSA-AES128-GCM-SHA256" in names
-    assert not any(n.endswith("-SHA") for n in names)
+    # Python's default set (which suites it holds depends on the Python/OpenSSL build), not
+    # uvicorn's "TLSv1" list, which holds no AEAD suite at all.
+    assert tls12(ctx) == tls12(ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER))
+    assert "ECDHE-RSA-AES128-GCM-SHA256" in tls12(ctx)
+    assert "ECDHE-RSA-AES128-GCM-SHA256" not in tls12(uvicorn_default())
     assert ctx.minimum_version == ssl.TLSVersion.TLSv1_2
 
 
