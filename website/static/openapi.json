@@ -3,7 +3,7 @@
   "info": {
     "title": "AutoAir API",
     "description": "No-code DAG builder for Apache Airflow 3",
-    "version": "0.2.0"
+    "version": "0.2.1"
   },
   "paths": {
     "/auth/config": {
@@ -14860,7 +14860,9 @@
             "enum": [
               "local",
               "airflow-bundle",
-              "git-checkout"
+              "git-checkout",
+              "object-bundle",
+              "object"
             ],
             "title": "Kind"
           },
@@ -14929,6 +14931,18 @@
             ],
             "title": "Provider",
             "default": "local"
+          },
+          "object_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Object Url",
+            "description": "Object storage candidates: fsspec URL of the DAG prefix."
           },
           "settings": {
             "$ref": "#/components/schemas/StorageSettings",

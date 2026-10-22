@@ -90,28 +90,15 @@ def password_from_env(conn_id: str, environ: Any = None) -> str | None:
 
 
 def password_from_airflow(conn_id: str) -> str | None:
-    """The password of an Airflow connection (secrets backends, then the Task SDK), or the
-    environment variable when Airflow is not installed."""
-    loaders: list[Any] = []
-    try:
-        from airflow.models.connection import Connection
+    """The password of an Airflow connection (env vars, secrets backend, metadata DB, then
+    the Task SDK), or the environment variable when Airflow is not installed."""
+    from autoair._compat import AirflowConnectionError, get_airflow_connection
 
-        loaders.append(Connection.get_connection_from_secrets)
-    except ImportError:
-        pass
     try:
-        from airflow.sdk import BaseHook
-
-        loaders.append(BaseHook.get_connection)
-    except ImportError:
-        pass
-    for load in loaders:
-        try:
-            conn = load(conn_id)
-        except Exception:  # Airflow raises its own not-found / configuration errors
-            log.debug("connection lookup of %r failed", conn_id, exc_info=True)
-            continue
-        password = getattr(conn, "password", None)
+        password = getattr(get_airflow_connection(conn_id), "password", None)
+    except AirflowConnectionError as exc:
+        log.debug("%s", exc)
+    else:
         if password:
             return str(password)
     return password_from_env(conn_id)

@@ -61,6 +61,11 @@ builds sdist + wheel with checksums, publishes to PyPI (trusted publishing, envi
 `pages.yml` redeploys the docs on release. `workflow_dispatch` runs everything without
 publishing (dry run).
 
+Fast release (only when the user asks): a tag message containing `[fast-release]`
+(`git tag -a vX.Y.Z -m "AutoAir X.Y.Z [fast-release]"`) skips the CI test matrix; the version
+check, build, `twine check`, artifact checks and the environment approvals still run. Run the
+focused tests of the change locally first and say which ones ran.
+
 ## Done when
 
 - [ ] Four versions agree; CHANGELOG section present

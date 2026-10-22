@@ -34,6 +34,41 @@ See [Catalog sources](/docs/extending/catalog-sources).
 
 Pin Airflow in the same command: `pip install "autoair[<extras>]" "apache-airflow==$(airflow version)"`. Never install the `airflow` extra into an Airflow image.
 
+### `litellm ... has requirement openai<3.0.0,>=2.20.0, but you have openai 3.x`
+
+You see this from `pip check`, as a warning at the end of `pip install`, or as a resolver error when you install AutoAir with Airflow's constraints file. It appears after installing `autoair[ai-openai]`, `autoair[ai-ollama]`, `autoair[ai-all]` or `autoair[all]` into an image or environment that also has the Google provider.
+
+**Cause.** Two packages that never talk to each other need incompatible versions of the `openai` SDK:
+
+| Package | Brought in by | Needs |
+|---|---|---|
+| `litellm` | `apache-airflow-providers-google`, through `google-cloud-aiplatform[evaluation]` (the official `apache/airflow` images include it) | `openai<3` (every `litellm` release as of October 2026) |
+| `pydantic-ai-slim[openai]` | AutoAir's `ai-openai`, `ai-ollama` and `ai-all` extras; also the `openai` extra of `apache-airflow-providers-common-ai` | `openai>=3.8` (every `pydantic-ai-slim` release AutoAir supports, 2.43 and later) |
+
+Airflow's own constraints work because they install `pydantic-ai-slim` without its `openai` extra, so `openai` stays at 2.x. The conflict is not between AutoAir and the `common.ai` provider: both use `pydantic-ai-slim`, and installing `common.ai` with its `openai` extra hits the same conflict. Upgrading `litellm` or pinning `openai<3` does not help: no `litellm` release accepts `openai` 3, and `openai<3` would remove pydantic-ai's OpenAI-compatible models (OpenAI, Azure OpenAI, Ollama and other OpenAI-compatible servers).
+
+**Fix.** AutoAir does not use `litellm`. Its only user in these images is Vertex AI evaluation with third-party judge models (`vertexai` evaluation code imports it optionally and works without it otherwise). Pick one:
+
+- **You use AutoAir's OpenAI-compatible models** (OpenAI, Azure OpenAI, Ollama): remove `litellm` after installing AutoAir, then check the result. AutoAir's published image does this:
+
+  ```bash
+  pip install "autoair[<extras>]" "apache-airflow==$(airflow version)"
+  pip uninstall --yes litellm
+  pip check
+  ```
+
+- **Your DAGs run Vertex AI evaluation with third-party judge models**: keep `litellm` and leave out the `ai-openai`, `ai-ollama` and `ai-all` extras. AutoAir's AI features still work with providers that do not need `openai` 3, for example `ai-anthropic` or `ai-google`.
+
+- **You install with Airflow's constraints file**: install Airflow with constraints first, then AutoAir in a second step without them, as described in [Airflow constraints files](/docs/installation/compatibility#airflow-constraints-files).
+
+Removing the package does not affect a LiteLLM proxy: pydantic-ai's `LiteLLMProvider` talks to a LiteLLM proxy server through the `openai` SDK and never imports `litellm`, so you can run the proxy as its own service and point AutoAir at it as an OpenAI-compatible server.
+
+A `pip check` that still fails after this names another conflict; report it with the full output.
+
+### The Anthropic model fails with `TypeError: Cannot instantiate typing.Union`
+
+`anthropic` 2.0 (released 2026-10-21) is not compatible with the `pydantic-ai-slim` releases AutoAir supports: pydantic-ai's Anthropic model fails while mapping messages. AutoAir 0.2.0 and later pin `anthropic<2` in `ai-anthropic` and `ai-all`. AutoAir 0.1.0 does not, so a fresh install of `autoair[ai-anthropic]==0.1.0` gets `anthropic` 2.0; upgrade AutoAir, or pin it yourself: `pip install "anthropic>=1.12.1,<2"`.
+
 ### `/ui/` shows "Frontend bundle not built" (HTTP 503)
 
 The wheel or checkout has no built UI. Run `npm ci && npm run build` in `frontend/` (Node.js 22), or `make build` for a wheel. Released wheels contain the UI.

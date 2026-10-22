@@ -23,7 +23,8 @@ subagent `release-checker`. Only the user tags and pushes.
   excluded); website build with `llms.txt`; packaging (twine, `check_release.py --artifacts`,
   clean-venv install); Docker image smoke test and Compose config validation; live auth-manager
   tests (non-blocking); optional live GitLab. The single required check is **CI OK** (`ci-ok`).
-- `release.yml` (tag `v*`): tag/version check, CI, build with checksums, PyPI trusted
+- `release.yml` (tag `v*`; `[fast-release]` in the tag message skips the CI job only):
+  tag/version check, CI, build with checksums, PyPI trusted
   publishing, multi-arch GHCR image with SBOM and provenance, GitHub Release from the CHANGELOG
   section; `workflow_dispatch` is a dry run. `pages.yml` deploys the website from main and on
   release; `codeql.yml` is code scanning.

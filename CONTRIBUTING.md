@@ -143,7 +143,8 @@ commands. The same checks, tests and review apply as for any other pull request.
 2. Move the `[Unreleased]` entries in `CHANGELOG.md` under `## [X.Y.Z] - YYYY-MM-DD` and update
    the comparison links.
 3. Merge to `main`, then tag: `git tag -s vX.Y.Z -m "AutoAir X.Y.Z" && git push origin vX.Y.Z`.
-4. `.github/workflows/release.yml` re-runs CI, publishes to PyPI (trusted publishing),
+4. `.github/workflows/release.yml` re-runs CI (skipped when the tag message contains
+   `[fast-release]`; see the release section of the development guide), publishes to PyPI (trusted publishing),
    pushes the multi-arch image `ghcr.io/ctolon/autoair` with SBOM and provenance, and creates
    the GitHub Release from the changelog section. The documentation site redeploys when the
    release is published.

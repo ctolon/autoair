@@ -71,29 +71,14 @@ def bundle_git_settings(name: str | None = None) -> BundleGitSettings | None:
     return None
 
 
-def _conn_from_secrets(conn_id: str) -> Any:
-    from airflow.models.connection import Connection
-
-    return Connection.get_connection_from_secrets(conn_id)
-
-
-def _conn_from_sdk(conn_id: str) -> Any:
-    from airflow.sdk import BaseHook
-
-    return BaseHook.get_connection(conn_id)
-
-
 def credentials_from_connection(conn_id: str) -> GitCredentials | None:
     """Read login / token / SSH key / GitHub App ids from an Airflow connection."""
-    conn: Any = None
-    for loader in (_conn_from_secrets, _conn_from_sdk):
-        try:
-            conn = loader(conn_id)
-            break
-        except Exception:
-            log.debug("connection lookup via %s failed", loader.__name__, exc_info=True)
-    if conn is None:
-        log.warning("could not read Airflow connection %r", conn_id)
+    from autoair._compat import AirflowConnectionError, get_airflow_connection
+
+    try:
+        conn: Any = get_airflow_connection(conn_id)
+    except AirflowConnectionError as exc:
+        log.warning("could not read Airflow connection: %s", exc)
         return None
     try:
         extra: dict[str, Any] = dict(conn.extra_dejson or {})

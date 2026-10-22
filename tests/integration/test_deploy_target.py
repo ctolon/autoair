@@ -105,3 +105,55 @@ def test_rejects_unusable_targets_and_secrets(repo, tmp_path):
     put = client.put("/api/deploy-target", json=secret)
     assert put.status_code == 400
     assert "Airflow connection" in put.json()["detail"]
+
+
+def test_object_storage_is_offered_and_accepted(tmp_path, monkeypatch):
+    """Object storage targets are listed (an S3DagBundle and a manual prefix) and can be
+    switched to from the dialog, like git and local ones."""
+    monkeypatch.setattr(
+        "autoair.deploy_setup._bundles",
+        lambda: [
+            {
+                "name": "s3-dags",
+                "classpath": "airflow.providers.amazon.aws.bundles.s3.S3DagBundle",
+                "kwargs": {"bucket_name": "acme", "prefix": "dags/", "aws_conn_id": "aws_dags"},
+            }
+        ],
+    )
+    settings = Settings(
+        dags_folder=tmp_path, subfolder="", ai={"enabled": False}, import_check_on_deploy=False
+    )
+    client = TestClient(create_app(build_services(settings, AuthBackend())))
+    candidates = client.get("/api/deploy-target").json()["candidates"]
+    bundle = next(c for c in candidates if c["kind"] == "object-bundle")
+    assert bundle["object_url"] == "s3://acme/dags"
+    assert bundle["conn_id"] == "aws_dags"
+    assert bundle["settings"]["mode"] == "object"
+    manual = next(c for c in candidates if c["kind"] == "object")
+    assert manual["settings"]["mode"] == "object"
+
+    proposal = {**manual["settings"], "object_url": "memory://autoair-ui-switch/dags"}
+    assert client.post("/api/deploy-target/test", json=proposal).json()["ok"] is True
+    saved = client.put("/api/deploy-target", json=proposal)
+    assert saved.status_code == 200, saved.text
+    assert saved.json()["status"]["kind"] == "object"
+    # The active object target prefills the manual option.
+    again = next(c for c in saved.json()["candidates"] if c["kind"] == "object")
+    assert again["object_url"] == "memory://autoair-ui-switch/dags"
+
+    secret = {**proposal, "storage_options": {"secret": "s3cr3t"}}
+    assert client.put("/api/deploy-target", json=secret).status_code == 400
+
+
+def test_object_storage_hidden_when_not_allowed(tmp_path):
+    settings = Settings(
+        dags_folder=tmp_path,
+        subfolder="",
+        ai={"enabled": False},
+        storage={"allowed_targets": ["local", "git"]},
+    )
+    client = TestClient(create_app(build_services(settings, AuthBackend())))
+    kinds = {c["kind"] for c in client.get("/api/deploy-target").json()["candidates"]}
+    assert not kinds & {"object", "object-bundle"}
+    put = client.put("/api/deploy-target", json={"mode": "object", "object_url": "memory://x"})
+    assert put.status_code == 400

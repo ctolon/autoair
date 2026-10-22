@@ -465,6 +465,132 @@ def _function_body(fn: Any, warnings: list[str], task_id: str) -> tuple[str, lis
     return body, params
 
 
+def _same_file(a: str | None, b: str | None) -> bool:
+    if not a or not b:
+        return False
+    try:
+        return Path(a).resolve() == Path(b).resolve()
+    except (OSError, ValueError):
+        return False
+
+
+def _callable_value(
+    fn: Any, dag_file: str | None, warnings: list[str], task_id: str, name: str
+) -> dict[str, Any] | None:
+    """A callable operator argument (``python_callable=...``) as a spec value: a function
+    defined in the DAG file becomes an inline function (its source, decorators removed, plus
+    the file's imports it uses), one imported from another module an import reference.
+    None (with a warning) when neither can represent it."""
+    import ast as _ast
+    import builtins
+    import inspect as _inspect
+    import re
+    import textwrap
+
+    from autoair.spec.models import PYTHON_PATH_PATTERN
+
+    what = f"{task_id}: {name}"
+    fn_name = getattr(fn, "__name__", None)
+    qualname = getattr(fn, "__qualname__", None) or ""
+    if not _inspect.isfunction(fn):
+        warnings.append(
+            f"{what} is a {type(fn).__name__}, not a plain function; it was not imported "
+            "(set it again in the builder)"
+        )
+        return None
+    if fn_name == "<lambda>":
+        warnings.append(
+            f"{what} is a lambda and was not imported; define it with `def` in the DAG file "
+            "or set it again in the builder"
+        )
+        return None
+    try:
+        source_file = _inspect.getsourcefile(fn)
+    except TypeError:
+        source_file = None
+    local = _same_file(source_file, dag_file)
+    if not local:
+        module = getattr(fn, "__module__", None) or ""
+        path = f"{module}.{qualname}"
+        if (
+            "<" not in qualname
+            and re.match(PYTHON_PATH_PATTERN, path)
+            and (
+                not module.startswith("unusual_prefix_")  # a DAG file loaded by the DagBag
+            )
+        ):
+            return {"$type": "import", "path": path}
+        warnings.append(
+            f"{what} ({qualname or fn_name}) cannot be imported: it is neither defined in the "
+            "DAG file nor importable by name (set it again in the builder)"
+        )
+        return None
+    try:
+        src = textwrap.dedent(_inspect.getsource(fn))
+        tree = _ast.parse(src)
+    except (OSError, TypeError, SyntaxError):
+        warnings.append(f"{what}: the source of {fn_name} is unavailable; it was not imported")
+        return None
+    func = next(
+        (n for n in tree.body if isinstance(n, (_ast.FunctionDef, _ast.AsyncFunctionDef))), None
+    )
+    if func is None:
+        warnings.append(f"{what}: the source of {fn_name} is unavailable; it was not imported")
+        return None
+    # ``func.lineno`` is the ``def`` line (decorators start above it): decorators are dropped,
+    # the function is passed as written.
+    lines = src.splitlines()
+    body = "\n".join(lines[func.lineno - 1 : func.end_lineno])
+    read = {n.id for n in _ast.walk(func) if isinstance(n, _ast.Name)}
+    bound: set[str] = set()
+    for n in _ast.walk(func):
+        if isinstance(n, _ast.arg):
+            bound.add(n.arg)
+        elif isinstance(n, _ast.Name) and isinstance(n.ctx, _ast.Store):
+            bound.add(n.id)
+        elif isinstance(n, (_ast.FunctionDef, _ast.AsyncFunctionDef, _ast.ClassDef)):
+            bound.add(n.name)
+        elif isinstance(n, (_ast.Import, _ast.ImportFrom)):
+            bound |= {(a.asname or a.name).split(".")[0] for a in n.names}
+    free = read - bound - set(dir(builtins)) - {func.name}
+    imports: list[str] = []
+    try:
+        module_tree = _ast.parse(Path(source_file or "").read_text(encoding="utf-8"))
+    except (OSError, SyntaxError, ValueError):
+        module_tree = _ast.Module(body=[], type_ignores=[])
+    imported: set[str] = set()
+    for stmt in module_tree.body:
+        if isinstance(stmt, _ast.ImportFrom) and stmt.module == "__future__":
+            continue
+        if isinstance(stmt, (_ast.Import, _ast.ImportFrom)):
+            aliases = [a for a in stmt.names if (a.asname or a.name).split(".")[0] in free]
+            if not aliases:
+                continue
+            imported |= {(a.asname or a.name).split(".")[0] for a in aliases}
+            kept: _ast.stmt
+            if isinstance(stmt, _ast.Import):
+                kept = _ast.Import(names=aliases)
+            else:
+                kept = _ast.ImportFrom(module=stmt.module, names=aliases, level=stmt.level)
+            imports.append(_ast.unparse(kept))
+    # Sorted: the value must not depend on the order the imports have in the file (generated
+    # code orders them differently from the hand-written file).
+    imports = sorted(set(imports))
+    unresolved = sorted(free - imported)
+    if unresolved:
+        warnings.append(
+            f"{what}: {fn_name} uses names defined elsewhere in the DAG file "
+            f"({', '.join(unresolved)}); they are not carried into the imported function"
+        )
+    if getattr(fn, "__closure__", None):
+        warnings.append(
+            f"{what}: {fn_name} uses variables of the function it is defined in; the "
+            "imported function is defined at module level"
+        )
+    source = "\n".join(imports) + ("\n\n\n" if imports else "") + body + "\n"
+    return {"$type": "function", "source": source}
+
+
 def _xcom_or_value(value: Any, ids: dict[str, str], warnings: list[str], task_id: str) -> Any:
     kind = type(value).__name__
     if kind in ("PlainXComArg", "XComArg"):
@@ -600,7 +726,9 @@ def _operator_params(
             if default is not _inspect.Parameter.empty and val == default:
                 continue
         if callable(val) and not isinstance(val, type):
-            warnings.append(f"{t.task_id}: callable parameter {name!r} dropped")
+            ref = _callable_value(val, getattr(dag, "fileloc", None), warnings, t.task_id, name)
+            if ref is not None:
+                op_params[name] = ref
             continue
         converted = _xcom_or_value(val, ids, warnings, t.task_id)
         if converted is not None:

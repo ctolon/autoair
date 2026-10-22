@@ -132,9 +132,13 @@ def _info(services: ServicesDep) -> DeployTargetInfo:
         if status.details.get("unavailable"):  # could not be built at start (retried)
             error = str(status.details.get("error"))
     policy = _policy(services)
+    # The manual object storage option starts from the active object target, else the
+    # configured one (its masked credentials are restored from configuration on save).
+    current = services.settings.storage
+    prefill = current if current.mode == "object" else services.configured_storage
     candidates = [
         c
-        for c in discover_candidates(services.settings.dags_folder)
+        for c in discover_candidates(services.settings.dags_folder, prefill)
         if candidate_mode(c) in policy.allowed_targets
     ]
     return DeployTargetInfo(

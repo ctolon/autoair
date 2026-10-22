@@ -215,3 +215,104 @@ with DAG("d", default_args={"env": {"A": "1"}}):
             {"dag_id": "d", "nodes": [_node(spec, "plain").model_dump(by_alias=True)]}
         )
     )
+
+
+# --------------------------------------------------------------------- classic python callables
+
+CLASSIC_CALLABLES = '''from __future__ import annotations
+
+import json
+from datetime import datetime
+from os.path import join as pjoin
+
+from airflow.sdk import DAG
+from airflow.providers.standard.operators.python import (
+    BranchPythonOperator,
+    PythonOperator,
+    ShortCircuitOperator,
+)
+from airflow.providers.standard.sensors.python import PythonSensor
+from airflow.providers.standard.operators.empty import EmptyOperator
+
+PREFIX = "p"
+
+
+def greet(name, **context):
+    """Say hello."""
+    # a comment stays
+    return json.dumps({"hello": pjoin("a", name)})
+
+
+def choose():
+    return "a"
+
+
+def always():
+    return True
+
+
+def uses_global():
+    return PREFIX
+
+
+with DAG("classic_callables", start_date=datetime(2024, 1, 1), schedule=None) as dag:
+    g = PythonOperator(task_id="greet", python_callable=greet, op_kwargs={"name": "x"})
+    b = BranchPythonOperator(task_id="branch", python_callable=choose)
+    s = ShortCircuitOperator(task_id="sc", python_callable=always)
+    ps = PythonSensor(task_id="ps", python_callable=always)
+    ext = PythonOperator(task_id="ext", python_callable=json.dumps, op_args=[1])
+    glob = PythonOperator(task_id="glob", python_callable=uses_global)
+    lam = PythonOperator(task_id="lam", python_callable=lambda: 1)
+    a = EmptyOperator(task_id="a")
+    g >> b >> a
+'''
+
+
+def test_classic_python_callables_defined_in_the_file_are_kept():
+    dag = _import(CLASSIC_CALLABLES)["classic_callables"]
+    assert dag.error is None
+    spec = dag.spec
+    assert spec is not None
+    greet = _node(spec, "greet").params["python_callable"]
+    assert greet == {
+        "$type": "function",
+        "source": "from os.path import join as pjoin\nimport json\n\n\n"
+        'def greet(name, **context):\n    """Say hello."""\n    # a comment stays\n'
+        '    return json.dumps({"hello": pjoin("a", name)})\n',
+    }
+    for task_id, fn in (("branch", "choose"), ("sc", "always"), ("ps", "always")):
+        value = _node(spec, task_id).params["python_callable"]
+        assert value["$type"] == "function"
+        assert value["source"].startswith(f"def {fn}():")
+    # imported from another module: an import reference, not a copy of its source
+    assert _node(spec, "ext").params["python_callable"] == {"$type": "import", "path": "json.dumps"}
+    # what cannot be carried over is a warning, never a silent drop
+    assert "python_callable" not in _node(spec, "lam").params
+    assert any("lam: python_callable is a lambda" in w for w in dag.warnings)
+    assert _node(spec, "glob").params["python_callable"]["$type"] == "function"
+    assert any("glob: python_callable" in w and "PREFIX" in w for w in dag.warnings)
+
+    # the generated DAG imports and its tasks call the same functions (without the
+    # lambda task, which the warning asks to set again)
+    spec = spec.model_copy(
+        update={"nodes": [n for n in spec.nodes if getattr(n, "task_id", None) != "lam"]}
+    )
+    source = generate_source(spec)
+    namespace: dict[str, Any] = {}
+    exec(compile(source, "generated.py", "exec"), namespace)
+    generated = namespace["dag"]
+    assert generated.get_task("greet").python_callable(name="x") == '{"hello": "a/x"}'
+    assert generated.get_task("branch").python_callable() == "a"
+    assert generated.get_task("ext").python_callable([1]) == "[1]"
+
+    from autoair.validation.dagbag_check import check_source
+
+    checked = check_source(source, filename="classic_callables.py", use_pool=False)
+    assert checked.ok, checked.import_errors
+
+    # importing the generated code and generating again is stable (code mode)
+    again = _import(source)["classic_callables"].spec
+    assert again is not None
+    greet_again = _node(again, "greet").params["python_callable"]["source"]
+    assert "def greet(name, **context):" in greet_again
+    assert generate_source(again) == source

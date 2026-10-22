@@ -57,7 +57,16 @@ Prefer workload identity (IRSA on EKS, Workload Identity on GKE) or the standard
 AUTOAIR_STORAGE__STORAGE_OPTIONS='{"endpoint_url": "https://minio.acme.io", "key": "...", "secret": "..."}'
 ```
 
-The deploy-target API (`PUT /api/deploy-target`) never stores credentials: a target chosen at runtime is refused when it carries `storage_options` credentials that are not already configured (`***` keeps the configured value). Put credentials in `AUTOAIR_STORAGE__STORAGE_OPTIONS` or the environment, and configure the object target through settings.
+The deploy-target API (`PUT /api/deploy-target`) never stores credentials: a target chosen at runtime is refused when it carries `storage_options` credentials that are not already configured (`***` keeps the configured value). Put credentials in `AUTOAIR_STORAGE__STORAGE_OPTIONS` or the environment.
+
+## Choosing the target in the UI
+
+Administrators (permission `admin:deploy_target`) can switch to object storage without a restart: **Versions & Git → Deploy target…**. The dialog lists:
+
+- every `S3DagBundle` and `GCSDagBundle` in Airflow's `[dag_processor] dag_bundle_config_list`, as `s3://<bucket_name>/<prefix>` or `gs://<bucket_name>/<prefix>`. The bundle's `aws_conn_id` or `gcp_conn_id` is shown for reference only: AutoAir writes with its own fsspec credentials, not with that connection;
+- **Object storage (S3, GCS, Azure Blob)**, an fsspec URL entered by hand plus optional storage options as JSON. When the active target is already object storage, the fields start from it, with credentials shown as `***`.
+
+**Test** builds the target and lists it; **Save & use** switches to it. Only kinds listed in `storage.allowed_targets` are offered.
 
 ## Airflow side
 

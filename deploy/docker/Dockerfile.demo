@@ -30,4 +30,6 @@ COPY --chown=airflow:0 --from=package /build/dist/*.whl /tmp/autoair/
 RUN pip install --no-cache-dir "apache-airflow==${AIRFLOW_VERSION}" \
     "$(find /tmp/autoair -name '*.whl')[standalone,format,git,ai,ai-openai,ai-anthropic,collab,collab-redis,postgres,otel,yaml]" \
     apache-airflow-providers-standard apache-airflow-providers-git \
+    && pip uninstall --yes litellm \
+    && pip check \
     && rm -rf /tmp/autoair

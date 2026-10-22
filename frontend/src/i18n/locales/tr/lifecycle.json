@@ -877,7 +877,7 @@
   },
   "deployTarget": {
     "title": "Deploy hedefi",
-    "description": "Deploy'ların nereye gideceği. Airflow DAG'leri git'ten okuyorsa (DAG bundle ya da git-sync) oraya deploy edin: AutoAir push eder ya da pull request açar.",
+    "description": "Deploy'ların nereye gideceği. Airflow DAG'leri git'ten (DAG bundle ya da git-sync) ya da nesne depolamadan (S3 veya GCS bundle) okuyorsa oraya deploy edin: AutoAir push eder, pull request açar ya da kovaya yazar.",
     "current": "Şu an",
     "modePush": "Dala push",
     "modePr": "Pull request",
@@ -889,7 +889,9 @@
     "kindCheckout": "DAG klasörünün git deposu",
     "hint": {
       "airflow-bundle": "Airflow DAG'leri bu depodan okuyor (GitDagBundle). Canlıya almak için buraya deploy edin.",
-      "git-checkout": "DAG klasörü bir git checkout'u (ör. git-sync): yerele yazılan dosyalar ezilir; deposuna deploy edin."
+      "git-checkout": "DAG klasörü bir git checkout'u (ör. git-sync): yerele yazılan dosyalar ezilir; deposuna deploy edin.",
+      "object-bundle": "Airflow DAG'leri bu nesne depolama önekinden okuyor (S3DagBundle, GCSDagBundle). Canlıya çıkmaları için buraya deploy edin.",
+      "object": "Airflow'un DAG'leri okuduğu bir kova önekini (fsspec URL'si) girin."
     },
     "noGit": "Airflow ayarlarında git kaynağı bulunamadı. DAG klasörünü seçin ya da aşağıya bir depo girin.",
     "fromBundle": "Depo, dal, klasör ve kimlik bilgileri Airflow'un “{{name}}” DAG bundle'ından gelir; aşağıdaki alanlar bunları geçersiz kılar.",
@@ -915,7 +917,23 @@
     "save": "Kaydet ve kullan",
     "chipWarn": "Airflow DAG'leri git'ten okuyor ama deploy'lar yerel dosyalara gidiyor — deploy hedefini ayarlayın",
     "forcedConnection": "Yönetici tarafından belirlendi (storage.git.forced_conn_id): her git dağıtımı bu Airflow bağlantısını kullanır.",
-    "perUserCredentials": "Commit ve pull request'ler her kullanıcının kendi Airflow bağlantısını ({{template}}) kullanır; bu bağlantı yalnızca okuma için kullanılır."
+    "perUserCredentials": "Commit ve pull request'ler her kullanıcının kendi Airflow bağlantısını ({{template}}) kullanır; bu bağlantı yalnızca okuma için kullanılır.",
+    "kindObject": "Nesne depolama (S3, GCS, Azure Blob)",
+    "fromObjectBundle": "Önek, Airflow'un “{{name}}” DAG bundle'ından geliyor. AutoAir kendi nesne depolama kimlik bilgileriyle yazar (sunucu ortamı veya AUTOAIR_STORAGE__STORAGE_OPTIONS).",
+    "fromObjectBundleConn": "Önek, {{conn}} bağlantısıyla okuyan Airflow'un “{{name}}” DAG bundle'ından geliyor. AutoAir kendi nesne depolama kimlik bilgileriyle yazar (sunucu ortamı veya AUTOAIR_STORAGE__STORAGE_OPTIONS).",
+    "objectUrl": "Nesne depolama URL'si",
+    "objectUrlHelp": "DAG dosyalarının yazılacağı önekin fsspec URL'si, ör. s3://bucket/dags, gs://bucket/dags veya az://container/dags.",
+    "objectUrlProblem": {
+      "missing": "Nesne depolama URL'sini girin.",
+      "invalid": "Geçerli bir URL değil: şema://kova/önek biçimini kullanın, ör. s3://bucket/dags."
+    },
+    "storageOptions": "Depolama seçenekleri (JSON, isteğe bağlı)",
+    "storageOptionsHelp": "endpoint_url veya region gibi gizli olmayan fsspec seçenekleri. Kimlik bilgileri buraya girilmez: sunucu ortamından veya AUTOAIR_STORAGE__STORAGE_OPTIONS'tan gelir; \"***\" yapılandırılmış değeri korur.",
+    "storageOptionsProblem": {
+      "json": "Geçerli bir JSON değil.",
+      "object": "Bir JSON nesnesi olmalı, ör. {\"anon\": false}."
+    },
+    "chipWarnObject": "Airflow DAG'leri nesne depolamadan (DAG bundle) okuyor ama deploy'lar yerel dosyalara gidiyor — deploy hedefini ayarlayın"
   },
   "airflowState": {
     "parsing": "henüz Airflow'da değil",

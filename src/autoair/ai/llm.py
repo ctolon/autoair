@@ -262,13 +262,11 @@ class LLM:
 
     def _read_connection(self) -> ModelConfig:
         assert self.conn_id is not None
+        from autoair._compat import AirflowConnectionError, get_airflow_connection
+
         try:
-            try:
-                from airflow.sdk import BaseHook
-            except ImportError:  # pragma: no cover - older Airflow
-                from airflow.hooks.base import BaseHook
-            conn = BaseHook.get_connection(self.conn_id)
-        except Exception as exc:
+            conn = get_airflow_connection(self.conn_id)
+        except AirflowConnectionError as exc:
             raise LLMError(f"cannot load Airflow connection {self.conn_id!r}: {exc}") from exc
         return config_from_connection(conn, model=self._model_override, defaults=self._defaults)
 

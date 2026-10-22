@@ -33,12 +33,19 @@ LABEL org.opencontainers.image.title="autoair" \
 
 # Providers your DAGs use go here as well (they also feed AutoAir's operator palette).
 # apache-airflow is pinned so pip never changes the base image's Airflow.
+# litellm is removed because every release pins openai<3, while pydantic-ai's OpenAI model
+# (ai-openai) needs openai>=3, so `pip check` fails with both installed. Nothing in AutoAir
+# uses it; the base image has it only for google-cloud-aiplatform[evaluation], whose Vertex
+# AI evaluation imports it optionally (third-party judge models). `pip check` keeps the
+# image's dependency set consistent.
 USER airflow
 COPY --chown=airflow:0 dist/autoair-*.whl /tmp/autoair/
 RUN pip install --no-cache-dir "apache-airflow==${AIRFLOW_VERSION}" \
         "$(ls /tmp/autoair/autoair-*.whl)[${AUTOAIR_EXTRAS}]" \
         apache-airflow-providers-standard apache-airflow-providers-git \
         apache-airflow-providers-common-messaging \
+    && pip uninstall --yes litellm \
+    && pip check \
     && rm -rf /tmp/autoair
 
 # Precompute the operator catalog for the providers baked into this image, so every

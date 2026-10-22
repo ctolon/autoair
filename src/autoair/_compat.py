@@ -109,3 +109,70 @@ def sdk_symbol_module(name: str, version: tuple[int, int, int] | None = None) ->
         if version >= min_version:
             return module
     return "airflow.sdk"
+
+
+class AirflowConnectionError(LookupError):
+    """An Airflow connection could not be read. The message names the connection id and
+    the exception types of the failed lookups only, never anything the connection holds."""
+
+
+def _connection_loaders() -> list[Any]:
+    loaders: list[Any] = []
+    # Server-side lookup first: environment variables, the configured secrets backend and
+    # the metadata database (MetastoreBackend). The Task SDK's BaseHook.get_connection
+    # outside a task searches env + secrets backend + the Execution API only, so a
+    # connection kept in the metadata DB is "not defined" there (Airflow 3.3).
+    try:
+        from airflow.models.connection import Connection
+
+        loaders.append(Connection.get_connection_from_secrets)
+    except ImportError:
+        pass
+    # Inside a task (or without the core models) the Task SDK is the supported path;
+    # airflow.sdk exports BaseHook from 3.1, Airflow 3.0 has it in airflow.hooks.base.
+    try:
+        from airflow.sdk import BaseHook
+
+        loaders.append(BaseHook.get_connection)
+    except ImportError:
+        try:
+            from airflow.hooks.base import BaseHook as LegacyBaseHook
+
+            loaders.append(LegacyBaseHook.get_connection)
+        except ImportError:
+            pass
+    return loaders
+
+
+def get_airflow_connection(conn_id: str) -> Any:
+    """The Airflow connection ``conn_id`` from env vars (``AIRFLOW_CONN_*``), the configured
+    secrets backend, the metadata database when this process can reach it, or the Task SDK.
+
+    Raises :class:`AirflowConnectionError`; an authoritative deny of a secrets backend
+    (``AirflowSecretsBackendAccessDenied``, Airflow 3.3+) is re-raised as that error
+    without trying the remaining lookups."""
+    try:
+        from airflow import exceptions as airflow_exceptions
+
+        denied: tuple[type[BaseException], ...] = tuple(
+            cls
+            for cls in (getattr(airflow_exceptions, "AirflowSecretsBackendAccessDenied", None),)
+            if isinstance(cls, type)
+        )
+    except ImportError:
+        denied = ()
+    errors: list[str] = []
+    for load in _connection_loaders():
+        try:
+            return load(conn_id)
+        except denied as exc:
+            raise AirflowConnectionError(
+                f"access to the Airflow connection {conn_id!r} was denied"
+            ) from exc
+        except Exception as exc:  # Airflow raises its own not-found / configuration errors
+            errors.append(type(exc).__name__)
+    if not errors:
+        errors.append("Airflow is not installed")
+    raise AirflowConnectionError(
+        f"the Airflow connection {conn_id!r} is not defined or not readable ({', '.join(errors)})"
+    )

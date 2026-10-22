@@ -877,7 +877,7 @@
   },
   "deployTarget": {
     "title": "Deploy target",
-    "description": "Where deploys go. When Airflow reads DAGs from git (a DAG bundle or git-sync), deploy there: AutoAir pushes or opens pull requests.",
+    "description": "Where deploys go. When Airflow reads DAGs from git (a DAG bundle or git-sync) or object storage (an S3 or GCS bundle), deploy there: AutoAir pushes, opens pull requests or writes the bucket.",
     "current": "Current",
     "modePush": "Push to branch",
     "modePr": "Pull requests",
@@ -889,7 +889,9 @@
     "kindCheckout": "Git repository of the DAG folder",
     "hint": {
       "airflow-bundle": "Airflow reads DAGs from this repository (GitDagBundle). Deploy here so they go live.",
-      "git-checkout": "The DAG folder is a git checkout (e.g. git-sync): files written locally are overwritten; deploy to its repository."
+      "git-checkout": "The DAG folder is a git checkout (e.g. git-sync): files written locally are overwritten; deploy to its repository.",
+      "object-bundle": "Airflow reads DAGs from this object storage prefix (S3DagBundle, GCSDagBundle). Deploy here so they go live.",
+      "object": "Enter a bucket prefix (fsspec URL) that Airflow reads DAGs from."
     },
     "noGit": "No git source found in Airflow's configuration. Choose the DAG folder or enter a repository below.",
     "fromBundle": "Repository, branch, folder and credentials come from Airflow's DAG bundle “{{name}}”; fields below override them.",
@@ -915,7 +917,23 @@
     "save": "Save & use",
     "chipWarn": "Airflow reads DAGs from git but deploys go to local files — set up the deploy target",
     "forcedConnection": "Set by an administrator (storage.git.forced_conn_id): every git deploy uses this Airflow connection.",
-    "perUserCredentials": "Commits and pull requests use each user's own Airflow connection ({{template}}); this connection is only used for reading."
+    "perUserCredentials": "Commits and pull requests use each user's own Airflow connection ({{template}}); this connection is only used for reading.",
+    "kindObject": "Object storage (S3, GCS, Azure Blob)",
+    "fromObjectBundle": "The prefix comes from Airflow's DAG bundle “{{name}}”. AutoAir writes with its own object storage credentials (server environment or AUTOAIR_STORAGE__STORAGE_OPTIONS).",
+    "fromObjectBundleConn": "The prefix comes from Airflow's DAG bundle “{{name}}”, which reads with connection {{conn}}. AutoAir writes with its own object storage credentials (server environment or AUTOAIR_STORAGE__STORAGE_OPTIONS).",
+    "objectUrl": "Object storage URL",
+    "objectUrlHelp": "fsspec URL of the prefix DAG files are written to, e.g. s3://bucket/dags, gs://bucket/dags or az://container/dags.",
+    "objectUrlProblem": {
+      "missing": "Enter the object storage URL.",
+      "invalid": "Not a URL: use scheme://bucket/prefix, e.g. s3://bucket/dags."
+    },
+    "storageOptions": "Storage options (JSON, optional)",
+    "storageOptionsHelp": "Non-secret fsspec options such as endpoint_url or region. Credentials are never entered here: they come from the server environment or AUTOAIR_STORAGE__STORAGE_OPTIONS; \"***\" keeps a configured value.",
+    "storageOptionsProblem": {
+      "json": "Not valid JSON.",
+      "object": "Must be a JSON object, e.g. {\"anon\": false}."
+    },
+    "chipWarnObject": "Airflow reads DAGs from object storage (a DAG bundle) but deploys go to local files — set up the deploy target"
   },
   "airflowState": {
     "parsing": "not in Airflow yet",

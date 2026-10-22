@@ -379,19 +379,11 @@ __all__ = [
 
 
 def airflow_connection(conn_id: str) -> Any:
-    """An Airflow connection (secrets backends first, then the Task SDK); raises
-    :class:`FetchError` without exposing anything of it."""
-    errors: list[str] = []
-    try:
-        from airflow.models.connection import Connection
+    """An Airflow connection (env vars, secrets backend, metadata DB, then the Task SDK);
+    raises :class:`FetchError` without exposing anything of it."""
+    from autoair._compat import AirflowConnectionError, get_airflow_connection
 
-        return Connection.get_connection_from_secrets(conn_id)
-    except Exception as exc:  # Airflow raises its own not-found / config errors
-        errors.append(type(exc).__name__)
     try:
-        from airflow.sdk import BaseHook
-
-        return BaseHook.get_connection(conn_id)
-    except Exception as exc:
-        errors.append(type(exc).__name__)
-    raise FetchError(f"cannot read the Airflow connection {conn_id!r} ({', '.join(errors)})")
+        return get_airflow_connection(conn_id)
+    except AirflowConnectionError as exc:
+        raise FetchError(f"cannot read: {exc}") from exc

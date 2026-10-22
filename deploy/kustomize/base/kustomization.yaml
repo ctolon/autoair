@@ -33,4 +33,4 @@ labels:
 # a custom image with your providers goes in your overlay (newName/newTag).
 images:
   - name: ghcr.io/ctolon/autoair
-    newTag: "0.2.0"
+    newTag: "0.2.1"

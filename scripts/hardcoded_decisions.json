@@ -1351,6 +1351,10 @@
       "decision": "keep",
       "reason": "names of the admin-only git settings (policy enforced on UI-chosen targets)"
     },
+    "autoair/deploy_setup.py::<module>::constant::OBJECT_BUNDLES": {
+      "decision": "keep",
+      "reason": "class names and kwargs of the provider packages' object-storage DAG bundles (Airflow's API)"
+    },
     "autoair/deploy_setup.py::_git::kwarg::run(timeout=)": {
       "decision": "keep",
       "reason": "best-effort local git probe of the deploy dialog"

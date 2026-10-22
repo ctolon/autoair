@@ -28,7 +28,7 @@ For a first Helm installation without these production concerns, see [Installati
    docker push registry.example.com/my-airflow-autoair:3.3.2
    ```
 
-The Dockerfile does three things:
+The Dockerfile does four things:
 
 ```dockerfile
 ARG AIRFLOW_VERSION=3.3.2
@@ -37,6 +37,8 @@ FROM apache/airflow:${AIRFLOW_VERSION}
 COPY dist/autoair-*.whl /tmp/
 RUN pip install --no-cache-dir "$(ls /tmp/autoair-*.whl)[git,mcp,ai,ai-anthropic,format]" \
         apache-airflow-providers-git apache-airflow-providers-common-messaging \
+    && pip uninstall --yes litellm \
+    && pip check \
     && rm /tmp/autoair-*.whl
 
 RUN autoair catalog build --output /opt/airflow/autoair-catalog.json
@@ -46,6 +48,7 @@ ENV AUTOAIR_CATALOG_FILE=/opt/airflow/autoair-catalog.json \
 
 - **Installs AutoAir with extras.** `git` (an empty, stable install name: `provider=local` uses the `git` CLI of the image), `mcp` (the MCP endpoint), `ai` plus a provider extra such as `ai-anthropic` (the pydantic-ai runtime and the provider SDK; without them AI is off and the admin panel says which extra to install), `format` (ruff, used to format generated files).
 - **Installs providers.** `apache-airflow-providers-git` supplies `GitDagBundle`. Every provider your DAGs use must be installed here too: the same image runs the DAG processor and workers, and the installed providers are what fill AutoAir's operator palette.
+- **Checks the dependency set.** `pip check` fails the build when installed packages conflict. Before it, the build removes `litellm`: the Airflow base image ships it for Vertex AI evaluation, and every `litellm` release requires `openai<3`, while `ai-openai` needs `openai>=3`. AutoAir does not use `litellm`. If your DAGs evaluate third-party models with Vertex AI evaluation, they need `litellm`; leave out `ai-openai` and `ai-all`, and remove the `pip uninstall` line.
 - **Precomputes the operator catalog.** `autoair catalog build` parses the installed providers statically (nothing is imported) and writes a JSON file; `AUTOAIR_CATALOG_FILE` makes every API-server replica start warm with an identical palette. The catalog's cache key includes the installed distributions and a fingerprint of AutoAir's catalog code, so an upgraded image never serves a stale catalog.
 
 Add extras for the features you enable:

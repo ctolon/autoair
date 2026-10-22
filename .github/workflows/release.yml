@@ -3,10 +3,22 @@ name: Release
 # Tag vX.Y.Z (matching pyproject's version) on main to publish:
 #   PyPI (trusted publishing) -> GHCR multi-arch image (SBOM + provenance) -> GitHub Release.
 # workflow_dispatch builds and checks everything without publishing (dry run).
+#
+# Fast release: an annotated tag whose message contains [fast-release] skips the CI test matrix
+# (job "CI"). The version check, the build, `twine check` and the packaged-artifact checks still
+# run, and publishing still waits for the pypi/release environment approvals. Use it only for
+# a commit whose CI already ran or for an urgent fix tested locally:
+#   git tag -a v1.2.3 -m "AutoAir 1.2.3 [fast-release]" && git push origin v1.2.3
+# A dry run can skip it too: gh workflow run release.yml --ref main -f fast=true
 on:
   push:
     tags: ["v*"]
   workflow_dispatch:
+    inputs:
+      fast:
+        description: Skip the CI test matrix (fast release dry run)
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -29,6 +41,7 @@ jobs:
     outputs:
       version: ${{ steps.meta.outputs.version }}
       prerelease: ${{ steps.meta.outputs.prerelease }}
+      fast: ${{ steps.fast.outputs.fast }}
     steps:
       - uses: actions/checkout@v5
       - uses: astral-sh/setup-uv@v6
@@ -47,17 +60,42 @@ jobs:
           echo "prerelease=$pre" >> "$GITHUB_OUTPUT"
       - name: CHANGELOG has a section for this version
         run: grep -Eq "^## \[${{ steps.meta.outputs.version }}\]" CHANGELOG.md
+      - name: Fast release requested ([fast-release] in the tag message)
+        id: fast
+        env:
+          REF_TYPE: ${{ github.ref_type }}
+          TAG: ${{ github.ref_name }}
+          DISPATCH_FAST: ${{ inputs.fast }}
+        run: |
+          fast=false
+          if [ "$REF_TYPE" = tag ]; then
+            # The checkout may hold only a lightweight copy of the tag; fetch the tag object.
+            git fetch --force --depth=1 origin "refs/tags/$TAG:refs/tags/$TAG"
+            if git tag -l --format='%(contents)' "$TAG" | grep -qF '[fast-release]'; then fast=true; fi
+          elif [ "$DISPATCH_FAST" = true ]; then
+            fast=true
+          fi
+          echo "fast=$fast" >> "$GITHUB_OUTPUT"
+          if [ "$fast" = true ]; then
+            echo "::warning title=Fast release::The CI test matrix is skipped for this run."
+          fi
 
   verify:
     name: CI
     needs: version
+    if: ${{ needs.version.outputs.fast != 'true' }}
     uses: ./.github/workflows/ci.yml
     permissions:
       contents: read
 
   build:
     name: Build sdist + wheel
-    needs: verify
+    needs: [version, verify]
+    # Runs after a green CI, or without it on a fast release; never after a failed CI.
+    if: >-
+      ${{ !cancelled() && needs.version.result == 'success'
+      && (needs.verify.result == 'success'
+      || (needs.verify.result == 'skipped' && needs.version.outputs.fast == 'true')) }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -89,7 +127,9 @@ jobs:
 
   pypi:
     name: Publish to PyPI
-    if: ${{ github.ref_type == 'tag' }}
+    # Explicit result checks: with the CI job skipped (fast release) the default success()
+    # would skip every job downstream of it.
+    if: ${{ !cancelled() && github.ref_type == 'tag' && needs.build.result == 'success' }}
     needs: [version, build]
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -110,7 +150,7 @@ jobs:
 
   container:
     name: Publish container image to GHCR
-    if: ${{ github.ref_type == 'tag' }}
+    if: ${{ !cancelled() && github.ref_type == 'tag' && needs.build.result == 'success' }}
     needs: [version, build]
     runs-on: ubuntu-latest
     timeout-minutes: 90
@@ -177,7 +217,9 @@ jobs:
 
   github-release:
     name: GitHub Release
-    if: ${{ github.ref_type == 'tag' }}
+    if: >-
+      ${{ !cancelled() && github.ref_type == 'tag'
+      && needs.pypi.result == 'success' && needs.container.result == 'success' }}
     needs: [version, pypi, container]
     runs-on: ubuntu-latest
     timeout-minutes: 10

@@ -347,11 +347,28 @@ def _canonical(spec: DagSpec) -> dict[str, Any]:
 
     data = spec.model_dump(mode="json", by_alias=True, exclude_none=True)
     data.pop("source", None)
+
+    def functions_as_code(value: Any) -> None:
+        # Inline functions (``python_callable=fn`` defined in the file) come back from
+        # generated code without their comments: compare them as code too.
+        if isinstance(value, list):
+            for item in value:
+                functions_as_code(item)
+        elif isinstance(value, dict):
+            source = value.get("source")
+            if value.get("$type") == "function" and isinstance(source, str):
+                with contextlib.suppress(SyntaxError):
+                    value["source"] = ast.dump(ast.parse(source))
+                return
+            for item in value.values():
+                functions_as_code(item)
+
     for node in data.get("nodes", []):
         code = node.get("code")
         if isinstance(code, str):
             with contextlib.suppress(SyntaxError):
                 node["code"] = ast.dump(ast.parse(code))
+        functions_as_code(node.get("params"))
     data["edges"] = sorted(data.get("edges", []), key=lambda e: (e["source"], e["target"]))
     data["nodes"] = sorted(data.get("nodes", []), key=lambda n: n["id"])
     return data

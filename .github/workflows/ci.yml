@@ -403,6 +403,8 @@ jobs:
       - name: Smoke test the image
         run: |
           docker run --rm --entrypoint autoair autoair:ci --help > /dev/null
+          # The Dockerfile runs pip check too; this catches a build that drops that step.
+          docker run --rm --entrypoint python autoair:ci -m pip check
           docker run --rm autoair:ci plugins --output json | tee plugins.json
           grep -q '"autoair"' plugins.json
           test "$(docker image inspect autoair:ci --format '{{.Config.User}}')" = airflow

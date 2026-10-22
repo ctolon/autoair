@@ -129,6 +129,64 @@ def test_import_edit_deploy_keeps_the_hand_written_file(tmp_path: Path) -> None:
     assert "load.orders" in result.task_ids["hand_load"]
 
 
+CLASSIC_PY = '''"""Classic PythonOperator with a callable defined in the file."""
+
+from __future__ import annotations
+
+import json
+
+import pendulum
+
+from airflow.providers.standard.operators.python import PythonOperator
+from airflow.sdk import DAG
+
+
+@staticmethod
+def _unused():  # a decorated helper the DAG does not use
+    return None
+
+
+def build_payload(**context):
+    # what the API expects
+    return json.dumps({"ok": True})
+
+
+with DAG(
+    dag_id="hand_load",
+    schedule=None,
+    start_date=pendulum.datetime(2026, 1, 1, tz="UTC"),
+) as dag:
+    payload = PythonOperator(task_id="payload", python_callable=build_payload)
+'''
+
+
+def test_classic_python_operator_file_is_deployed_and_patched(tmp_path: Path) -> None:
+    """A PythonOperator whose python_callable is defined in the file keeps it on import, so
+    the preserve deploy is not refused and a canvas change patches the file in place."""
+    c = client(tmp_path)
+    spec = imported(c, CLASSIC_PY)
+    value = task_node(spec, "payload")["params"]["python_callable"]
+    assert value["$type"] == "function"
+    assert "def build_payload(**context):" in value["source"]
+    first = deploy(c, spec).json()
+    assert first["deployed"], first
+    assert first["source"]["policy"] == "preserve"
+    path = tmp_path / "dags" / "hand_load.py"
+    assert path.read_text() == CLASSIC_PY
+
+    stored = c.get("/api/specs/hand_load", headers=as_role("Admin")).json()
+    changed = copy.deepcopy(stored["spec"])
+    task_node(changed, "payload")["retries"] = 3
+    second = deploy(c, changed, base_etag=stored["etag"]).json()
+    assert second["deployed"], str(second["source"])
+    written = path.read_text()
+    assert "python_callable=build_payload" in written
+    assert "# what the API expects" in written
+    assert "retries=3" in written
+    result = check_source(written, filename="hand_load.py", use_pool=False)
+    assert result.ok, result.import_errors
+
+
 def test_new_task_and_edge_are_inserted_and_verified(tmp_path: Path) -> None:
     c = client(tmp_path)
     spec = imported(c)

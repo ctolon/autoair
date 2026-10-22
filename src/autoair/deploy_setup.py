@@ -5,7 +5,9 @@ In production Airflow rarely reads a local folder: DAGs come from a git reposito
 AutoAir must then *push to that repository* (or open pull requests) instead of writing files.
 
 * :func:`discover_candidates` lists the options this Airflow offers: the DAG folder, every
-  ``GitDagBundle`` and — when the DAG folder is a git checkout (git-sync) — its remote.
+  ``GitDagBundle``, every object-storage bundle (``S3DagBundle``, ``GCSDagBundle``), an
+  object-storage prefix entered by hand and — when the DAG folder is a git checkout
+  (git-sync) — its remote.
 * :class:`DeployTargetStore` persists the target chosen in the UI (``deploy-target.json`` in the
   state folder, or the SQL database); it overrides the ``AUTOAIR_STORAGE__*`` settings and is
   applied without restart.
@@ -30,7 +32,7 @@ from autoair.storage.config import GitStorageSettings, StorageSettings
 
 log = logging.getLogger(__name__)
 
-CandidateKind = Literal["local", "airflow-bundle", "git-checkout"]
+CandidateKind = Literal["local", "airflow-bundle", "git-checkout", "object-bundle", "object"]
 Provider = Literal["local", "github", "gitlab", "bitbucket", "azure", "gitea"]
 
 
@@ -44,7 +46,18 @@ class DeployCandidate(BaseModel):
     subdir: str | None = None
     conn_id: str | None = None
     provider: Provider = "local"
+    object_url: str | None = Field(
+        default=None, description="Object storage candidates: fsspec URL of the DAG prefix."
+    )
     settings: StorageSettings = Field(description="Proposed deploy target settings.")
+
+
+# Object-storage DAG bundles of the provider packages: class name -> (URL scheme, the kwarg
+# naming the Airflow connection the bundle reads with).
+OBJECT_BUNDLES: dict[str, tuple[str, str]] = {
+    "S3DagBundle": ("s3", "aws_conn_id"),
+    "GCSDagBundle": ("gs", "gcp_conn_id"),
+}
 
 
 def suggested_provider(url: str | None) -> Provider:
@@ -115,7 +128,54 @@ def _bundles() -> list[dict[str, object]]:
         return []
 
 
-def discover_candidates(dags_folder: Path) -> list[DeployCandidate]:
+def _object_bundle(bundle: dict[str, object]) -> DeployCandidate | None:
+    cls = str(bundle.get("classpath", "")).rsplit(".", 1)[-1]
+    if cls not in OBJECT_BUNDLES:
+        return None
+    scheme, conn_kwarg = OBJECT_BUNDLES[cls]
+    raw = bundle.get("kwargs")
+    kwargs: dict[str, object] = raw if isinstance(raw, dict) else {}
+    bucket = str(kwargs.get("bucket_name") or "").strip("/")
+    if not bucket:
+        return None
+    prefix = str(kwargs.get("prefix") or "").strip("/")
+    url = f"{scheme}://{bucket}/{prefix}" if prefix else f"{scheme}://{bucket}"
+    name = str(bundle.get("name", scheme))
+    conn = kwargs.get(conn_kwarg)
+    return DeployCandidate(
+        id=f"bundle:{name}",
+        kind="object-bundle",
+        title=f"Airflow DAG bundle “{name}”",
+        description=f"Airflow reads DAGs from this object storage prefix ({cls}).",
+        conn_id=str(conn) if conn else None,
+        object_url=url,
+        settings=StorageSettings(mode="object", object_url=url),
+    )
+
+
+def manual_object_candidate(configured: StorageSettings | None) -> DeployCandidate:
+    """An object storage prefix entered by hand; prefilled with the configured one (secrets
+    masked: ``***`` stands for the configured credential and is restored on save)."""
+    if configured is not None and configured.mode == "object":
+        safe = scrub_secrets(configured)
+        settings = StorageSettings(
+            mode="object", object_url=safe.object_url, storage_options=safe.storage_options
+        )
+    else:
+        settings = StorageSettings(mode="object")
+    return DeployCandidate(
+        id="object",
+        kind="object",
+        title="Object storage",
+        description="An S3, GCS or Azure Blob prefix (fsspec URL) Airflow reads DAGs from.",
+        object_url=settings.object_url,
+        settings=settings,
+    )
+
+
+def discover_candidates(
+    dags_folder: Path, configured: StorageSettings | None = None
+) -> list[DeployCandidate]:
     out = [
         DeployCandidate(
             id="local",
@@ -125,7 +185,8 @@ def discover_candidates(dags_folder: Path) -> list[DeployCandidate]:
             settings=StorageSettings(mode="local"),
         )
     ]
-    for bundle in _bundles():
+    bundles = _bundles()
+    for bundle in bundles:
         if not str(bundle.get("classpath", "")).endswith("GitDagBundle"):
             continue
         kwargs = bundle.get("kwargs") if isinstance(bundle.get("kwargs"), dict) else {}
@@ -183,6 +244,11 @@ def discover_candidates(dags_folder: Path) -> list[DeployCandidate]:
                 ),
             )
         )
+    for bundle in bundles:
+        found = _object_bundle(bundle)
+        if found is not None:
+            out.append(found)
+    out.append(manual_object_candidate(configured))
     return out
 
 
@@ -337,7 +403,7 @@ def apply_policy(chosen: StorageSettings, configured: StorageSettings) -> Storag
 
 
 def candidate_mode(candidate: DeployCandidate) -> str:
-    return "local" if candidate.kind == "local" else "git"
+    return candidate.settings.mode
 
 
 def unreferenced_secrets(
@@ -378,6 +444,7 @@ __all__ = [
     "candidate_mode",
     "discover_candidates",
     "git_checkout",
+    "manual_object_candidate",
     "restore_secrets",
     "scrub_secrets",
     "suggested_provider",

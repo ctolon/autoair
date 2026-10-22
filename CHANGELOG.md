@@ -8,6 +8,37 @@ minor versions may contain breaking changes; they are listed under **Changed** o
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-10-22
+
+### Fixed
+- Deploy target dialog: object storage targets can be chosen like git and local ones. Airflow's
+  `S3DagBundle` and `GCSDagBundle` entries are discovered, and an object storage prefix can be
+  entered by hand (fsspec URL plus optional non-secret storage options; credentials still come
+  from the server environment or `AUTOAIR_STORAGE__STORAGE_OPTIONS`). Before, switching to
+  object storage was possible only through the API. `storage.allowed_targets` still applies.
+- Container image: `pip check` passes again. The Airflow base image ships `litellm` (an optional
+  dependency of Vertex AI evaluation), which pins `openai<3`, while `autoair[ai-openai]` needs
+  `openai>=3`. The image now removes `litellm`, which AutoAir does not use, and the build and
+  the CI smoke test run `pip check`. Vertex AI evaluation with third-party judge models needs
+  `litellm` and is not available in this image.
+- `ai.llm_conn_id` finds connections stored in the Airflow metadata database again. Outside a
+  task the Task SDK's `BaseHook.get_connection` does not read the metadata DB, so on Airflow
+  3.1+ the plugin, `autoair serve` and `autoair ai-serve` reported "conn_id isn't defined" for
+  connections created in the Airflow UI or CLI. All connection lookups (LLM, git, knowledge
+  base, validator key) now share one helper that checks env vars, the configured secrets
+  backend and the metadata DB first, then the Task SDK. The
+  `AIRFLOW__SECRETS__BACKEND=airflow.secrets.metastore.MetastoreBackend` workaround is no
+  longer needed.
+- Python DAG import (import dialog, code mode, bulk import, MCP `import_python_dag`) keeps the
+  `python_callable` of classic `PythonOperator`, `BranchPythonOperator`,
+  `ShortCircuitOperator` and `PythonSensor` tasks (and other callable operator arguments).
+  Before, the callable was dropped and the deploy failed with "python_callable missing". A
+  function defined in the DAG file becomes an inline function (its source without decorators,
+  with the file's imports it uses), a function imported from another module an import
+  reference; a lambda, a `functools.partial` or a function that uses other names of the file
+  is reported in the import warnings. Source-preserving deploys of such files compare these
+  functions as code, so a canvas change is patched into the file instead of being refused.
+
 ## [0.2.0] - 2026-10-22
 
 ### Added
@@ -427,6 +458,7 @@ First public release.
 - Supports Apache Airflow ≥ 3.0, < 4 (CI: 3.0.6, 3.1.8, 3.2.2, 3.3.2, plus the 3.4
   pre-release) on Python 3.10–3.14.
 
-[Unreleased]: https://github.com/ctolon/autoair/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/ctolon/autoair/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/ctolon/autoair/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/ctolon/autoair/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/ctolon/autoair/releases/tag/v0.1.0

@@ -14,11 +14,21 @@ import {
   Spinner,
   Stack,
   Text,
+  Textarea,
 } from "@chakra-ui/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { LuCircleCheck, LuFolder, LuFolderGit2, LuGitBranch, LuGitPullRequest, LuRotateCcw } from "react-icons/lu";
+import {
+  LuCircleCheck,
+  LuCloud,
+  LuCloudCog,
+  LuFolder,
+  LuFolderGit2,
+  LuGitBranch,
+  LuGitPullRequest,
+  LuRotateCcw,
+} from "react-icons/lu";
 import { useAccess } from "../../lib/access";
 
 import {
@@ -37,7 +47,30 @@ import { ConnectionPicker } from "../../widgets/AirflowPickers";
 import { DialogShell } from "../components/DialogShell";
 import { useMeta } from "../hooks";
 
-const KIND_ICON = { local: LuFolder, "airflow-bundle": LuFolderGit2, "git-checkout": LuGitBranch } as const;
+const KIND_ICON = {
+  local: LuFolder,
+  "airflow-bundle": LuFolderGit2,
+  "git-checkout": LuGitBranch,
+  "object-bundle": LuCloudCog,
+  object: LuCloud,
+} as const;
+// fsspec URL of a remote prefix (s3://, gs://, gcs://, az://, abfs://, memory://, ...).
+const OBJECT_URL = /^[a-z][a-z0-9+.-]*:\/\/\S+$/i;
+
+type OptionsParse = { ok: true; value: Record<string, unknown> } | { ok: false; error: "json" | "object" };
+
+/** The storage_options text typed by the user; never throws on partial input. */
+function parseOptions(text: string): OptionsParse {
+  if (!text.trim()) return { ok: true, value: {} };
+  let value: unknown;
+  try {
+    value = JSON.parse(text);
+  } catch {
+    return { ok: false, error: "json" };
+  }
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return { ok: false, error: "object" };
+  return { ok: true, value: value as Record<string, unknown> };
+}
 const PROVIDERS = ["local", "github", "gitlab", "bitbucket", "azure", "gitea"] as const;
 const GIT_CONN_TYPES = ["git", "github", "gitlab", "http"];
 
@@ -54,6 +87,7 @@ export default function StorageDialog() {
   const info = useQuery({ ...getDeployTargetOptions(), staleTime: 0 });
   const [draft, setDraft] = useState<StorageSettings | null>(null);
   const [picked, setPicked] = useState<string | null>(null);
+  const [optionsText, setOptionsText] = useState("");
   const refresh = async () => {
     for (const queryKey of [
       getDeployTargetQueryKey(),
@@ -78,10 +112,20 @@ export default function StorageDialog() {
   const choose = (c: DeployCandidate) => {
     setPicked(c.id);
     setDraft(structuredClone(c.settings));
+    const options = c.settings.storage_options;
+    setOptionsText(options && Object.keys(options).length ? JSON.stringify(options, null, 2) : "");
     test.reset();
     save.reset();
   };
   const git = draft?.git;
+  const isObject = draft?.mode === "object";
+  const options = useMemo(() => parseOptions(optionsText), [optionsText]);
+  const objectUrl = typeof draft?.object_url === "string" ? draft.object_url.trim() : "";
+  const urlProblem = !isObject ? null : !objectUrl ? "missing" : OBJECT_URL.test(objectUrl) ? null : "invalid";
+  const invalid = isObject && (urlProblem !== null || !options.ok);
+  const body = (): StorageSettings | null =>
+    draft && isObject && options.ok ? { ...draft, object_url: objectUrl, storage_options: options.value } : draft;
+  const pickedCandidate = data?.candidates.find((c) => c.id === picked);
   const setGit = (patch: Partial<NonNullable<StorageSettings["git"]>>) =>
     setDraft((d) => (d ? { ...d, git: { ...d.git, ...patch } } : d));
 
@@ -164,7 +208,9 @@ export default function StorageDialog() {
                             ? t("deployTarget.kindLocal")
                             : c.kind === "git-checkout"
                               ? t("deployTarget.kindCheckout")
-                              : c.title}
+                              : c.kind === "object"
+                                ? t("deployTarget.kindObject")
+                                : c.title}
                         </Text>
                       </HStack>
                       <Text
@@ -182,12 +228,17 @@ export default function StorageDialog() {
                           {c.subdir ? ` / ${c.subdir}` : ""}
                         </Text>
                       ) : null}
+                      {c.object_url ? (
+                        <Text fontFamily="mono" fontSize="2xs" wordBreak="break-all">
+                          {c.object_url}
+                        </Text>
+                      ) : null}
                     </Card.Body>
                   </Card.Root>
                 );
               })}
             </SimpleGrid>
-            {!data.candidates.some((c) => c.kind !== "local") &&
+            {!data.candidates.some((c) => c.kind === "airflow-bundle" || c.kind === "git-checkout") &&
             (data.policy?.allowed_targets ?? ["git"]).includes("git") ? (
               <Text fontSize="xs" color="fg.muted">
                 {t("deployTarget.noGit")}
@@ -312,6 +363,59 @@ export default function StorageDialog() {
                     </Text>
                   ) : null}
                 </>
+              ) : isObject && draft ? (
+                <>
+                  {pickedCandidate?.kind === "object-bundle" ? (
+                    <Alert.Root status="info" size="sm">
+                      <Alert.Indicator />
+                      <Alert.Description fontSize="xs">
+                        {pickedCandidate.conn_id
+                          ? t("deployTarget.fromObjectBundleConn", {
+                              name: pickedCandidate.id.replace(/^bundle:/, ""),
+                              conn: pickedCandidate.conn_id,
+                            })
+                          : t("deployTarget.fromObjectBundle", { name: pickedCandidate.id.replace(/^bundle:/, "") })}
+                      </Alert.Description>
+                    </Alert.Root>
+                  ) : null}
+                  <Field.Root invalid={urlProblem !== null} required>
+                    <Field.Label fontSize="xs">{t("deployTarget.objectUrl")}</Field.Label>
+                    <Input
+                      size="sm"
+                      fontFamily="mono"
+                      placeholder="s3://bucket/dags/autoair"
+                      value={typeof draft.object_url === "string" ? draft.object_url : ""}
+                      data-testid="object-url"
+                      onChange={(e) => setDraft((d) => (d ? { ...d, object_url: e.target.value || null } : d))}
+                    />
+                    {urlProblem ? (
+                      <Field.ErrorText fontSize="xs">
+                        {t(`deployTarget.objectUrlProblem.${urlProblem}`)}
+                      </Field.ErrorText>
+                    ) : (
+                      <Field.HelperText fontSize="xs">{t("deployTarget.objectUrlHelp")}</Field.HelperText>
+                    )}
+                  </Field.Root>
+                  <Field.Root invalid={!options.ok}>
+                    <Field.Label fontSize="xs">{t("deployTarget.storageOptions")}</Field.Label>
+                    <Textarea
+                      size="sm"
+                      fontFamily="mono"
+                      rows={4}
+                      placeholder={'{"client_kwargs": {"endpoint_url": "https://minio:9000"}}'}
+                      value={optionsText}
+                      data-testid="object-options"
+                      onChange={(e) => setOptionsText(e.target.value)}
+                    />
+                    {!options.ok ? (
+                      <Field.ErrorText fontSize="xs">
+                        {t(`deployTarget.storageOptionsProblem.${options.error}`)}
+                      </Field.ErrorText>
+                    ) : (
+                      <Field.HelperText fontSize="xs">{t("deployTarget.storageOptionsHelp")}</Field.HelperText>
+                    )}
+                  </Field.Root>
+                </>
               ) : (
                 <Text fontSize="sm">{t("deployTarget.localHelp")}</Text>
               )}
@@ -333,7 +437,11 @@ export default function StorageDialog() {
                   size="sm"
                   variant="outline"
                   loading={test.isPending}
-                  onClick={() => test.mutate({ body: draft })}
+                  disabled={invalid}
+                  onClick={() => {
+                    const b = body();
+                    if (b) test.mutate({ body: b });
+                  }}
                 >
                   <LuCircleCheck /> {t("deployTarget.test")}
                 </Button>
@@ -341,13 +449,16 @@ export default function StorageDialog() {
                   size="sm"
                   colorPalette="blue"
                   loading={save.isPending}
-                  disabled={!access.can("admin:deploy_target")}
+                  disabled={invalid || !access.can("admin:deploy_target")}
                   title={
                     access.can("admin:deploy_target")
                       ? undefined
                       : t("access.denied", { permission: "admin:deploy_target" })
                   }
-                  onClick={() => save.mutate({ body: draft })}
+                  onClick={() => {
+                    const b = body();
+                    if (b) save.mutate({ body: b });
+                  }}
                 >
                   {t("deployTarget.save")}
                 </Button>

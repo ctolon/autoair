@@ -3584,7 +3584,7 @@ export type DeployCandidate = {
     /**
      * Kind
      */
-    kind: 'local' | 'airflow-bundle' | 'git-checkout';
+    kind: 'local' | 'airflow-bundle' | 'git-checkout' | 'object-bundle' | 'object';
     /**
      * Title
      */
@@ -3613,6 +3613,12 @@ export type DeployCandidate = {
      * Provider
      */
     provider?: 'local' | 'github' | 'gitlab' | 'bitbucket' | 'azure' | 'gitea';
+    /**
+     * Object Url
+     *
+     * Object storage candidates: fsspec URL of the DAG prefix.
+     */
+    object_url?: string | null;
     /**
      * Proposed deploy target settings.
      */
@@ -11484,7 +11490,7 @@ export type DeployCandidateWritable = {
     /**
      * Kind
      */
-    kind: 'local' | 'airflow-bundle' | 'git-checkout';
+    kind: 'local' | 'airflow-bundle' | 'git-checkout' | 'object-bundle' | 'object';
     /**
      * Title
      */
@@ -11513,6 +11519,12 @@ export type DeployCandidateWritable = {
      * Provider
      */
     provider?: 'local' | 'github' | 'gitlab' | 'bitbucket' | 'azure' | 'gitea';
+    /**
+     * Object Url
+     *
+     * Object storage candidates: fsspec URL of the DAG prefix.
+     */
+    object_url?: string | null;
     /**
      * Proposed deploy target settings.
      */

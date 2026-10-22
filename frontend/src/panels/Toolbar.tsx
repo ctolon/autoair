@@ -636,7 +636,11 @@ function StatusChips({ compact, tight = false }: { compact: boolean; tight?: boo
   const meta = useMeta();
   // Airflow reads DAGs from git but AutoAir writes local files: deploys would never go live.
   const target = useQuery({ ...getDeployTargetOptions(), staleTime: 300_000, retry: false });
-  const gitMismatch = target.data?.settings.mode === "local" && target.data.candidates.some((c) => c.kind !== "local");
+  // Only sources found in Airflow count: the hand-entered object storage option is always listed.
+  const sources = target.data?.settings.mode === "local" ? target.data.candidates : [];
+  const gitSource = sources.some((c) => c.kind === "airflow-bundle" || c.kind === "git-checkout");
+  const objectSource = sources.some((c) => c.kind === "object-bundle");
+  const gitMismatch = gitSource || objectSource;
   const dirty = useBuilder((s) => s.dirty);
   const savedDagId = useBuilder((s) => s.savedDagId);
   const prUrl = useBuilder((s) => s.pendingPrUrl);
@@ -660,9 +664,11 @@ function StatusChips({ compact, tight = false }: { compact: boolean; tight?: boo
       {meta ? (
         <Tip
           content={
-            gitMismatch
+            gitSource
               ? t("deployTarget.chipWarn")
-              : t("status.storageTitle", { kind: meta.storage.kind, location: meta.storage.location })
+              : objectSource
+                ? t("deployTarget.chipWarnObject")
+                : t("status.storageTitle", { kind: meta.storage.kind, location: meta.storage.location })
           }
         >
           <Badge
