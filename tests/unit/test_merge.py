@@ -199,3 +199,39 @@ def test_both_sides_add_same_edge_with_different_ids(simple_spec_data):
     result = merge_specs(base, ours, theirs)
     assert result.merged is not None
     assert [e.id for e in result.merged.edges] == ["e1"]
+
+
+def test_diff_tells_an_absent_key_from_an_explicit_null() -> None:
+    """B07 (0.2.3 review): adding ``execution_timeout: null`` (overrides a DAG default
+    timeout) was reported as identical, so the version diff hid a behaviour change."""
+    from autoair.merge import diff_specs
+    from autoair.spec import DagSpec
+
+    def spec(params: dict[str, object]) -> DagSpec:
+        return DagSpec.model_validate(
+            {
+                "dag_id": "d",
+                "nodes": [
+                    {
+                        "kind": "operator",
+                        "id": "a",
+                        "task_id": "a",
+                        "operator": "airflow.providers.standard.operators.bash.BashOperator",
+                        "params": params,
+                    }
+                ],
+            }
+        )
+
+    before, after = (
+        spec({"bash_command": "x"}),
+        spec({"bash_command": "x", "execution_timeout": None}),
+    )
+    diff = diff_specs(before, after)
+    assert not diff.identical
+    (change,) = diff.changed_nodes[0].changes
+    assert change.path == "params.execution_timeout"
+    assert (change.before_present, change.after_present) == (False, True)
+    back = diff_specs(after, before).changed_nodes[0].changes[0]
+    assert (back.before_present, back.after_present) == (True, False)
+    assert diff_specs(after, after).identical

@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
-from typing import Annotated
+from typing import Annotated, Any
 
-from fastapi import Depends, HTTPException, Request
+from fastapi import Depends, HTTPException, Query, Request
 
 from autoair.api.app import Services
 from autoair.auth import forwarded_credentials
@@ -30,6 +30,7 @@ async def get_gateway(request: Request, services: ServicesDep) -> AsyncIterator[
         timeout=services.settings.airflow_timeout,
         fetch_concurrency=services.settings.server.airflow_fetch_concurrency,
         page_size=services.settings.server.airflow_page_size,
+        max_entries=services.settings.server.airflow_list_max_entries,
     ) as gw:
         yield gw
 
@@ -44,3 +45,19 @@ def policy_of(services: Services) -> Policy:
 def http_error(exc: AirflowError) -> HTTPException:
     status = exc.status if 400 <= exc.status < 600 else 502
     return HTTPException(status_code=status, detail=exc.detail)
+
+
+EnvironmentQuery = Annotated[
+    str | None,
+    Query(
+        max_length=64,
+        description="Environment to read (git targets: its branch); default: default_environment.",
+    ),
+]
+
+
+def read_environment(services: Any, environment: str | None) -> str | None:
+    """The environment a read is for: the requested one, else ``default_environment``."""
+    settings = getattr(services, "settings", None)
+    env: str | None = environment or getattr(settings, "default_environment", None)
+    return env

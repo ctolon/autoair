@@ -157,6 +157,23 @@ def parse_inline_function(
     return funcs[0], imports
 
 
+def _import_bindings(stmt: ast.stmt) -> list[tuple[str, str]]:
+    """``(name, target)`` for each name an import statement binds in its scope."""
+    out: list[tuple[str, str]] = []
+    if isinstance(stmt, ast.Import):
+        for alias in stmt.names:
+            if alias.asname:
+                out.append((alias.asname, f"import {alias.name}"))
+            else:
+                top = alias.name.split(".")[0]
+                out.append((top, f"import {top}"))
+    elif isinstance(stmt, ast.ImportFrom):
+        base = "." * stmt.level + (stmt.module or "")
+        for alias in stmt.names:
+            out.append((alias.asname or alias.name, f"from {base} import {alias.name}"))
+    return out
+
+
 @dataclass
 class CodegenContext:
     spec: DagSpec
@@ -173,6 +190,8 @@ class CodegenContext:
     _inline_functions: dict[str, str] = field(default_factory=dict)  # source -> name
     _output_models: dict[str, str] = field(default_factory=dict)  # model json -> class name
     _module_imports: set[str] = field(default_factory=set)
+    # Module-level name bound by an inline function's import -> what it is bound to.
+    _inline_bindings: dict[str, str] = field(default_factory=dict)
     _materialize: str | None = None
     # spec.node_map() once per render: looking nodes up per reference was O(n^2) on large DAGs.
     _node_map: dict[str, Node] | None = None
@@ -369,6 +388,23 @@ class CodegenContext:
         if source in self._inline_functions:
             return ast.Name(id=self._inline_functions[source], ctx=ast.Load())
         func, imports = parse_inline_function(source)
+        bindings = [b for stmt in imports for b in _import_bindings(stmt)]
+        if any(self._inline_bindings.get(name, what) != what for name, what in bindings):
+            # Another inline function binds one of these names to something else (``floor
+            # as calc`` vs ``ceil as calc``): a shared module-level import would make both
+            # use one object. This function imports inside its own body instead.
+            docstring = (
+                1
+                if func.body
+                and isinstance(func.body[0], ast.Expr)
+                and isinstance(func.body[0].value, ast.Constant)
+                and isinstance(func.body[0].value.value, str)
+                else 0
+            )
+            func.body[docstring:docstring] = imports
+            imports = []
+        for name, what in bindings if imports else []:
+            self._inline_bindings.setdefault(name, what)
         for stmt in imports:
             key = ast.dump(stmt)
             if key not in self._module_imports:

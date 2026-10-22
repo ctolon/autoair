@@ -4794,6 +4794,14 @@
     "autoair/runner/_child.py::<module>::constant::_KEEP_ALIVE": {
       "decision": "keep",
       "reason": "holds in-process execution API objects of the running dag.test() child (Airflow 3.0-3.2 workaround), not a configurable value"
+    },
+    "autoair/api/deps.py::<module>::kwarg::Query(max_length=)": {
+      "decision": "keep",
+      "reason": "input bound on the environment query parameter (environment names are short identifiers)"
+    },
+    "autoair/gateway/__init__.py::<module>::constant::MAX_LIST_ENTRIES": {
+      "decision": "config",
+      "reason": "default of server.airflow_list_max_entries"
     }
   }
 }

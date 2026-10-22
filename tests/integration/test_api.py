@@ -116,6 +116,29 @@ def test_standalone_token_verified_against_airflow(tmp_path):
     assert calls == ["Bearer bad", "Bearer good"]  # second success served from cache
 
 
+@pytest.mark.parametrize(
+    "answer",
+    [
+        httpx2.Response(302, headers={"Location": "https://login.example.invalid/"}),
+        httpx2.Response(307, headers={"Location": "/auth/login"}),
+        httpx2.Response(200, text="<html>Sign in</html>"),
+        httpx2.Response(200, json={"detail": "ok"}),
+        httpx2.Response(204),
+    ],
+    ids=["302-login", "307", "html", "other-json", "204"],
+)
+def test_only_airflows_dag_list_verifies_a_token(tmp_path, answer: httpx2.Response):
+    """Regression: a redirect (SSO proxy, wrong URL) counted as a verified token, so a forged
+    JWT's role claims were trusted. Anything but Airflow's DAG list fails closed."""
+    verifier = TokenVerifier("http://airflow", transport=httpx2.MockTransport(lambda _: answer))
+    client = make_client(tmp_path, auth=bearer_passthrough(verifier))
+    forged = "Bearer eyJhbGciOiJIUzI1NiJ9.eyJyb2xlIjoiQWRtaW4ifQ.c2lnbmF0dXJl"
+    res = client.get("/api/me", headers={"Authorization": forged})
+    assert res.status_code == 502
+    assert "unexpected" in res.json()["detail"]
+    assert client.get("/api/me", headers={"Authorization": forged}).status_code == 502  # not cached
+
+
 def test_openapi_is_exported(tmp_path):
     client = make_client(tmp_path)
     schema = client.get("/api/openapi.json").json()

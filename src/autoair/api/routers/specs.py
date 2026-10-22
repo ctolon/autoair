@@ -26,7 +26,13 @@ from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field
 
 from autoair.api.app import Services
-from autoair.api.deps import ServicesDep, get_gateway, policy_of
+from autoair.api.deps import (
+    EnvironmentQuery,
+    ServicesDep,
+    get_gateway,
+    policy_of,
+    read_environment,
+)
 from autoair.api.features import ensure_feature
 from autoair.api.git_token import GitTokenHeader, accept_token, http_error, scrubbed_errors
 from autoair.api.routers.ops import DEPLOYS
@@ -84,7 +90,7 @@ from autoair.storage import (
     StoredSpec,
     spec_etag,
 )
-from autoair.storage.base import is_owned, sha256_text
+from autoair.storage.base import environment_kwargs, is_owned, sha256_text
 from autoair.storage.credentials import CredentialsError, ResolvedTarget, resolve_user_target
 from autoair.storage.git import GitMode, GitTarget
 from autoair.storage.request_token import (
@@ -326,17 +332,19 @@ def _etag(value: str | None) -> str | None:
     return value.strip().removeprefix("W/").strip('"') or None
 
 
-def _find(services: Services, dag_id: str) -> StoredSpec | None:
+def _find(services: Services, dag_id: str, environment: str | None = None) -> StoredSpec | None:
+    env = read_environment(services, environment)
     for target in services.all_targets():
-        stored = target.get(dag_id)
+        stored = target.get(dag_id, **environment_kwargs(target.get, env))
         if stored is not None:
             return stored
     return None
 
 
-def _owner(services: Services, dag_id: str) -> DeployTarget:
+def _owner(services: Services, dag_id: str, environment: str | None = None) -> DeployTarget:
+    env = read_environment(services, environment)
     for target in services.all_targets():
-        if target.get(dag_id) is not None:
+        if target.get(dag_id, **environment_kwargs(target.get, env)) is not None:
             return target
     return services.target
 
@@ -382,11 +390,15 @@ def _user(request: Request, principal: Principal) -> str | None:
 
 
 @read_router.get("", operation_id="listSpecs", dependencies=[require(P.SPEC_READ)])
-async def list_specs(services: ServicesDep) -> list[SpecSummary]:
+async def list_specs(
+    services: ServicesDep, environment: EnvironmentQuery = None
+) -> list[SpecSummary]:
+    env = read_environment(services, environment)
+
     def merged() -> list[SpecSummary]:
         seen: dict[str, SpecSummary] = {}
         for target in services.all_targets():
-            for summary in target.list():
+            for summary in target.list(**environment_kwargs(target.list, env)):
                 seen.setdefault(summary.dag_id, summary)
         return sorted(seen.values(), key=lambda s: s.dag_id)
 
@@ -394,9 +406,11 @@ async def list_specs(services: ServicesDep) -> list[SpecSummary]:
 
 
 @read_router.get("/{dag_id}", operation_id="getSpec", dependencies=[require(P.SPEC_READ)])
-async def get_spec(dag_id: str, services: ServicesDep, response: Response) -> StoredSpecResponse:
+async def get_spec(
+    dag_id: str, services: ServicesDep, response: Response, environment: EnvironmentQuery = None
+) -> StoredSpecResponse:
     try:
-        stored = await run_in_threadpool(_find, services, dag_id)
+        stored = await run_in_threadpool(_find, services, dag_id, environment)
     except StorageError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     if stored is None:

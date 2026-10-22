@@ -11,6 +11,10 @@ minor versions may contain breaking changes; they are listed under **Changed** o
 ## [0.2.3] - 2026-10-22
 
 ### Security
+- Standalone token verification accepts only Airflow's own answer: a `200` with the DAG list.
+  A redirect (an SSO proxy or a wrong `airflow_url` sending the check to a login page), another
+  2xx or an unexpected body used to count as a verified token, so a forged JWT's role claims
+  could be trusted. Such answers now fail closed with a 502 that names the URL.
 
 - Processes that run DAG code (import checks, the validator's workers, Python imports, blueprint previews, test runs, language servers) no longer inherit Airflow's secrets or cloud credentials: `AIRFLOW__DATABASE__SQL_ALCHEMY_CONN`, `AIRFLOW__CORE__FERNET_KEY`, `AIRFLOW__API_AUTH__JWT_SECRET`, every `AIRFLOW__*SECRET*`/`*_CMD` setting, `AIRFLOW_CONN_*`, `AIRFLOW_VAR_*`, `AWS_*` keys, `GOOGLE_APPLICATION_CREDENTIALS`, `AZURE_*` secrets and other credential-like names are removed (`sandbox.credential_env_pattern`, new). Before, only `AUTOAIR_*` secrets were. Variables whose value is a URL with a password are removed whatever their name. DAG test runs with `mode` `db`/`auto` keep the metadata-DB settings and Fernet key `dag.test()` needs, with a random per-run JWT secret instead of Airflow's. Upgrade note: DAGs that read a variable or connection from the environment at parse time, and task tests that need one, get it back with `sandbox.env_passthrough` (new, fnmatch patterns, e.g. `["AIRFLOW_VAR_ENVIRONMENT"]`).
 - Git commands of `provider=local`/`gitea` targets and repository bulk imports inherit only what git, ssh and curl read (`PATH`, `HOME`, locale, `TMPDIR`, `SSH_AUTH_SOCK`, CA and proxy variables, `GIT_*`), not the whole server environment; `storage.git.env_passthrough` (new) adds names such as `KRB5CCNAME`. SSH private keys from Airflow connections were cached in one `id_autoair` file per clone cache and never rewritten, so a user whose connection shared that cache (Gitea per-user credentials, a rotated key) pushed with the first user's key; each key now gets its own owner-only file named after its hash.
@@ -48,6 +52,14 @@ minor versions may contain breaking changes; they are listed under **Changed** o
 - DAG test runs with `mode=db` (`dag.test()`) hand the DAG code the metadata DB connection and the Fernet key. They are now off by default (`runner.allow_db_mode`, new, `false`, read per request) and, when allowed, need `admin:config` in addition to `run:test` and `code:execute` (audited 403 otherwise); `mode=auto` picks `dag.test()` only for those callers and otherwise runs in memory. `GET /api/meta` reports `test_runs` (`on_validator`, `db_mode_unavailable`) and the test dialog disables **dag.test() (writes a run)** with the reason. Every test run is recorded in the audit trail (`test_run`). Upgrade note: set `AUTOAIR_RUNNER__ALLOW_DB_MODE=true` to keep `dag.test()` for administrators; API clients that send `mode=db` otherwise get 403, and `mode=auto` now runs in memory for them.
 
 ### Changed
+- Cron and interval schedules with `data_interval: false` are generated as explicit
+  `CronTriggerTimetable` / `DeltaTriggerTimetable` instead of a bare cron string or
+  `timedelta`, whose meaning Airflow's `[scheduler] create_cron_data_intervals` /
+  `create_delta_data_intervals` decided. Regenerated DAG files change accordingly.
+- Spec reads (`GET /api/specs`, `GET /api/specs/{dag_id}`, version history and diffs) take
+  an `environment` query parameter and default to `default_environment`, so git targets read
+  that environment's branch. `server.airflow_list_max_entries` (50000) bounds paged Airflow
+  lists.
 
 - Object-storage targets (`storage.mode=object`) serialise writers of one DAG with a lease in AutoAir's state backend (`storage.object_lock_seconds`, `storage.object_lock_wait_seconds`, new): two replicas that loaded the same version can no longer both save; the second gets a conflict. The lease is shared across hosts on a SQL `database.backend`. On `file://` URLs objects are written to a temporary file and renamed into place.
 - `DELETE /api/specs/{dag_id}` returns `status` (`deleted`, `not_found`, `pending_approval`, `pr_opened`), `proposal_etag` and `message`; deploy proposals carry `action` (`deploy` or `delete`).
@@ -57,6 +69,31 @@ minor versions may contain breaking changes; they are listed under **Changed** o
 - The production Kustomize overlay (`overlays/production/settings/settings.env`) and the Helm example values (`deploy/helm/values-autoair.yaml`) set `validator.fail_mode=closed`: deploys are refused while the validator service cannot be asked. The application default stays `open`. Upgrade note: copies of the production overlay that should keep deploying while the validator is down set `AUTOAIR_VALIDATOR__FAIL_MODE=open` in their `settings.env`.
 
 ### Fixed
+- Python DAG import: positional TaskFlow arguments (`multiply(7)`) are bound to their
+  parameters instead of falling back to the defaults; keyword-only and positional-only
+  parameters and their literal defaults are kept; `*args` / `**kwargs` and non-literal
+  defaults are reported instead of being dropped silently.
+- Python DAG import: TaskFlow bodies keep the DAG file's imports they use (`import math`
+  at the top of the file), so the regenerated task no longer fails with NameError and the
+  imported spec validates without F821; other module-level names are reported.
+- Python DAG import: `CronTriggerTimetable(interval=..., run_immediately=True)` keeps its
+  data window and `run_immediately` (read from the Task SDK's private attribute where
+  needed).
+- Inline functions that bind the same import alias to different objects (`floor as calc`,
+  `ceil as calc`) no longer share one module-level import: the later function imports inside
+  its own body.
+- Version diffs tell an absent key from an explicit null (`execution_timeout: null`
+  overrides a DAG default): `FieldChange` gains `before_present` / `after_present`, and the
+  diff view shows "(not set)".
+- A DAG saved only to the default environment's git branch is listed and opened (it was 404
+  and missing from the list).
+- Airflow connections, variables, pools and import errors are read page by page until
+  `total_entries` (Airflow clamps the page size), not only the first page.
+- Object storage deploys: a writer whose write lease expired mid-save no longer undoes the
+  save of the replica that took the lease over (its spec could revert while the DAG file kept
+  the newer version). It takes the lease back, waits for that save to finish, and restores
+  only paths that still hold its own content; undo after any other failure is conditional the
+  same way.
 
 - DAG test runs with `mode=db` (`dag.test()`) failed on every Airflow version: on 3.1+ with "the dag is not serialized" (the generated DAG lives outside every configured DAG bundle, so `dag.test()` never found it), on 3.0 every task with an execution-API validation error (Airflow 3.0's Task SDK client sends JSON without a `Content-Type`, which current FastAPI rejects), and on 3.2 every task with "'State' object has no attribute 'svcs_registry'" (the in-process execution API's lifespan ended when its object was garbage-collected). The run now writes the DAG to the metadata DB under the first configured bundle when it is not serialized yet (a deployed DAG of the same id is left alone; the DAG processor later marks the test DAG stale) and works around both execution-API issues on the versions that have them.
 - **Test selected task…** / **Test whole DAG…**, **Trigger DAG** (raw JSON) and **Backfill**: with invalid conf JSON the run buttons stayed enabled and sent the last valid conf; they are now disabled while the JSON does not parse or is not an object, with the reason next to the field (and next to the run buttons in the test dialog).

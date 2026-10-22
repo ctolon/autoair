@@ -832,7 +832,8 @@
     "edges": "kenarlar +{{added}} / −{{removed}}",
     "layoutOnly_one": "{{count}} taşındı",
     "layoutOnly_other": "{{count}} taşındı",
-    "dagFields": "DAG ayarları"
+    "dagFields": "DAG ayarları",
+    "absent": "(ayarlanmamış)"
   },
   "airflow": {
     "unreachable": "Airflow'a ulaşılamıyor: {{message}}",

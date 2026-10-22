@@ -355,7 +355,9 @@ def _schedule(dag: Any, warnings: list[str]) -> dict[str, Any]:
     if kind in ("CronTriggerTimetable", "CronDataIntervalTimetable"):
         preset = _preset_of(dag, tt)
         dag_tz = getattr(getattr(dag, "timezone", None), "name", None)
-        plain = not getattr(tt, "run_immediately", False) and not _interval_seconds(tt)
+        immediately = _run_immediately(tt, warnings)
+        window = _interval_seconds(tt)
+        plain = not immediately and not window
         utc = ("UTC", "Etc/UTC")
         same_tz = (tz_name or "UTC") == ("UTC" if dag_tz in utc else (dag_tz or "UTC"))
         # ``schedule="@daily"`` follows Airflow's timetable config either way; an explicit
@@ -367,13 +369,17 @@ def _schedule(dag: Any, warnings: list[str]) -> dict[str, Any]:
             # The spec's preset is generated in the DAG timezone (see codegen), so the
             # preset round-trips as long as the timetable uses that timezone.
             return {"type": "preset", "preset": preset}
-        out = {
+        out: dict[str, Any] = {
             "type": "cron",
             "expression": _resolve_preset(_expression(tt)),
             "data_interval": kind == "CronDataIntervalTimetable",
         }
         if tz_name:
             out["timezone"] = tz_name
+        if window and kind == "CronTriggerTimetable":
+            out["interval_seconds"] = window  # the run's data window (``interval=``)
+        if immediately:
+            out["run_immediately"] = True
         return out
     if kind in ("DeltaTriggerTimetable", "DeltaDataIntervalTimetable"):
         delta: Any = getattr(tt, "_delta", None)
@@ -390,6 +396,20 @@ def _schedule(dag: Any, warnings: list[str]) -> dict[str, Any]:
         return {"type": "assets", "expression": _asset_expr(tt.asset_condition, warnings)}
     warnings.append(f"timetable {kind} is not supported; imported without schedule")
     return {"type": "none"}
+
+
+def _run_immediately(tt: Any, warnings: list[str]) -> bool:
+    """``CronTriggerTimetable(run_immediately=...)``; the Task SDK keeps it as
+    ``_run_immediately`` in some versions."""
+    value: Any = getattr(tt, "run_immediately", None)
+    if value is None:
+        value = getattr(tt, "_run_immediately", False)
+    if hasattr(value, "total_seconds"):
+        warnings.append(
+            "schedule: run_immediately with a time window is imported as run_immediately=True"
+        )
+        return True
+    return bool(value)
 
 
 def _interval_seconds(tt: Any) -> float:
@@ -446,22 +466,60 @@ def _function_body(fn: Any, warnings: list[str], task_id: str) -> tuple[str, lis
         return "pass", []
     tree = _ast.parse(src)
     func = next(n for n in tree.body if isinstance(n, (_ast.FunctionDef, _ast.AsyncFunctionDef)))
-    params = [a.arg for a in func.args.args]
+    args = func.args
+    positional = [*args.posonlyargs, *args.args]
+    # The generated function takes every parameter by keyword (its call binds them by
+    # name), so positional-only and keyword-only parameters become plain ones.
+    params = [a.arg for a in positional] + [a.arg for a in args.kwonlyargs]
+    fn.__autoair_positional__ = [a.arg for a in positional]
     # remember literal defaults so they can become bound arguments
-    defaults = func.args.defaults
     fn.__autoair_defaults__ = {}
-    for arg, default in zip(
-        func.args.args[len(func.args.args) - len(defaults) :], defaults, strict=True
-    ):
-        with contextlib.suppress(ValueError):
+    pairs = list(
+        zip(positional[len(positional) - len(args.defaults) :], args.defaults, strict=True)
+    )
+    pairs += [
+        (a, d) for a, d in zip(args.kwonlyargs, args.kw_defaults, strict=True) if d is not None
+    ]
+    for arg, default in pairs:
+        try:
             fn.__autoair_defaults__[arg.arg] = _ast.literal_eval(default)
+        except ValueError:
+            warnings.append(
+                f"{task_id}: default of parameter {arg.arg!r} is not a literal and is not "
+                "carried over; set the argument on the task"
+            )
+    for star, kind in ((args.vararg, "*"), (args.kwarg, "**")):
+        if star is not None:
+            warnings.append(
+                f"{task_id}: parameter {kind}{star.arg} is not supported; values passed "
+                "through it are not imported"
+            )
     lines = src.splitlines()
-    start = func.body[0].lineno - 1
-    if isinstance(func.body[0], _ast.Expr) and isinstance(
-        getattr(func.body[0], "value", None), _ast.Constant
-    ):
-        start = func.body[0].lineno - 1  # keep docstring
+    first = func.body[0]
+    has_doc = isinstance(first, _ast.Expr) and isinstance(
+        getattr(first, "value", None), _ast.Constant
+    )
+    start = first.lineno - 1  # the docstring, when there is one, stays first
     body = textwrap.dedent("\n".join(lines[start : func.end_lineno]))
+    # Names the body reads from the DAG file's imports (``import math`` at the top) are
+    # imported inside the function: the generated module does not have the file's imports.
+    try:
+        source_file = _inspect.getsourcefile(fn)
+    except TypeError:
+        source_file = None
+    imports, unresolved = _module_imports_for(func, source_file)
+    if imports:
+        if has_doc:
+            doc_end = first.end_lineno - first.lineno + 1  # type: ignore[operator]
+            doc, rest = body.splitlines()[:doc_end], body.splitlines()[doc_end:]
+            body = "\n".join([*doc, *imports, *rest])
+        else:
+            body = "\n".join([*imports, body])
+    if unresolved:
+        warnings.append(
+            f"{task_id}: the function uses names defined elsewhere in the DAG file "
+            f"({', '.join(unresolved)}); they are not carried into the imported task"
+        )
     return body, params
 
 
@@ -474,6 +532,53 @@ def _same_file(a: str | None, b: str | None) -> bool:
         return False
 
 
+def _module_imports_for(func: Any, source_file: str | None) -> tuple[list[str], list[str]]:
+    """``(imports, unresolved)`` for the names ``func`` (an ``ast`` function) reads from its
+    module: the file's import statements that bind them (only the names used), and the
+    free names no import binds (constants, helpers, enclosing-function variables)."""
+    import ast as _ast
+    import builtins
+
+    # The body and the signature only: decorators (``@task``) are not part of the
+    # imported function.
+    scope = [n for top in [*func.body, func.args] for n in _ast.walk(top)]
+    read = {n.id for n in scope if isinstance(n, _ast.Name)}
+    bound: set[str] = set()
+    for n in scope:
+        if isinstance(n, _ast.arg):
+            bound.add(n.arg)
+        elif isinstance(n, _ast.Name) and isinstance(n.ctx, _ast.Store):
+            bound.add(n.id)
+        elif isinstance(n, (_ast.FunctionDef, _ast.AsyncFunctionDef, _ast.ClassDef)):
+            bound.add(n.name)
+        elif isinstance(n, (_ast.Import, _ast.ImportFrom)):
+            bound |= {(a.asname or a.name).split(".")[0] for a in n.names}
+    free = read - bound - set(dir(builtins)) - {func.name}
+    imports: list[str] = []
+    try:
+        module_tree = _ast.parse(Path(source_file or "").read_text(encoding="utf-8"))
+    except (OSError, SyntaxError, ValueError):
+        module_tree = _ast.Module(body=[], type_ignores=[])
+    imported: set[str] = set()
+    for stmt in module_tree.body:
+        if isinstance(stmt, _ast.ImportFrom) and stmt.module == "__future__":
+            continue
+        if isinstance(stmt, (_ast.Import, _ast.ImportFrom)):
+            aliases = [a for a in stmt.names if (a.asname or a.name).split(".")[0] in free]
+            if not aliases:
+                continue
+            imported |= {(a.asname or a.name).split(".")[0] for a in aliases}
+            kept: _ast.stmt
+            if isinstance(stmt, _ast.Import):
+                kept = _ast.Import(names=aliases)
+            else:
+                kept = _ast.ImportFrom(module=stmt.module, names=aliases, level=stmt.level)
+            imports.append(_ast.unparse(kept))
+    # Sorted: the value must not depend on the order the imports have in the file (generated
+    # code orders them differently from the hand-written file).
+    return sorted(set(imports)), sorted(free - imported)
+
+
 def _callable_value(
     fn: Any, dag_file: str | None, warnings: list[str], task_id: str, name: str
 ) -> dict[str, Any] | None:
@@ -482,7 +587,6 @@ def _callable_value(
     the file's imports it uses), one imported from another module an import reference.
     None (with a warning) when neither can represent it."""
     import ast as _ast
-    import builtins
     import inspect as _inspect
     import re
     import textwrap
@@ -541,42 +645,7 @@ def _callable_value(
     # the function is passed as written.
     lines = src.splitlines()
     body = "\n".join(lines[func.lineno - 1 : func.end_lineno])
-    read = {n.id for n in _ast.walk(func) if isinstance(n, _ast.Name)}
-    bound: set[str] = set()
-    for n in _ast.walk(func):
-        if isinstance(n, _ast.arg):
-            bound.add(n.arg)
-        elif isinstance(n, _ast.Name) and isinstance(n.ctx, _ast.Store):
-            bound.add(n.id)
-        elif isinstance(n, (_ast.FunctionDef, _ast.AsyncFunctionDef, _ast.ClassDef)):
-            bound.add(n.name)
-        elif isinstance(n, (_ast.Import, _ast.ImportFrom)):
-            bound |= {(a.asname or a.name).split(".")[0] for a in n.names}
-    free = read - bound - set(dir(builtins)) - {func.name}
-    imports: list[str] = []
-    try:
-        module_tree = _ast.parse(Path(source_file or "").read_text(encoding="utf-8"))
-    except (OSError, SyntaxError, ValueError):
-        module_tree = _ast.Module(body=[], type_ignores=[])
-    imported: set[str] = set()
-    for stmt in module_tree.body:
-        if isinstance(stmt, _ast.ImportFrom) and stmt.module == "__future__":
-            continue
-        if isinstance(stmt, (_ast.Import, _ast.ImportFrom)):
-            aliases = [a for a in stmt.names if (a.asname or a.name).split(".")[0] in free]
-            if not aliases:
-                continue
-            imported |= {(a.asname or a.name).split(".")[0] for a in aliases}
-            kept: _ast.stmt
-            if isinstance(stmt, _ast.Import):
-                kept = _ast.Import(names=aliases)
-            else:
-                kept = _ast.ImportFrom(module=stmt.module, names=aliases, level=stmt.level)
-            imports.append(_ast.unparse(kept))
-    # Sorted: the value must not depend on the order the imports have in the file (generated
-    # code orders them differently from the hand-written file).
-    imports = sorted(set(imports))
-    unresolved = sorted(free - imported)
+    imports, unresolved = _module_imports_for(func, source_file)
     if unresolved:
         warnings.append(
             f"{what}: {fn_name} uses names defined elsewhere in the DAG file "
@@ -1062,9 +1131,24 @@ def _convert_dag(dag: Any, warnings: list[str]) -> dict[str, Any]:
         if decorator:
             body, params = _function_body(t.python_callable, warnings, t.task_id)
             if is_mapped:
-                op_kwargs = dict((getattr(t, "partial_kwargs", {}) or {}).get("op_kwargs") or {})
+                partial = getattr(t, "partial_kwargs", {}) or {}
+                op_kwargs = dict(partial.get("op_kwargs") or {})
+                op_args = list(partial.get("op_args") or ())
             else:
                 op_kwargs = dict(getattr(t, "op_kwargs", {}) or {})
+                op_args = list(getattr(t, "op_args", ()) or ())
+            # Positional call arguments (``multiply(7)``) bind to the parameters in order;
+            # the spec stores every argument by name.
+            positional = getattr(t.python_callable, "__autoair_positional__", [])
+            for name, value in zip(positional, op_args, strict=False):
+                if name in op_kwargs:
+                    warnings.append(f"{t.task_id}: argument {name!r} is passed twice")
+                op_kwargs.setdefault(name, value)
+            if len(op_args) > len(positional):
+                warnings.append(
+                    f"{t.task_id}: {len(op_args) - len(positional)} positional argument(s) "
+                    "beyond the named parameters (*args) are not imported"
+                )
             expanded = set(mapping["expand"]) if mapping and "expand" in mapping else set()
             for k, v in getattr(t.python_callable, "__autoair_defaults__", {}).items():
                 if k not in expanded:

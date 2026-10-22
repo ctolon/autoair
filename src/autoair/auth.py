@@ -224,9 +224,14 @@ class TokenVerifier:
             raise HTTPException(status_code=502, detail=f"cannot reach Airflow: {exc}") from exc
         if resp.status_code in (401, 403):
             raise _unauthorized("Airflow rejected the token")
-        if resp.status_code >= 400:
+        # Only Airflow's own answer proves the token: a 200 with the DAG list. A redirect
+        # (an SSO proxy or a wrong URL sending the check to a login page), another 2xx or a
+        # body that is not that list must never count as a verified token (fail closed).
+        if resp.status_code != 200 or not _is_dag_list(resp):
             raise HTTPException(
-                status_code=502, detail=f"Airflow auth check failed ({resp.status_code})"
+                status_code=502,
+                detail=f"Airflow auth check failed (unexpected {resp.status_code} answer from "
+                f"{self._url}; is airflow_url the Airflow API server?)",
             )
         ttl = self._ttl if expires_in is None else min(self._ttl, expires_in)
         self._valid_until[key] = now + ttl
@@ -237,6 +242,15 @@ class TokenVerifier:
     def forget(self, authorization: str) -> None:
         """Stop trusting a token (logout) before its cache entry expires."""
         self._valid_until.pop(_token_key(authorization), None)
+
+
+def _is_dag_list(resp: httpx2.Response) -> bool:
+    """True when ``resp`` is Airflow's ``GET /api/v2/dags`` collection."""
+    try:
+        body = resp.json()
+    except ValueError:
+        return False
+    return isinstance(body, dict) and isinstance(body.get("dags"), list)
 
 
 def _token_key(authorization: str) -> str:

@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import datetime
 import json
+import logging
 import re
 from typing import Any, TypeVar
 from urllib.parse import quote
@@ -25,7 +26,10 @@ DEFAULT_TIMEOUT = 15.0  # default of AUTOAIR_AIRFLOW_TIMEOUT
 FETCH_CONCURRENCY = 8
 # Entries requested per list call (connections, pools, variables, task instances…); default of
 # AUTOAIR_SERVER__AIRFLOW_PAGE_SIZE.
+log = logging.getLogger(__name__)
+
 PAGE_SIZE = 1000
+MAX_LIST_ENTRIES = 50_000
 
 
 def _seg(value: str) -> str:
@@ -296,11 +300,13 @@ class AirflowGateway:
         transport: httpx2.AsyncBaseTransport | None = None,
         fetch_concurrency: int = FETCH_CONCURRENCY,
         page_size: int = PAGE_SIZE,
+        max_entries: int = MAX_LIST_ENTRIES,
     ) -> None:
         self._server_version: tuple[int, int, int] | None = None
         self._server_version_read = False
         self.fetch_concurrency = max(1, fetch_concurrency)
         self.page_size = max(1, page_size)
+        self.max_entries = max(1, max_entries)
         # Airflow's UI API (``/ui/...``, e.g. connection form metadata) lives beside /api/v2.
         self._root = base_url.rstrip("/")
         self._client = httpx2.AsyncClient(
@@ -332,8 +338,26 @@ class AirflowGateway:
         return resp.json() if resp.content else None
 
     async def _paged(self, url: str, key: str, limit: int | None = None) -> list[dict[str, Any]]:
-        data = await self._request("GET", url, params={"limit": limit or self.page_size})
-        return list(data.get(key, []))
+        """Every entry of a paged Airflow list (up to ``limit`` or ``max_entries``). Pages are
+        followed by what the server actually returned: Airflow clamps ``limit`` to its own
+        maximum_page_limit, so asking for a large page does not return everything."""
+        cap = min(limit or self.max_entries, self.max_entries)
+        items: list[dict[str, Any]] = []
+        total: int | None = None
+        while len(items) < cap:
+            size = min(self.page_size, cap - len(items))
+            data = await self._request("GET", url, params={"limit": size, "offset": len(items)})
+            page = list(data.get(key, [])) if isinstance(data, dict) else []
+            if not page:
+                break
+            items.extend(page)
+            if isinstance(data.get("total_entries"), int):
+                total = data["total_entries"]
+                if len(items) >= total:
+                    break
+        if limit is None and len(items) >= cap and (total is None or total > cap):
+            log.warning("%s: stopped after %d entries (server.airflow_list_max_entries)", url, cap)
+        return items[:cap]
 
     async def version(self) -> dict[str, Any]:
         return dict(await self._request("GET", "/version"))

@@ -1022,6 +1022,15 @@ class ServerSettings(_Section):
         description="Entries requested per list call to Airflow (connections, pools, "
         "variables, task instances of a run…).",
     )
+    airflow_list_max_entries: int = Field(
+        default=50_000,
+        ge=1,
+        le=1_000_000,
+        description="Most entries read from one paged Airflow list (connections, pools, "
+        "variables, import errors): pages are followed until Airflow's total_entries is "
+        "reached, an empty page arrives or this many entries were read (a warning is logged "
+        "then).",
+    )
 
     # --- public address
     public_url: str | None = Field(

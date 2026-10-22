@@ -129,3 +129,53 @@ def test_connection_hook_meta_forbidden_is_raised():
     with pytest.raises(AirflowError) as exc:
         asyncio.run(gw.connection_hook_meta())
     assert exc.value.status == 403
+
+
+def _paged_airflow(entries: int, key: str, *, server_max: int | None = None, total: bool = True):
+    """An Airflow list endpoint with ``entries`` items that honours limit/offset and, like
+    Airflow's maximum_page_limit, clamps the page size to ``server_max``."""
+    seen: list[tuple[int, int]] = []
+
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        limit = int(request.url.params.get("limit", 100))
+        offset = int(request.url.params.get("offset", 0))
+        if server_max:
+            limit = min(limit, server_max)
+        seen.append((limit, offset))
+        items = [
+            {"connection_id": f"c{i}", "conn_type": "http", "pool": f"p{i}", "key": f"v{i}"}
+            for i in range(offset, min(offset + limit, entries))
+        ]
+        body: dict[str, object] = {key: items}
+        if total:
+            body["total_entries"] = entries
+        return httpx2.Response(200, json=body)
+
+    return handler, seen
+
+
+def test_lists_follow_every_page() -> None:
+    """B10 (0.2.3 review): only the first page was read (2 of 3 connections)."""
+    handler, seen = _paged_airflow(3, "connections")
+    gw = AirflowGateway("http://airflow", transport=httpx2.MockTransport(handler), page_size=2)
+    assert [c.connection_id for c in asyncio.run(gw.connections())] == ["c0", "c1", "c2"]
+    assert seen == [(2, 0), (2, 2)]
+
+
+def test_lists_follow_pages_the_server_clamps() -> None:
+    handler, seen = _paged_airflow(250, "connections", server_max=100)
+    gw = AirflowGateway("http://airflow", transport=httpx2.MockTransport(handler))
+    assert len(asyncio.run(gw.connections())) == 250
+    assert [offset for _, offset in seen] == [0, 100, 200]
+
+
+def test_lists_without_total_entries_stop_on_an_empty_page_and_at_the_cap() -> None:
+    handler, seen = _paged_airflow(5, "connections", total=False)
+    gw = AirflowGateway("http://airflow", transport=httpx2.MockTransport(handler), page_size=2)
+    assert len(asyncio.run(gw.connections())) == 5
+    assert seen[-1] == (2, 5)  # the empty page ends it
+    capped, _ = _paged_airflow(10, "connections")
+    gw = AirflowGateway(
+        "http://airflow", transport=httpx2.MockTransport(capped), page_size=3, max_entries=4
+    )
+    assert len(asyncio.run(gw.connections())) == 4

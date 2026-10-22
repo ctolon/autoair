@@ -9,7 +9,7 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field
 
-from autoair.api.deps import ServicesDep, get_gateway
+from autoair.api.deps import EnvironmentQuery, ServicesDep, get_gateway, read_environment
 from autoair.api.git_token import GitTokenHeader, accept_token, scrubbed_errors
 from autoair.governance import DeployContext, ValidationSummary
 from autoair.merge import MergeResult, SpecDiff, diff_specs, merge_specs
@@ -25,6 +25,7 @@ from autoair.storage import (
     VersionInfo,
     render_dag_files,
 )
+from autoair.storage.base import environment_kwargs
 from autoair.validation import ValidationReport, validate_spec
 
 read_router = APIRouter(prefix="/vcs", tags=["vcs"])
@@ -80,9 +81,11 @@ async def _call(func: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
         raise storage_http_error(exc) from exc
 
 
-async def _spec_at(target: DeployTarget, dag_id: str, version: str) -> DagSpec:
+async def _spec_at(
+    target: DeployTarget, dag_id: str, version: str, environment: str | None = None
+) -> DagSpec:
     if version == CURRENT:
-        stored = await _call(target.get, dag_id)
+        stored = await _call(target.get, dag_id, **environment_kwargs(target.get, environment))
         if stored is None:
             raise HTTPException(status_code=404, detail=f"no AutoAir spec for {dag_id!r}")
         spec: DagSpec = stored.spec
@@ -99,9 +102,16 @@ async def get_storage_status(services: ServicesDep) -> TargetStatus:
 
 @read_router.get("/{dag_id}/history", operation_id="listVersions")
 async def list_versions(
-    dag_id: str, services: ServicesDep, limit: Annotated[int, Query(ge=1, le=500)] = 50
+    dag_id: str,
+    services: ServicesDep,
+    limit: Annotated[int, Query(ge=1, le=500)] = 50,
+    environment: EnvironmentQuery = None,
 ) -> list[VersionInfo]:
-    versions: list[VersionInfo] = await _call(_target(services).history, dag_id, limit)
+    target = _target(services)
+    env = read_environment(services, environment)
+    versions: list[VersionInfo] = await _call(
+        target.history, dag_id, limit, **environment_kwargs(target.history, env)
+    )
     return versions
 
 
@@ -118,10 +128,12 @@ async def diff_with_version(
     to_version: Annotated[
         str, Query(alias="to", description="Version id or 'current' (default).")
     ] = CURRENT,
+    environment: EnvironmentQuery = None,
 ) -> SpecDiff:
     target = _target(services)
-    a = await _spec_at(target, dag_id, from_version)
-    b = await _spec_at(target, dag_id, to_version)
+    env = read_environment(services, environment)
+    a = await _spec_at(target, dag_id, from_version, env)
+    b = await _spec_at(target, dag_id, to_version, env)
     return diff_specs(a, b)
 
 

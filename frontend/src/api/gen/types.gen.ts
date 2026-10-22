@@ -4523,6 +4523,18 @@ export type FieldChange = {
      * After
      */
     after?: unknown;
+    /**
+     * Before Present
+     *
+     * False when the key was absent before (not null).
+     */
+    before_present?: boolean;
+    /**
+     * After Present
+     *
+     * False when the key is absent after (not null).
+     */
+    after_present?: boolean;
 };
 
 /**
@@ -15860,9 +15872,25 @@ export type GetIconResponses = {
 export type ListSpecsData = {
     body?: never;
     path?: never;
-    query?: never;
+    query?: {
+        /**
+         * Environment
+         *
+         * Environment to read (git targets: its branch); default: default_environment.
+         */
+        environment?: string | null;
+    };
     url: '/specs';
 };
+
+export type ListSpecsErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ListSpecsError = ListSpecsErrors[keyof ListSpecsErrors];
 
 export type ListSpecsResponses = {
     /**
@@ -15944,7 +15972,14 @@ export type GetSpecData = {
          */
         dag_id: string;
     };
-    query?: never;
+    query?: {
+        /**
+         * Environment
+         *
+         * Environment to read (git targets: its branch); default: default_environment.
+         */
+        environment?: string | null;
+    };
     url: '/specs/{dag_id}';
 };
 
@@ -16374,6 +16409,12 @@ export type ListVersionsData = {
          * Limit
          */
         limit?: number;
+        /**
+         * Environment
+         *
+         * Environment to read (git targets: its branch); default: default_environment.
+         */
+        environment?: string | null;
     };
     url: '/vcs/{dag_id}/history';
 };
@@ -16453,6 +16494,12 @@ export type DiffWithVersionData = {
          * Version id or 'current' (default).
          */
         to?: string;
+        /**
+         * Environment
+         *
+         * Environment to read (git targets: its branch); default: default_environment.
+         */
+        environment?: string | null;
     };
     url: '/vcs/{dag_id}/diff';
 };

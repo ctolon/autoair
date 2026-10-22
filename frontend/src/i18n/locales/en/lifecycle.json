@@ -832,7 +832,8 @@
     "edges": "edges +{{added}} / −{{removed}}",
     "layoutOnly_one": "{{count}} moved",
     "layoutOnly_other": "{{count}} moved",
-    "dagFields": "DAG settings"
+    "dagFields": "DAG settings",
+    "absent": "(not set)"
   },
   "airflow": {
     "unreachable": "Airflow is not reachable: {{message}}",

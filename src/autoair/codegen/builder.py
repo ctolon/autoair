@@ -275,11 +275,9 @@ def _time_timetable(ctx: CodegenContext, sched: TimeSchedule, *, as_object: bool
                 ast.Constant(sched.expression),
                 timezone=_tz(ctx, sched.timezone),
             )
-        simple = not (
-            sched.timezone or ctx.spec.timezone or sched.interval_seconds or sched.run_immediately
-        )
-        if simple and not as_object:
-            return ast.Constant(sched.expression)
+        # Always the concrete class: a bare cron string lets Airflow's
+        # [scheduler] create_cron_data_intervals pick trigger or data-interval semantics, so
+        # the spec's ``data_interval=False`` would depend on the deployment's configuration.
         kws: dict[str, ast.expr] = {"timezone": _tz(ctx, sched.timezone)}
         if sched.interval_seconds:
             kws["interval"] = ctx.timedelta(sched.interval_seconds)
@@ -290,7 +288,8 @@ def _time_timetable(ctx: CodegenContext, sched: TimeSchedule, *, as_object: bool
         delta = ctx.timedelta(sched.seconds)
         if sched.data_interval:
             return ctx.call(ctx.sdk("DeltaDataIntervalTimetable"), delta)
-        return ctx.call(ctx.sdk("DeltaTriggerTimetable"), delta) if as_object else delta
+        # Not a bare timedelta, which follows [scheduler] create_delta_data_intervals.
+        return ctx.call(ctx.sdk("DeltaTriggerTimetable"), delta)
     if isinstance(sched, MultiCronSchedule):
         return ctx.call(
             ctx.sdk("MultipleCronTriggerTimetable"),

@@ -61,6 +61,12 @@ class FieldChange(BaseModel):
     path: str
     before: Any = None
     after: Any = None
+    before_present: bool = Field(
+        default=True, description="False when the key was absent before (not null)."
+    )
+    after_present: bool = Field(
+        default=True, description="False when the key is absent after (not null)."
+    )
 
 
 class NodeChange(BaseModel):
@@ -128,17 +134,31 @@ def _value(v: Any) -> Any:
 # --------------------------------------------------------------------------- diff
 
 
+def _change(path: str, before: Any, after: Any) -> FieldChange:
+    return FieldChange(
+        path=path,
+        before=_value(before),
+        after=_value(after),
+        before_present=before is not MISSING,
+        after_present=after is not MISSING,
+    )
+
+
 def _field_changes(path: str, before: Any, after: Any, out: list[FieldChange]) -> None:
-    if before == after:
+    """Changes from ``before`` to ``after``. An absent key (``MISSING``) and an explicit
+    null differ: ``execution_timeout: null`` overrides a DAG default, absence inherits it."""
+    if before is MISSING and after is MISSING:
+        return
+    if before is not MISSING and after is not MISSING and before == after:
         return
     if isinstance(before, dict) and isinstance(after, dict):
         if any(before.get(d) != after.get(d) for d in _DISCRIMINATORS if d in before or d in after):
-            out.append(FieldChange(path=path, before=before, after=after))
+            out.append(_change(path, before, after))
             return
         for key in sorted(before.keys() | after.keys()):
-            _field_changes(_join(path, key), before.get(key), after.get(key), out)
+            _field_changes(_join(path, key), before.get(key, MISSING), after.get(key, MISSING), out)
         return
-    out.append(FieldChange(path=path, before=before, after=after))
+    out.append(_change(path, before, after))
 
 
 def diff_specs(a: DagSpec, b: DagSpec) -> SpecDiff:
@@ -146,7 +166,7 @@ def diff_specs(a: DagSpec, b: DagSpec) -> SpecDiff:
     da, db = _dump(a), _dump(b)
     diff = SpecDiff()
     for key in sorted((da.keys() | db.keys()) - {"nodes", "edges"}):
-        _field_changes(key, da.get(key), db.get(key), diff.changed_fields)
+        _field_changes(key, da.get(key, MISSING), db.get(key, MISSING), diff.changed_fields)
 
     nodes_a, nodes_b = _keyed(da.get("nodes", []), "id"), _keyed(db.get("nodes", []), "id")
     for node_id, node in nodes_b.items():

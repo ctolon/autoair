@@ -5701,17 +5701,48 @@
         ],
         "summary": "List Specs",
         "operationId": "listSpecs",
+        "parameters": [
+          {
+            "name": "environment",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 64
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Environment to read (git targets: its branch); default: default_environment.",
+              "title": "Environment"
+            },
+            "description": "Environment to read (git targets: its branch); default: default_environment."
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
+                  "type": "array",
                   "items": {
                     "$ref": "#/components/schemas/SpecSummary"
                   },
-                  "type": "array",
                   "title": "Response Listspecs"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
                 }
               }
             }
@@ -5735,6 +5766,25 @@
               "type": "string",
               "title": "Dag Id"
             }
+          },
+          {
+            "name": "environment",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 64
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Environment to read (git targets: its branch); default: default_environment.",
+              "title": "Environment"
+            },
+            "description": "Environment to read (git targets: its branch); default: default_environment."
           }
         ],
         "responses": {
@@ -6572,6 +6622,25 @@
               "default": 50,
               "title": "Limit"
             }
+          },
+          {
+            "name": "environment",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 64
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Environment to read (git targets: its branch); default: default_environment.",
+              "title": "Environment"
+            },
+            "description": "Environment to read (git targets: its branch); default: default_environment."
           }
         ],
         "responses": {
@@ -6692,6 +6761,25 @@
               "title": "To"
             },
             "description": "Version id or 'current' (default)."
+          },
+          {
+            "name": "environment",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 64
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Environment to read (git targets: its branch); default: default_environment.",
+              "title": "Environment"
+            },
+            "description": "Environment to read (git targets: its branch); default: default_environment."
           }
         ],
         "responses": {
@@ -16785,6 +16873,18 @@
           },
           "after": {
             "title": "After"
+          },
+          "before_present": {
+            "type": "boolean",
+            "title": "Before Present",
+            "description": "False when the key was absent before (not null).",
+            "default": true
+          },
+          "after_present": {
+            "type": "boolean",
+            "title": "After Present",
+            "description": "False when the key is absent after (not null).",
+            "default": true
           }
         },
         "type": "object",

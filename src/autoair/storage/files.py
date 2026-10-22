@@ -35,6 +35,7 @@ from autoair.storage.base import (
     TargetKind,
     TargetStatus,
     VersionInfo,
+    WriteLeaseLost,
     check_dag_id,
     check_files,
     check_overwrite,
@@ -114,28 +115,59 @@ class FileTarget:
         """Called before each write step; raises when this writer lost its right to write
         (an expired replica lease), which rolls the save back."""
 
+    def _relock(self) -> contextlib.AbstractContextManager[None]:
+        """Re-take this writer's right to write after :class:`WriteLeaseLost`, waiting for
+        the new holder to finish; the local store's own lock is still held."""
+        return contextlib.nullcontext()
+
+    def _undo(self, done: builtins.list[tuple[str, str | None, str | None]]) -> None:
+        """Restore each path written so far, newest first, but only while it still holds
+        what this writer put there: a write someone else made in between is kept."""
+        for rel, previous, written in reversed(done):
+            try:
+                if self.store.read(rel) != written:
+                    log.warning("not restoring %s: it changed after this write", rel)
+                    continue
+                if previous is None:
+                    self.store.remove(rel)
+                else:
+                    self.store.write(rel, previous)
+            except Exception:
+                log.exception("cannot restore %s after a failed write", rel)
+
     def _apply(self, steps: builtins.list[tuple[str, str | None]]) -> None:
         """Write (content) or remove (``None``) each path in order. When a step fails, the
         steps done so far are undone (previous content restored) and the error raised, so
-        a failed deploy leaves the spec, history, DAG files and state as they were."""
-        done: builtins.list[tuple[str, str | None]] = []
+        a failed deploy leaves the spec, history, DAG files and state as they were.
+
+        Undo never replaces another writer's work: a path is restored only while it still
+        holds this writer's content. A writer that lost its lease (:class:`WriteLeaseLost`)
+        first takes the lease again, waiting for the new holder's save to finish, and only
+        then undoes what that save did not overwrite; if it cannot get the lease back it
+        leaves everything in place."""
+        done: builtins.list[tuple[str, str | None, str | None]] = []
         try:
             for rel, content in steps:
                 self._still_writing()
-                done.append((rel, self.store.read(rel)))
+                done.append((rel, self.store.read(rel), content))
                 if content is None:
                     self.store.remove(rel)
                 else:
                     self.store.write(rel, content)
+        except WriteLeaseLost:
+            try:
+                with self._relock():
+                    self._undo(done)
+            except ConflictError:
+                log.warning(
+                    "write lease lost after %d of %d steps and not regained; leaving the "
+                    "stored files as they are",
+                    len(done),
+                    len(steps),
+                )
+            raise
         except BaseException:
-            for rel, previous in reversed(done):
-                try:
-                    if previous is None:
-                        self.store.remove(rel)
-                    else:
-                        self.store.write(rel, previous)
-                except Exception:
-                    log.exception("cannot restore %s after a failed write", rel)
+            self._undo(done)
             raise
 
     def _generated_names(self, dag_id: str, state: DagState | None) -> list[str]:

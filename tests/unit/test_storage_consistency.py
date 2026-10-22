@@ -239,6 +239,8 @@ def test_object_store_on_a_local_file_system_renames_into_place(
 
 
 def test_a_writer_that_lost_its_lease_stops_and_rolls_back(tmp_path: Path, spec: DagSpec) -> None:
+    """The replica that took the lease over wrote nothing: the stalled writer takes the
+    lease back and undoes its half-done save."""
     url = f"memory://autoair-{uuid.uuid4().hex}/dags"
     locks = FileDocumentStore(str(tmp_path / "locks"))
     slow = ObjectStorageTarget(url, locks=locks, lock_seconds=0.2, lock_wait_seconds=5)
@@ -248,10 +250,46 @@ def test_a_writer_that_lost_its_lease_stops_and_rolls_back(tmp_path: Path, spec:
     def stalled_write(rel: str, content: str) -> None:
         original(rel, content)
         if rel == "simple.autoair.json":  # stalls past its lease; another replica takes over
-            other._lease("simple").__enter__()
+            with other._lease("simple"):
+                pass  # ... and gives it back without writing
 
     slow.object_store.write = stalled_write  # type: ignore[method-assign]
     slow.lock_seconds = 0.0  # its lease is expired by the time the spec is written
     with pytest.raises(ConflictError, match="took it over"):
         slow.save(spec, {"simple.py": SRC})
     assert slow.get("simple") is None  # the spec written before was rolled back
+
+
+def test_a_writer_that_lost_its_lease_never_undoes_the_new_holders_save(
+    tmp_path: Path, spec: DagSpec
+) -> None:
+    """Regression: the stalled writer's undo used to restore the old spec over the save the
+    new lease holder had just finished, leaving its DAG file and an older spec."""
+    url = f"memory://autoair-{uuid.uuid4().hex}/dags"
+    locks = FileDocumentStore(str(tmp_path / "locks"))
+    base = ObjectStorageTarget(url, locks=locks, lock_seconds=60).save(spec, {"simple.py": SRC})
+    slow = ObjectStorageTarget(url, locks=locks, lock_seconds=0.2, lock_wait_seconds=5)
+    other = ObjectStorageTarget(url, locks=locks, lock_seconds=60, lock_wait_seconds=5)
+    theirs = spec.model_copy(update={"description": "saved by the replica that took over"})
+    mine = spec.model_copy(update={"description": "the stalled save"})
+    original = slow.object_store.write
+    done: dict[str, Any] = {}
+
+    def stalled_write(rel: str, content: str) -> None:
+        original(rel, content)
+        if rel == "simple.autoair.json" and "result" not in done:
+            # Stalls past its lease; the other replica takes it over and completes a save
+            # of what it loaded (the half-written spec is what it sees as current).
+            current = other.get("simple")
+            assert current is not None
+            done["result"] = other.save(theirs, {"simple.py": SRC2}, base_etag=current.etag)
+
+    slow.object_store.write = stalled_write  # type: ignore[method-assign]
+    slow.lock_seconds = 0.0
+    with pytest.raises(ConflictError, match="took it over"):
+        slow.save(mine, {"simple.py": SRC}, base_etag=base.etag)
+    stored = other.get("simple")
+    assert stored is not None
+    assert stored.spec.description == "saved by the replica that took over"
+    assert stored.etag == done["result"].etag
+    assert other.object_store.read("simple.py") == SRC2

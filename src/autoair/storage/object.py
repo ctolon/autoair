@@ -27,7 +27,13 @@ from typing import TYPE_CHECKING, Any
 import fsspec
 from fsspec.core import url_to_fs
 
-from autoair.storage.base import DEFAULT_HISTORY_LIMIT, ConflictError, StorageError, TargetStatus
+from autoair.storage.base import (
+    DEFAULT_HISTORY_LIMIT,
+    ConflictError,
+    StorageError,
+    TargetStatus,
+    WriteLeaseLost,
+)
 from autoair.storage.files import FileTarget
 
 if TYPE_CHECKING:
@@ -181,7 +187,7 @@ class ObjectStorageTarget(FileTarget):
         try:
             doc = self.locks.put(key, json.dumps(claim).encode(), expected_version=version)
         except DocumentConflict:
-            raise ConflictError(
+            raise WriteLeaseLost(
                 None,
                 f"the write lease of DAG {claim.get('dag_id')!r} expired and another replica "
                 "took it over; nothing was saved, reload and retry",
@@ -190,6 +196,22 @@ class ObjectStorageTarget(FileTarget):
 
     def _write_lock(self, dag_id: str) -> contextlib.AbstractContextManager[None]:
         return self._locked(dag_id)
+
+    @contextlib.contextmanager
+    def _relock(self) -> Iterator[None]:
+        """Take the lease of the DAG being written again (after :class:`WriteLeaseLost`),
+        waiting up to ``lock_wait_seconds`` for the replica that took it over."""
+        held = self._held
+        if self.locks is None or held is None:
+            yield
+            return
+        try:
+            with self._lease(str(held[1].get("dag_id"))):
+                yield
+        finally:
+            # The outer save releases its own (stale) claim; its compare-and-swap then
+            # fails harmlessly instead of releasing the lease taken here.
+            self._held = held
 
     @contextlib.contextmanager
     def _locked(self, dag_id: str) -> Iterator[None]:

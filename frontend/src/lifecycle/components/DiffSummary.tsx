@@ -10,18 +10,21 @@ const short = (v: unknown) => {
 };
 
 function Changes({ changes }: { changes: FieldChange[] | undefined }) {
+  const { t } = useTranslation("lifecycle");
   if (!changes?.length) return null;
+  // An absent key and an explicit null differ (null overrides a DAG default; absence inherits).
+  const shown = (value: unknown, present: boolean | undefined) => (present === false ? t("diff.absent") : short(value));
   return (
     <Stack gap={0.5} pl={4} as="ul" listStyleType="none" m={0}>
       {changes.map((c) => (
         <Text as="li" key={c.path} fontSize="xs" wordBreak="break-word">
           <Code fontSize="xs">{c.path || "·"}</Code>{" "}
           <Text as="span" color="red.500" textDecoration="line-through">
-            {short(c.before)}
+            {shown(c.before, c.before_present)}
           </Text>{" "}
           →{" "}
           <Text as="span" color="green.600">
-            {short(c.after)}
+            {shown(c.after, c.after_present)}
           </Text>
         </Text>
       ))}

@@ -20,6 +20,7 @@ from __future__ import annotations
 import builtins
 import datetime
 import hashlib
+import inspect
 import json
 import re
 from typing import Any, Literal, Protocol, runtime_checkable
@@ -41,6 +42,18 @@ TargetKind = Literal["local", "object", "git"]
 
 
 # --------------------------------------------------------------------------- errors
+
+
+def environment_kwargs(method: Any, environment: str | None) -> dict[str, Any]:
+    """``{"environment": environment}`` when the target method ``method`` reads per
+    environment (git targets map environments to branches); ``{}`` otherwise."""
+    if environment is None:
+        return {}
+    try:
+        params = inspect.signature(method).parameters
+    except (TypeError, ValueError):
+        return {}
+    return {"environment": environment} if "environment" in params else {}
 
 
 class StorageError(Exception):
@@ -77,6 +90,11 @@ class ConflictError(StorageError):
                 else "the spec was deleted or moved since it was loaded"
             )
         )
+
+
+class WriteLeaseLost(ConflictError):
+    """This writer's lease on a DAG expired and another writer took it over mid-save. The
+    new holder's writes are authoritative: nothing may be restored over them."""
 
 
 class EjectedError(StorageError):

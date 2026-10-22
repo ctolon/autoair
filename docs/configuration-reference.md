@@ -14,7 +14,7 @@ and INI files.
 **Secret** values are masked as `***` by `GET /api/config` (`expose_config=true`) and
 left out with `expose_config=non-sensitive-only`.
 
-692 options.
+693 options.
 
 ## Top level
 
@@ -370,6 +370,7 @@ HTTP server and Airflow API client.
 | `AUTOAIR_SERVER__OTEL_EXCLUDED_URLS` | `server.otel_excluded_urls` | `list[str]` | `["health", "ready", "metrics"]` | URL patterns OpenTelemetry does not trace. |  |
 | `AUTOAIR_SERVER__AIRFLOW_FETCH_CONCURRENCY` | `server.airflow_fetch_concurrency` | `int` | `8` | Parallel requests to Airflow's API per fan-out call. |  |
 | `AUTOAIR_SERVER__AIRFLOW_PAGE_SIZE` | `server.airflow_page_size` | `int` | `1000` | Entries requested per list call to Airflow (connections, pools, variables, task instances of a run…). |  |
+| `AUTOAIR_SERVER__AIRFLOW_LIST_MAX_ENTRIES` | `server.airflow_list_max_entries` | `int` | `50000` | Most entries read from one paged Airflow list (connections, pools, variables, import errors): pages are followed until Airflow's total_entries is reached, an empty page arrives or this many entries were read (a warning is logged then). |  |
 | `AUTOAIR_SERVER__PUBLIC_URL` | `server.public_url` | `str \| None` | `None` | Public base URL of the AutoAir UI as users reach it (e.g. https://autoair.example.com or https://airflow.example.com/autoair). Used for links back to a DAG in commits/pull requests and for the 'Sign in with Airflow' return URL. Unset: no links. |  |
 | `AUTOAIR_SERVER__WORKERS` | `server.workers` | `int` | `1` | `autoair serve`: worker processes. More than one needs shared state (collab_secret, shared proposals/audit URLs) and disables in-memory caches sharing. |  |
 | `AUTOAIR_SERVER__GRACEFUL_SHUTDOWN_TIMEOUT` | `server.graceful_shutdown_timeout` | `float` | `30` | `autoair serve`: seconds in-flight requests get to finish on shutdown. |  |

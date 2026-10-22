@@ -7,13 +7,13 @@ import datetime
 
 from airflow.providers.standard.operators.bash import BashOperator
 from airflow.providers.standard.operators.empty import EmptyOperator
-from airflow.sdk import DAG, Asset, Label, Param, TaskGroup, task
+from airflow.sdk import DAG, Asset, CronTriggerTimetable, Label, Param, TaskGroup, task
 
 with DAG(
     dag_id="etl_full",
     dag_display_name="ETL — full feature demo",
     description="Exercises groups, mapping, assets, labels and python tasks",
-    schedule="0 6 * * 1-5",
+    schedule=CronTriggerTimetable("0 6 * * 1-5", timezone="UTC"),
     start_date=datetime.datetime(2026, 1, 1, tzinfo=datetime.timezone.utc),
     catchup=False,
     tags=["autoair", "demo"],
