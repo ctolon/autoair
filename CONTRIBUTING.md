@@ -34,7 +34,13 @@ E2E tests, Google Chrome.
 git clone https://github.com/ctolon/autoair && cd autoair
 uv sync                                   # Python 3.12 venv with Airflow 3.3 + dev tools
 (cd frontend && npm ci && npm run build)  # editor bundles served by the plugin and `autoair serve`
+uv run pre-commit install                 # lint and format checks on commit, mypy on push
 ```
+
+The hooks (`.pre-commit-config.yaml`) run ruff, the generated-reference and hard-coded audit
+checks, prettier and eslint on changed frontend files, the MDX check and actionlint; `mypy`
+runs before `git push`. `uv run pre-commit run --all-files` runs them on everything. CI runs
+the same checks and more, so it stays the gate.
 
 Run it:
 

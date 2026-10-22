@@ -48,6 +48,9 @@ _IMPORT = re.compile(r"^\s*import\s.+from\s|^\s*export\s")
 _ADMONITION = re.compile(r"^:::(\w+)(?:\s+(.*))?$")
 _ADMONITION_END = re.compile(r"^:::\s*$")
 _JSX_COMMENT = re.compile(r"\{/\*.*?\*/\}")
+# Not a sanitiser: the input is the repository's own Markdown, read line by line, and the
+# output is plain text (pages.json, llms-full.txt), never rendered as HTML. Comments spanning
+# lines are therefore kept as text; website/scripts/llms-txt.mjs applies the same rules.
 _HTML_COMMENT = re.compile(r"<!--.*?-->")
 _ESCAPE = re.compile(r"\\([{}<>])")
 _LINK = re.compile(r"\]\(([^)\s]+)\)")

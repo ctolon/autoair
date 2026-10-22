@@ -1,4 +1,4 @@
-import { readFileSync, readdirSync, statSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { join, relative } from "node:path";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -83,9 +83,10 @@ describe("ELK bundling", () => {
     const root = join(import.meta.dirname, "..");
     const offenders: string[] = [];
     const walk = (dir: string) => {
-      for (const name of readdirSync(dir)) {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const name = entry.name;
         const path = join(dir, name);
-        if (statSync(path).isDirectory()) {
+        if (entry.isDirectory()) {
           if (name !== "gen") walk(path);
         } else if (/\.tsx?$/.test(name) && !name.endsWith(".d.ts") && !name.endsWith(".test.ts")) {
           const text = readFileSync(path, "utf8");

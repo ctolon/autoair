@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { mkdirSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { closeSync, fstatSync, mkdirSync, openSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
 
 import { type Page, expect, test } from "@playwright/test";
@@ -144,7 +144,13 @@ for (const lang of ["en", "tr"] as const) {
 
 test("the server kept the token nowhere", () => {
   for (const path of filesUnder(STATE as string)) {
-    if (statSync(path).size > 5_000_000) continue;
-    expect(readFileSync(path).includes(Buffer.from(TOKEN)), path).toBe(false);
+    // Size and content from one descriptor: the server may replace state files meanwhile.
+    const fd = openSync(path, "r");
+    try {
+      if (fstatSync(fd).size > 5_000_000) continue;
+      expect(readFileSync(fd).includes(Buffer.from(TOKEN)), path).toBe(false);
+    } finally {
+      closeSync(fd);
+    }
   }
 });

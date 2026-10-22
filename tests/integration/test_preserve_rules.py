@@ -98,7 +98,8 @@ def test_kept_hand_written_file_is_not_regenerated_without_allow_force_overwrite
 def test_admin_can_delete_the_kept_file(tmp_path: Path) -> None:
     c = client(tmp_path)
     _kept(c)
-    assert c.delete("/api/specs/hand_load", headers=as_role("Admin")).status_code == 200
+    response = c.delete("/api/specs/hand_load", headers=as_role("Admin"))
+    assert response.status_code == 200
     assert not (tmp_path / "dags" / "hand_load.py").exists()
 
 

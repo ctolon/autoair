@@ -154,7 +154,7 @@ class OnlineFetcher:
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(result.model_dump_json(), encoding="utf-8")
         except OSError:
-            pass
+            pass  # the cache is an optimisation: an unwritable cache dir only costs a refetch
 
     async def _wait_turn(self, host: str) -> None:
         async with self._lock:

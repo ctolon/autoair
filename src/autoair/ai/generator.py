@@ -373,9 +373,6 @@ def generate_spec(
 
 # --------------------------------------------------------------------------- prose helpers
 
-_EXPLAIN_SYSTEM = prompts.EXPLAIN_PROBLEMS_SYSTEM
-_DESCRIBE_SYSTEM = prompts.DESCRIBE_SYSTEM
-
 
 def _spec_json(spec: DagSpec) -> str:
     return spec.model_dump_json(exclude_none=True, by_alias=True, exclude={"environments"})

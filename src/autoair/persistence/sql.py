@@ -16,7 +16,6 @@ import builtins
 import datetime
 import hashlib
 import json
-import logging
 import os
 import socket
 import time
@@ -34,8 +33,6 @@ if TYPE_CHECKING:
     from autoair.ai.memory import MemoryItem
     from autoair.audit import AuditRecord
     from autoair.iam.proposals import Proposal, ReviewRecord
-
-log = logging.getLogger("autoair.persistence")
 
 
 def _now_iso() -> str:

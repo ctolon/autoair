@@ -152,7 +152,8 @@ def test_delete_and_promote_take_the_token(tmp_path: Path, host: GitHttpServer) 
     assert audit[0]["action"] == "promote"
     assert audit[0]["details"]["credential"] == "request-token"
 
-    assert c.delete("/api/specs/simple", headers=headers(token=None)).status_code == 400
+    response = c.delete("/api/specs/simple", headers=headers(token=None))
+    assert response.status_code == 400
     gone = c.delete("/api/specs/simple", headers=headers())
     assert gone.status_code == 200, gone.text
 

@@ -42,9 +42,11 @@ def test_save_python_and_switch_to_loader(tmp_path, simple_spec_data):
     repo.save(loader_spec, None)
     assert "load_dag(__file__)" in (tmp_path / "simple.py").read_text()
     assert [s.dag_id for s in repo.list()] == ["simple"]
-    assert repo.delete("simple")
+    deleted = repo.delete("simple")
+    assert deleted
     assert _visible(tmp_path) == []
-    assert not repo.delete("simple")
+    deleted = repo.delete("simple")
+    assert not deleted
 
 
 def test_refuses_to_overwrite_foreign_files(tmp_path, simple_spec_data):
@@ -187,7 +189,8 @@ def test_target_repository_adapter_and_renderer(tmp_path, simple_spec_data):
     repo = TargetRepository(LocalFolderTarget(tmp_path))
     repo.save(spec, None)
     assert repo.get("simple") == spec
-    assert repo.delete("simple")
+    deleted = repo.delete("simple")
+    assert deleted
 
 
 def test_build_local_target(tmp_path):

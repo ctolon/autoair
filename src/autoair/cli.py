@@ -380,8 +380,6 @@ def marketplace_build(
     description: Annotated[str, typer.Option(help="Marketplace description.")] = "",
 ) -> None:
     """Write DIRECTORY/index.json from DIRECTORY/templates/*.json (+ extensions.json), signed."""
-    import json
-
     from autoair.marketplace import build_index
 
     _require_feature(_settings(), "marketplace")
@@ -396,8 +394,6 @@ def marketplace_verify(
     public_key: Annotated[str, typer.Option(help="Base64 Ed25519 public key.")],
 ) -> None:
     """Check an index signature against a base64 Ed25519 public key."""
-    import json
-
     from autoair.marketplace import verify_index
 
     if not verify_index(json.loads(index.read_text()), public_key):

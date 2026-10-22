@@ -29,7 +29,6 @@ import ast
 import copy
 import fnmatch
 import json
-import logging
 import re
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, field
@@ -45,7 +44,6 @@ from autoair.sections import CatalogSettings, ParamOverride
 if TYPE_CHECKING:
     from autoair.catalog.models import OperatorDetail
 
-log = logging.getLogger(__name__)
 
 METADATA_ENTRY_POINT_GROUP = "autoair.operator_metadata"
 METADATA_FILES = ("autoair.yaml", "autoair.yml", "autoair.json")

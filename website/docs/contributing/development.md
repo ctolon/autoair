@@ -34,7 +34,10 @@ git clone https://github.com/ctolon/autoair && cd autoair
 uv sync                                   # Python 3.12 venv with Airflow 3.3 and dev tools
 (cd frontend && npm ci && npm run build)  # editor bundles served by the plugin and `autoair serve`
 (cd website && npm ci)                    # only when working on this site
+uv run pre-commit install                 # checks on commit, mypy on push
 ```
+
+The [pre-commit](https://pre-commit.com) hooks in `.pre-commit-config.yaml` run ruff (check and format), the configuration-reference, hard-coded-audit and version checks, prettier and eslint on changed frontend files, the MDX check on changed docs and actionlint on workflows; `mypy` runs before `git push`. Python tools come from `uv.lock` and the frontend tools from `frontend/package-lock.json`, so they match CI. Run everything with `uv run pre-commit run --all-files`; CI remains the gate.
 
 Run it:
 

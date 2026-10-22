@@ -403,6 +403,7 @@ def test_gitlab_pr_mode_target(simple_spec_data):
     result = target.save(spec, {"simple.py": SRC})
     assert result.pr_url == "https://gitlab.com/grp/dags/-/merge_requests/1"
     assert repo.prs[0]["target_branch"] == "main"
-    assert target.delete("simple")
+    deleted = target.delete("simple")
+    assert deleted
     assert "simple.py" not in repo.tree("autoair/simple")
     assert len(repo.prs) == 1

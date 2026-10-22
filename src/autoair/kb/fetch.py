@@ -15,7 +15,6 @@ connection (``conn_id``) at the moment they are used.
 from __future__ import annotations
 
 import fnmatch
-import logging
 import threading
 import time
 from collections.abc import Iterator, Sequence
@@ -29,8 +28,6 @@ import httpx2
 from autoair.ai.net import PinnedTransport, UrlNotAllowed, check_url_sync
 from autoair.kb.config import KbFetchSettings
 from autoair.net import tls
-
-log = logging.getLogger("autoair.kb")
 
 _RETRY_STATUS = frozenset({429, 500, 502, 503, 504})
 #: Longest Retry-After honoured (s): a server asking for more makes the page fail.

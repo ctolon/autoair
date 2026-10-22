@@ -25,7 +25,7 @@ def wait_for(url: str, *, timeout: float = 300, verify: bool | str = True) -> No
             if httpx2.get(url, timeout=5, verify=verify).is_success:
                 return
         except httpx2.HTTPError:
-            pass
+            pass  # not listening yet: keep polling until the deadline
         if time.monotonic() > deadline:
             fail(f"{url} did not answer within {timeout:.0f}s")
         time.sleep(2)

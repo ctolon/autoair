@@ -24,7 +24,6 @@ from __future__ import annotations
 import fnmatch
 import hashlib
 import json
-import logging
 import posixpath
 import re
 from collections.abc import Callable, Iterator
@@ -56,8 +55,6 @@ from autoair.kb.fetch import (
 )
 from autoair.kb.models import PageDoc
 from autoair.kb.parse import IncludeResolver, format_of
-
-log = logging.getLogger("autoair.kb")
 
 _SETINDEX = re.compile(r"^\s*Search\.setIndex\((.*)\)\s*;?\s*$", re.DOTALL)
 _MD_LINK = re.compile(r"\[([^\]]+)\]\((\S+?)\)")
@@ -619,7 +616,7 @@ def _detect(reader: _FsReader) -> str:
         if fs.glob(f"{root}/*/*/searchindex.js"):
             return "sphinx_site"
     except OSError:
-        pass
+        pass  # a filesystem that cannot glob is read as plain files
     return "files"
 
 

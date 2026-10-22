@@ -571,21 +571,6 @@ class AssistantsSettings(_Section):
     )
 
 
-ResourceName = Literal[
-    "connections",
-    "variables",
-    "pools",
-    "xcom_keys",
-    "xcom_values",
-    "other_runs",
-    "import_errors",
-    "airflow_config",
-    "filesystem",
-    "research",
-    "online",
-]
-
-
 class TroubleshootResources(_Section):
     """Airflow resources the troubleshooting agent may read (users can only narrow this)."""
 

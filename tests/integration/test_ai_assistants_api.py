@@ -130,8 +130,10 @@ def test_developer_chat_turn_proposal_threads_and_audit(tmp_path: Path) -> None:
         [
             tool_calls(("get_current_spec", {}), ("search_catalog", {"query": "bash"})),
             tool_calls(("propose_spec_change", patch)),
-            "Add retries to `hello` [1].\n\n<follow_ups>\n- Why three retries?\n"
-            "- Add a timeout too?\n</follow_ups>",
+            (
+                "Add retries to `hello` [1].\n\n<follow_ups>\n- Why three retries?\n"
+                "- Add a timeout too?\n</follow_ups>"
+            ),
             "Regenerated answer.",
         ]
     )
@@ -204,7 +206,8 @@ def test_developer_chat_turn_proposal_threads_and_audit(tmp_path: Path) -> None:
     assert any(s.startswith("spec:") for s in turns[-1].sources)
     assert any(r.feature == "assistant:proposal_approve" for r in records)
 
-    assert client.delete(f"/ai/assistant/threads/{thread_id}").status_code == 200
+    response = client.delete(f"/ai/assistant/threads/{thread_id}")
+    assert response.status_code == 200
     assert client.get(f"/ai/assistant/threads/{thread_id}").status_code == 404
 
 
@@ -718,9 +721,11 @@ def test_project_rules_crud_and_injection(tmp_path: Path) -> None:
     viewer, _ = make(tmp_path, perms=VIEWER)
     viewer.app.state.services = services
     assert viewer.put("/ai/rules/global", json={"content": "x"}).status_code == 403
-    assert client.delete("/ai/rules/team:core").status_code == 200
+    response = client.delete("/ai/rules/team:core")
+    assert response.status_code == 200
     assert "Tag DAGs" not in client.get("/ai/rules/effective").json()["text"]
-    assert client.delete("/ai/rules/team:core").status_code == 404
+    response = client.delete("/ai/rules/team:core")
+    assert response.status_code == 404
     assert "ai_rules_put" in [r.action for r in services.audit.query(limit=10)]
 
 
@@ -781,8 +786,10 @@ def test_admin_mcp_servers_crud(tmp_path: Path, monkeypatch: pytest.MonkeyPatch)
     panel.app.state.services = services
     assert panel.get("/admin/mcp-servers").status_code == 200
     assert panel.put("/admin/mcp-servers/x", json=body).status_code == 403
-    assert client.delete("/admin/mcp-servers/grafana").status_code == 200
-    assert client.delete("/admin/mcp-servers/grafana").status_code == 404
+    response = client.delete("/admin/mcp-servers/grafana")
+    assert response.status_code == 200
+    response = client.delete("/admin/mcp-servers/grafana")
+    assert response.status_code == 404
     actions = [r.action for r in services.audit.query(limit=20)]
     assert "ai_mcp_server_put" in actions
     assert "ai_mcp_server_delete" in actions

@@ -109,8 +109,10 @@ def test_document_crud_and_versions(backend: Any) -> None:
     assert store.put("b", b"new", expected_version=None).data == b"new"
     assert store.put_if_absent("b", b"other").data == b"new"
     assert store.keys() == ["a", "b"]
-    assert store.delete("a") is True
-    assert store.delete("a") is False
+    deleted = store.delete("a")
+    assert deleted is True
+    deleted = store.delete("a")
+    assert deleted is False
     assert store.keys() == ["b"]
     with pytest.raises(ValueError, match="invalid document key"):
         store.get("../escape")
@@ -315,8 +317,10 @@ def test_memory_add_is_idempotent_and_bounded(backend: Any) -> None:
     with pytest.raises(MemoryError, match="full"):
         repo.add(_item("one too many"), max_items=3)
     assert len(repo.all()) == 3
-    assert repo.delete(first.id) is True
-    assert repo.delete(first.id) is False
+    deleted = repo.delete(first.id)
+    assert deleted is True
+    deleted = repo.delete(first.id)
+    assert deleted is False
     store = MemoryStore(repository=repo)
     items, total = store.list(visible_to=("core", None))
     assert total == 2
@@ -384,8 +388,10 @@ def test_proposals_and_reviews(backend: Any) -> None:
     )
     assert store.approvers("etl", "v1", exclude="alice") == []  # latest verdict wins
     assert [r.verdict for r in store.reviews("etl", "v1")] == ["request_changes", "approve"]
-    assert store.delete("etl", "v1") is True
-    assert store.delete("etl", "v1") is False
+    deleted = store.delete("etl", "v1")
+    assert deleted is True
+    deleted = store.delete("etl", "v1")
+    assert deleted is False
     assert [p.etag for p in store.pending("etl")] == ["v2"]
 
 

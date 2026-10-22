@@ -126,9 +126,11 @@ def test_push_mode(provider, remote, simple_spec_data):
     unchanged = target.save(spec2, {"simple.py": SRC2})
     assert unchanged.version == second.version
 
-    assert target.delete("simple", base_etag=second.etag)
+    deleted = target.delete("simple", base_etag=second.etag)
+    assert deleted
     assert target.get("simple") is None
-    assert not target.delete("simple")
+    deleted = target.delete("simple")
+    assert not deleted
 
 
 def test_push_mode_detects_foreign_and_ejected_files(provider, remote, simple_spec_data):

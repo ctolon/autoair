@@ -36,7 +36,6 @@ from autoair.storage.git.provider import (
 
 log = logging.getLogger(__name__)
 
-_SHA_RE = re.compile(r"^[0-9a-f]{40,64}$")
 _USERINFO_RE = re.compile(r"(?<=://)[^/@\s]+@")
 # stderr of a git command the remote refused for its credentials (HTTP and SSH).
 _AUTH_FAILED_RE = re.compile(

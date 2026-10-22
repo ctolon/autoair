@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import base64
 import hashlib
-import logging
 import threading
 import time
 from collections import OrderedDict, deque
@@ -22,8 +21,6 @@ from autoair.auth import configure_session_cookie
 
 if TYPE_CHECKING:
     from autoair.api.app import Services
-
-log = logging.getLogger(__name__)
 
 
 # --------------------------------------------------------------------------- rate limits

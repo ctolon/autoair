@@ -8,6 +8,25 @@ minor versions may contain breaking changes; they are listed under **Changed** o
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-10-22
+
+### Added
+- Contributors: pre-commit hooks (`uv run pre-commit install`) for ruff, the generated
+  configuration reference, the hard-coded audit, version agreement, prettier, eslint, the MDX
+  check and actionlint, plus mypy before push; `pre-commit` is in the dev dependencies.
+
+### Security
+- CI and release workflows pin third-party GitHub Actions (setup-uv, Docker build actions, PyPI
+  publish) to full commit SHAs, so a moved tag cannot change what builds and publishes AutoAir
+  releases; Dependabot keeps the pins current. `astral-sh/setup-uv` moves to v10 (Node 24).
+- AI prompt-injection shield: removing `<untrusted-data>` tags from untrusted text now takes
+  linear time; a document full of unclosed tags could stall a request for seconds.
+- Deploy target dialog: the suggested git provider comes from the remote's parsed hostname,
+  matched on whole domain labels, so a look-alike host (`bitbucket.org.example.com`) or a
+  provider name in the URL path no longer selects that provider's API.
+- Docker Compose demo (`tls` profile): the generated server key is readable by its owner
+  only (mode 0600 instead of 0640).
+
 ## [0.2.1] - 2026-10-22
 
 ### Fixed
@@ -458,7 +477,8 @@ First public release.
 - Supports Apache Airflow ≥ 3.0, < 4 (CI: 3.0.6, 3.1.8, 3.2.2, 3.3.2, plus the 3.4
   pre-release) on Python 3.10–3.14.
 
-[Unreleased]: https://github.com/ctolon/autoair/compare/v0.2.1...HEAD
+[Unreleased]: https://github.com/ctolon/autoair/compare/v0.2.2...HEAD
+[0.2.2]: https://github.com/ctolon/autoair/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/ctolon/autoair/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/ctolon/autoair/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/ctolon/autoair/releases/tag/v0.1.0

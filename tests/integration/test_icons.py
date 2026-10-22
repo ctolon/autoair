@@ -109,9 +109,11 @@ def test_icon_api_roundtrip(client):
     bad = client.put("/api/icons/assignments", json={"operator": op, "icon": "custom:nope"})
     assert bad.status_code == 400
     # Deleting an icon also drops its assignments.
-    assert client.delete("/api/icons/custom:gitlab-logo").json() == {"deleted": True}
+    response = client.delete("/api/icons/custom:gitlab-logo")
+    assert response.json() == {"deleted": True}
     assert op not in client.get("/api/icons/assignments").json()["operators"]
-    assert client.delete("/api/icons/builtin:jira").status_code == 400
+    response = client.delete("/api/icons/builtin:jira")
+    assert response.status_code == 400
     assert client.get("/api/icons/custom:../../etc").status_code == 404
 
 

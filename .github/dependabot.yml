@@ -1,8 +1,9 @@
 # Weekly dependency updates, grouped so a week produces a handful of pull requests.
 version: 2
 updates:
+  # Workflows pin third-party actions to a commit SHA with the release as a trailing
+  # comment (`uses: owner/action@<sha>  # v1.2.3`); Dependabot bumps both together.
   - package-ecosystem: github-actions
-    open-pull-requests-limit: 0   # paused until v0.1.0 ships; remove to resume
     directory: /
     schedule: {interval: weekly, day: monday}
     groups:

@@ -307,16 +307,14 @@ def test_listing_covers_every_page(index: DocsIndex) -> None:
 def test_packaged_file_is_used_outside_a_checkout(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    import autoair.docs.index as module
-
     data_file = tmp_path / "pages.json"
     docs_build.write(_repo(tmp_path / "repo"), data_file)
-    monkeypatch.setattr(module, "_CHECKOUT", tmp_path / "site-packages")
-    monkeypatch.setattr(module, "DATA_PATH", data_file)
+    monkeypatch.setattr("autoair.docs.index._CHECKOUT", tmp_path / "site-packages")
+    monkeypatch.setattr("autoair.docs.index.DATA_PATH", data_file)
     assert checkout_root() is None
     data = load_data()
     assert {p["path"] for p in data["pages"]} >= {"user-guide/deploy"}
-    monkeypatch.setattr(module, "DATA_PATH", tmp_path / "missing.json")
+    monkeypatch.setattr("autoair.docs.index.DATA_PATH", tmp_path / "missing.json")
     with pytest.raises(DocsUnavailable, match="no packaged documentation"):
         load_data()
     (tmp_path / "bad.json").write_text('{"kind": "other"}', encoding="utf-8")

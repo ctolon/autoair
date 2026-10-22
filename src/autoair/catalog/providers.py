@@ -12,15 +12,12 @@ from __future__ import annotations
 import ast
 import hashlib
 import json
-import logging
 import re
 from dataclasses import dataclass, field
 from importlib.metadata import Distribution, distributions
 from typing import Any
 
 from autoair.catalog.static import find_module_file
-
-log = logging.getLogger(__name__)
 
 PROVIDER_ENTRY_POINT_GROUP = "apache_airflow_provider"
 

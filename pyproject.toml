@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "autoair"
 dynamic = ["readme"]
-version = "0.2.1"
+version = "0.2.2"
 description = "Type-safe, extensible no-code DAG builder for Apache Airflow 3"
 license = "Apache-2.0"
 license-files = ["LICENSE", "NOTICE"]
@@ -167,6 +167,7 @@ dev = [
   "pydantic-ai-slim[anthropic,openai,google]>=2.43,<3",
   "anthropic>=1.12.1,<2",
   "airflow-blueprint>=0.3,<1",
+  "pre-commit>=4.0",
 ]
 
 [project.urls]

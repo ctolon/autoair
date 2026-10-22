@@ -12,7 +12,6 @@ from __future__ import annotations
 import functools
 import ipaddress
 import json
-import logging
 import os
 import ssl
 import threading
@@ -27,7 +26,6 @@ if TYPE_CHECKING:
 
     from autoair.settings import Settings
 
-log = logging.getLogger(__name__)
 
 OPTIONS_ENV = "AUTOAIR__SERVE_OPTIONS"  # internal: options of worker processes
 _TLS_VERSIONS = {"TLSv1.2": ssl.TLSVersion.TLSv1_2, "TLSv1.3": ssl.TLSVersion.TLSv1_3}
@@ -198,7 +196,7 @@ def _open_when_ready(url: str, health: str, timeout: float = 60) -> None:
                 webbrowser.open(url)
                 return
         except httpx2.HTTPError:
-            pass
+            pass  # the server is still starting: retry until the deadline
         time.sleep(0.5)
 
 

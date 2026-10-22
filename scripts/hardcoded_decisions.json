@@ -1355,6 +1355,14 @@
       "decision": "keep",
       "reason": "class names and kwargs of the provider packages' object-storage DAG bundles (Airflow's API)"
     },
+    "autoair/deploy_setup.py::<module>::constant::_HOSTED_PROVIDERS": {
+      "decision": "keep",
+      "reason": "public hostnames of the hosted git services; only a provider hint for the deploy dialog, the operator sets storage.git.provider explicitly"
+    },
+    "autoair/deploy_setup.py::<module>::constant::_PRODUCT_LABELS": {
+      "decision": "keep",
+      "reason": "product names matched as hostname labels for self-hosted instances; only a provider hint, overridden by storage.git.provider"
+    },
     "autoair/deploy_setup.py::_git::kwarg::run(timeout=)": {
       "decision": "keep",
       "reason": "best-effort local git probe of the deploy dialog"
@@ -3878,10 +3886,6 @@
     "autoair/storage/git/local_git.py::<module>::constant::_CACHE_LOCKS_GUARD": {
       "decision": "keep",
       "reason": "lock guarding the clone-cache lock registry (not a value)"
-    },
-    "autoair/storage/git/local_git.py::<module>::constant::_SHA_RE": {
-      "decision": "keep",
-      "reason": "git object id format (protocol)"
     },
     "autoair/storage/git/local_git.py::<module>::constant::_USERINFO_RE": {
       "decision": "keep",

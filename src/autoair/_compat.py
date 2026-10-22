@@ -127,7 +127,7 @@ def _connection_loaders() -> list[Any]:
 
         loaders.append(Connection.get_connection_from_secrets)
     except ImportError:
-        pass
+        pass  # no core models in this process (Task SDK only): the SDK loaders below apply
     # Inside a task (or without the core models) the Task SDK is the supported path;
     # airflow.sdk exports BaseHook from 3.1, Airflow 3.0 has it in airflow.hooks.base.
     try:
@@ -140,7 +140,7 @@ def _connection_loaders() -> list[Any]:
 
             loaders.append(LegacyBaseHook.get_connection)
         except ImportError:
-            pass
+            pass  # neither hook location exists: callers get only the loaders found above
     return loaders
 
 

@@ -1,0 +1,26 @@
+# CodeQL configuration for .github/workflows/codeql.yml (github/codeql-action init `config-file`).
+# The workflow's `queries: security-and-quality` input replaces any `queries` here, so this file
+# only narrows what is scanned and reported.
+name: AutoAir CodeQL config
+
+paths-ignore:
+  # Generated TypeScript client (npm run codegen); findings belong to the generator.
+  - frontend/src/api/gen
+  # Codegen golden snapshots: expected output, not shipped code.
+  - tests/golden/expected
+  # Docusaurus build output.
+  - website/build
+  - "**/node_modules"
+  # Cookiecutter template of `autoair new-node`: the files are Jinja templates
+  # (`{{ cookiecutter.* }}` in Python source), not valid Python, and only become code
+  # in the user's generated project. The single star avoids relying on how the glob
+  # treats the literal braces of `{{cookiecutter.project_slug}}`.
+  - "src/autoair/scaffold/custom-node/*cookiecutter.project_slug*"
+
+query-filters:
+  # py/cyclic-import flags every module-level import cycle, including the deliberate
+  # function-local imports that keep optional extras optional and break cycles
+  # (.claude/rules/backend-python.md). Cycles that can fail at import time are still
+  # reported by py/unsafe-cyclic-import, which stays enabled.
+  - exclude:
+      id: py/cyclic-import

@@ -43,7 +43,6 @@ CONTEXT_PLACEHOLDERS = frozenset(
         "target",
     }
 )
-CommitAuthor = Literal["auto", "service", "user"]
 
 
 def one_line(value: object, limit: int = 300) -> str:

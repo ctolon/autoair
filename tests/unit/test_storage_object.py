@@ -58,7 +58,8 @@ def test_roundtrip_on_memory_fs(url, simple_spec_data, tmp_path):
     assert summary.updated_at is not None
     assert target.status().details["protocol"] == "memory"
 
-    assert target.delete("simple", base_etag=second.etag)
+    deleted = target.delete("simple", base_etag=second.etag)
+    assert deleted
     assert target.get("simple") is None
     assert target.list() == []
 

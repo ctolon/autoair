@@ -96,7 +96,9 @@ def main(out: Path) -> None:
     )
     for f in ("ca.pem", "server.pem", "server.key"):
         os.chown(out / f, 50000, 0)
-    os.chmod(out / "server.key", 0o640)  # airflow user + group root (nginx master)
+    # Owner only: the AutoAir replica reads it as the airflow user (50000), and the nginx master
+    # process reads it as root, which needs no group or other bits.
+    os.chmod(out / "server.key", 0o600)
     print(f"demo CA and server certificate written to {out} (valid {DAYS} days)")
 
 

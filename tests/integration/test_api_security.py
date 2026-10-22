@@ -80,11 +80,13 @@ def test_template_writes_and_catalog_refresh_need_edit_permission(tmp_path):
     tpl = {"id": "mine", "title": "Mine", "kind": "dag", "spec": SIMPLE}
     assert c.get("/api/templates").status_code == 200
     assert c.post("/api/templates", json=tpl).status_code == 403
-    assert c.delete("/api/templates/mine").status_code == 403
+    response = c.delete("/api/templates/mine")
+    assert response.status_code == 403
     assert c.post("/api/catalog/refresh").status_code == 403
     assert c.post("/api/templates", json=tpl, headers=EDITOR).status_code == 200
     assert c.get("/api/templates/mine").json()["title"] == "Mine"
-    assert c.delete("/api/templates/mine", headers=EDITOR).json() == {"deleted": True}
+    response = c.delete("/api/templates/mine", headers=EDITOR)
+    assert response.json() == {"deleted": True}
 
 
 def test_next_runs_preview_never_executes_spec_code(tmp_path):

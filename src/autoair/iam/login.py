@@ -266,5 +266,5 @@ async def logout(request: Request, response: Response) -> LogoutResponse:
         # only a 2xx is a revocation (a redirect to a login page is not)
         revoked = 200 <= resp.status_code < 300
     except httpx2.HTTPError:
-        pass
+        pass  # the local logout stands; revoked=False reports that Airflow was not reached
     return LogoutResponse(logged_out=True, revoked=revoked)

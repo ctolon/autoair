@@ -363,7 +363,7 @@ export default function StorageDialog() {
                     </Text>
                   ) : null}
                 </>
-              ) : isObject && draft ? (
+              ) : isObject ? (
                 <>
                   {pickedCandidate?.kind === "object-bundle" ? (
                     <Alert.Root status="info" size="sm">

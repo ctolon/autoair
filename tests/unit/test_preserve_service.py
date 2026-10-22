@@ -368,7 +368,8 @@ def test_targets_write_over_a_hand_written_file_only_while_it_is_unchanged(tmp_p
     # deleting the hand-written file AutoAir keeps needs deploy:overwrite_ejected
     with pytest.raises(StorageError, match="deploy:overwrite_ejected"):
         target.delete("classic")
-    assert target.delete("classic", allow_hand_written=True) is True
+    deleted = target.delete("classic", allow_hand_written=True)
+    assert deleted is True
     assert not (tmp_path / "classic.py").exists()
 
 

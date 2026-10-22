@@ -141,7 +141,8 @@ def test_user_key_encrypted_at_rest_and_never_returned(tmp_path: Path) -> None:
     store.put("alice", UserLlmUpdate(provider="openai", clear_api_key=True))
     assert not store.view("alice").api_key_set
     assert store.view("bob").configured is False
-    assert store.delete("alice")
+    deleted = store.delete("alice")
+    assert deleted
     assert not store.view("alice").configured
     other = UserLlmStore(
         str(tmp_path / "users"), load_encryption_key(UserLlmSettings(), tmp_path / "x")

@@ -123,7 +123,12 @@ for (const page of PAGES) {
     `<!-- Generated from docs/${page.source} by website/scripts/sync-reference.mjs. Do not edit. -->\n\n` +
     `${page.intro}\n${body}`;
   const target = resolve(outDir, page.target);
-  const before = existsSync(target) ? readFileSync(target, 'utf8') : '';
+  let before = '';
+  try {
+    before = readFileSync(target, 'utf8');
+  } catch (err) {
+    if (err.code !== 'ENOENT') throw err;
+  }
   if (before !== out) {
     writeFileSync(target, out);
     changed += 1;

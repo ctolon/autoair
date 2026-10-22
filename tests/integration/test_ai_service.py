@@ -166,7 +166,8 @@ def test_per_user_model_mode(tmp_path: Path) -> None:
     assert status["llm_source"] == "user"
     assert status["model"] == "claude-haiku-5-5"
     assert status["user_model_configured"]
-    assert client.delete("/api/ai/me/model").json()["settings"]["configured"] is False
+    response = client.delete("/api/ai/me/model")
+    assert response.json()["settings"]["configured"] is False
     central, _ = make(tmp_path / "c", FakeLLM())
     assert central.put("/api/ai/me/model", json={"provider": "anthropic"}).status_code == 409
 

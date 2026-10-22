@@ -307,7 +307,8 @@ def test_push_mode_roundtrip_and_conflict(kind):
             base_etag=first.etag,
         )
     assert [s.dag_id for s in target.list()] == ["demo"]
-    assert target.delete("demo")
+    deleted = target.delete("demo")
+    assert deleted
     assert "dags/demo.py" not in repo.files("main")
 
 

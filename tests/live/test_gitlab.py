@@ -98,7 +98,8 @@ def test_push_mode_commit_history_and_conflict():
             render_files(spec(dag.dag_id, task="c")),
             base_etag=stored.etag,
         )
-    assert t.delete(dag.dag_id)
+    deleted = t.delete(dag.dag_id)
+    assert deleted
     assert t.get(dag.dag_id) is None
 
 

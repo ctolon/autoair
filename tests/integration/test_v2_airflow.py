@@ -47,7 +47,8 @@ def test_user_templates_roundtrip():
     assert any(t.id == "mine" and not t.builtin for t in store.list())
     with pytest.raises(Exception, match="built-in"):
         store.save(TemplateInput(id="etl-basic", title="x", kind="dag", spec=spec))
-    assert store.delete("mine")
+    deleted = store.delete("mine")
+    assert deleted
 
 
 def test_yaml_roundtrip_and_schema():

@@ -73,6 +73,8 @@ function toMarkdown(source, absolute) {
       continue;
     }
     if (/^:::\s*$/.test(line)) continue;
+    // Cleaning, not sanitising: the input is the repository's own docs and llms-full.txt is
+    // plain text, never rendered as HTML (src/autoair/docs/build.py ports the same rules).
     line = line
       .replace(/\{\/\*[\s\S]*?\*\/\}/g, '')
       .replace(/<!--[\s\S]*?-->/g, '')

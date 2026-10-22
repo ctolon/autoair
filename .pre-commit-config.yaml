@@ -1,0 +1,94 @@
+# Fast checks before every commit; the slower type check runs before push.
+#   uv run pre-commit install --hook-type pre-commit --hook-type pre-push
+#   uv run pre-commit run --all-files          # everything, e.g. after pulling
+# Python tools run through `uv run`, so they are the versions pinned in uv.lock (the same ones
+# CI uses); frontend and website tools are the ones in their package-lock.json (run `npm ci`
+# in frontend/ and website/ first). CI stays the authority: these hooks only catch problems
+# earlier.
+default_install_hook_types: [pre-commit, pre-push]
+default_stages: [pre-commit]
+# The custom-node scaffold is a cookiecutter template: Jinja placeholders, not TOML or Python.
+exclude: ^src/autoair/scaffold/custom-node/\{\{cookiecutter\.project_slug\}\}/
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: 3e8a8703264a2f4a69428a0aa4dcb512790b2c8c # v6.0.0
+    hooks:
+      - id: check-merge-conflict
+      - id: check-toml
+      - id: check-json
+        # JSONC (comments allowed) read by TypeScript and VS Code.
+        exclude: ^(frontend|website)/tsconfig.*\.json$
+      - id: check-yaml
+        args: [--allow-multiple-documents]
+        # Helm templates are Go templates, not YAML, until rendered.
+        exclude: ^deploy/helm/[^/]+/templates/
+      - id: check-added-large-files
+        args: [--maxkb=1024]
+        # Generated API specs (regenerated, reviewed as diffs) and visual baselines.
+        exclude: ^(frontend/openapi\.json|website/static/openapi\.json|frontend/e2e/visual/__screenshots__/)
+      - id: detect-private-key
+
+  - repo: local
+    hooks:
+      - id: ruff-check
+        name: ruff check (fix)
+        entry: uv run ruff check --fix --exit-non-zero-on-fix --force-exclude
+        language: system
+        types_or: [python, pyi]
+        # The paths CI lints (ci.yml: ruff check src tests scripts deploy).
+        files: ^(src|tests|scripts|deploy)/
+        require_serial: true
+      - id: ruff-format
+        name: ruff format
+        entry: uv run ruff format --force-exclude
+        language: system
+        types_or: [python, pyi]
+        # The paths CI lints (ci.yml: ruff check src tests scripts deploy).
+        files: ^(src|tests|scripts|deploy)/
+        require_serial: true
+      - id: config-reference
+        name: configuration reference is current
+        entry: uv run python scripts/gen_config_docs.py --check
+        language: system
+        files: ^src/autoair/
+        pass_filenames: false
+      - id: hardcoded-audit
+        name: hard-coded values are triaged
+        entry: uv run python scripts/scan_hardcoded.py --check
+        language: system
+        files: ^(src/autoair/|scripts/hardcoded_decisions\.json$)
+        pass_filenames: false
+      - id: release-metadata
+        name: version files agree
+        entry: uv run python scripts/check_release.py
+        language: system
+        files: ^(pyproject\.toml|src/autoair/__init__\.py|(frontend|website)/package\.json|(frontend|website/static)/openapi\.json)$
+        pass_filenames: false
+      - id: prettier-frontend
+        name: prettier (frontend)
+        entry: bash -c 'cd frontend && npx --no-install prettier --check "${@#frontend/}"' --
+        language: system
+        files: ^frontend/(src|e2e)/.*\.(ts|tsx|js|jsx|json|css|md)$
+      - id: eslint-frontend
+        name: eslint (frontend)
+        entry: bash -c 'cd frontend && npx --no-install eslint --max-warnings=0 --no-warn-ignored "${@#frontend/}"' --
+        language: system
+        files: ^frontend/(src|e2e)/.*\.(ts|tsx|js|jsx)$
+      - id: check-mdx
+        name: website docs (MDX check)
+        entry: bash -c 'cd website && node scripts/check-mdx.mjs "${@#website/}"' --
+        language: system
+        files: ^website/docs/.*\.mdx?$
+      - id: actionlint
+        name: actionlint
+        entry: uvx --from actionlint-py==1.7.12.25 actionlint
+        language: system
+        files: ^\.github/workflows/.*\.ya?ml$
+      - id: mypy
+        name: mypy (src)
+        entry: uv run mypy src
+        language: system
+        types_or: [python, pyi]
+        pass_filenames: false
+        stages: [pre-push]

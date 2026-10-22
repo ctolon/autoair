@@ -271,7 +271,7 @@ def current_user() -> str | None:
                 if isinstance(claims.get(key), str) and claims[key]:
                     return str(claims[key])
         except (ValueError, IndexError):
-            pass
+            pass  # not a decodable JWT payload: fall back to AUTOAIR_MCP_USER or the OS user
     if os.environ.get(USER_ENV):
         return os.environ[USER_ENV]
     try:

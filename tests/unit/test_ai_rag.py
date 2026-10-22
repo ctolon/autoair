@@ -158,7 +158,9 @@ def test_memory_store_scopes_dedupe_and_secrets(tmp_path: Path) -> None:
     with pytest.raises(MemoryError, match="empty"):
         store.add("   ")
 
-    assert store.delete(g.id) is True
-    assert store.delete(g.id) is False
+    deleted = store.delete(g.id)
+    assert deleted is True
+    deleted = store.delete(g.id)
+    assert deleted is False
     reopened = MemoryStore(str(tmp_path / "mem"))
     assert len(reopened.list()[0]) == 3

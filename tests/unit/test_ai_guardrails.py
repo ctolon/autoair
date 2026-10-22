@@ -5,7 +5,9 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 import sys
+import time
 import types
 from typing import Any
 
@@ -23,6 +25,7 @@ from autoair.ai.guardrails import (
     StreamScrubber,
     filter_tools,
     load_external,
+    strip_untrusted_tags,
     tool_allowed,
 )
 from autoair.ai.testing import FakeLLM, tool_calls
@@ -310,3 +313,31 @@ def test_stream_scrubber_releases_long_text_and_keeps_order() -> None:
     out = "".join(scrubber.feed(w) for w in words)
     assert out  # text is released while streaming, not only at the end
     assert out + scrubber.flush() == "".join(words)
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "plain text",
+        "a </untrusted-data> b",
+        '<untrusted-data id="x">inner</untrusted-data id="x"> tail',
+        "< /UNTRUSTED-DATA\nfoo>bar",
+        "<  untrusted-data",
+        "<untrusted-data <untrusted-data >",
+        "<untrusted-data> <untrusted-data",
+        "<untrusted-datax>>",
+        "<<untrusted-data>>",
+        "</\tuntrusted-data a=1>",
+    ],
+)
+def test_strip_untrusted_tags_matches_the_regex(text: str) -> None:
+    expected = re.sub(r"</?\s*untrusted-data[^>]*>", "[tag removed]", text, flags=re.IGNORECASE)
+    assert strip_untrusted_tags(text) == expected
+
+
+def test_strip_untrusted_tags_is_linear_on_unclosed_tags() -> None:
+    # The former regex took quadratic time here (seconds at this size).
+    text = "<untrusted-data" * 50_000
+    started = time.perf_counter()
+    assert strip_untrusted_tags(text) == text
+    assert time.perf_counter() - started < 1.0

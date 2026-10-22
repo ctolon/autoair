@@ -107,7 +107,7 @@ def _start(tmp: Path, **settings: str) -> Iterator[Validator]:
                 if httpx2.get(f"{url}/ready", timeout=2).status_code == 200:
                     break
             except httpx2.HTTPError:
-                pass
+                pass  # not listening yet: keep polling until the deadline
             if time.monotonic() > deadline:
                 pytest.fail("validator-serve did not become ready")
             time.sleep(0.3)

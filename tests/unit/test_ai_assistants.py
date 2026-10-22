@@ -193,7 +193,8 @@ def test_thread_store_crud_ownership_and_pruning(tmp_path: Path) -> None:
     again = store.get("alice", third.id)
     assert [m.content for m in again.messages] == ["2", "3", "4", "5"]
     assert again.summarized == 1
-    assert store.delete("alice", third.id)
+    deleted = store.delete("alice", third.id)
+    assert deleted
     with pytest.raises(ThreadNotFound):
         store.get("alice", a.id)
 

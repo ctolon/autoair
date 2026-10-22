@@ -299,8 +299,10 @@ def test_airflow_permissions_strategy_with_real_checks(tmp_path: Path) -> None:
     assert P.DEPLOY_DIRECT_PUSH in admin["permissions"]
     assert "Admin" in admin["roles"]
     assert c.put("/api/specs/simple", json={"spec": SIMPLE}).status_code == 403
-    assert c.delete("/api/deploy-target", headers={"x-user": "editor"}).status_code == 403
-    assert c.delete("/api/deploy-target", headers={"x-user": "admin"}).status_code == 200
+    response = c.delete("/api/deploy-target", headers={"x-user": "editor"})
+    assert response.status_code == 403
+    response = c.delete("/api/deploy-target", headers={"x-user": "admin"})
+    assert response.status_code == 200
 
 
 class FabLikeUser:

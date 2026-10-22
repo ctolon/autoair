@@ -154,7 +154,8 @@ def test_deploy_target_choice_reaches_other_replicas(sql_replicas: Any, tmp_path
     sb.sync_shared_state(now=time.monotonic() + 3600)
     assert sb.storage_source == "ui"
     assert str(sb.settings.storage.local_path) == str(tmp_path / "elsewhere")
-    assert a.delete("/api/deploy-target", headers=ADMIN).status_code == 200
+    response = a.delete("/api/deploy-target", headers=ADMIN)
+    assert response.status_code == 200
     sb.sync_shared_state(now=time.monotonic() + 7200)
     assert sb.storage_source == "settings"
     assert (
@@ -243,8 +244,10 @@ def test_admin_overview_audit_csv_and_users(replicas: Any) -> None:
     templates = b.get("/api/admin/templates", headers=ADMIN).json()
     assert templates[0]["id"] == "nightly"
     assert not templates[0]["builtin"]
-    assert b.delete("/api/admin/templates/nightly", headers=ADMIN).status_code == 200
-    assert b.delete("/api/admin/templates/nightly", headers=ADMIN).status_code == 404
+    response = b.delete("/api/admin/templates/nightly", headers=ADMIN)
+    assert response.status_code == 200
+    response = b.delete("/api/admin/templates/nightly", headers=ADMIN)
+    assert response.status_code == 404
     assert "nightly" not in {t["id"] for t in a.get("/api/templates", headers=ADMIN).json()}
     assert a.get("/api/config", headers=ADMIN).status_code == 200
 

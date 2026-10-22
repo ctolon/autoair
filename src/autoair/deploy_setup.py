@@ -23,6 +23,7 @@ import re
 import subprocess
 from pathlib import Path
 from typing import Any, Literal
+from urllib.parse import urlsplit
 
 from pydantic import BaseModel, Field
 
@@ -60,19 +61,58 @@ OBJECT_BUNDLES: dict[str, tuple[str, str]] = {
 }
 
 
+# Hosted services, matched on the hostname itself or a subdomain of it (``ssh.dev.azure.com``).
+_HOSTED_PROVIDERS: tuple[tuple[str, Provider], ...] = (
+    ("github.com", "github"),
+    ("gitlab.com", "gitlab"),
+    ("bitbucket.org", "bitbucket"),
+    ("dev.azure.com", "azure"),
+    ("visualstudio.com", "azure"),
+    ("codeberg.org", "gitea"),
+)
+# Self-hosted instances are usually named after the product (``gitlab.example.com``); matched
+# against whole hostname labels so ``github.evil.com`` counts but ``notgithub.example`` and a
+# path such as ``https://evil.example/github`` do not.
+_PRODUCT_LABELS: tuple[tuple[str, Provider], ...] = (
+    ("github", "github"),
+    ("gitlab", "gitlab"),
+    ("gitea", "gitea"),
+    ("forgejo", "gitea"),
+)
+
+
+def _remote_host(url: str) -> str:
+    """Hostname of a git remote, ``scheme://[user@]host[:port]/path`` or ``user@host:path``."""
+    url = url.strip()
+    if "://" in url:
+        try:
+            host = urlsplit(url).hostname or ""
+        except ValueError:  # malformed netloc, e.g. an unbalanced IPv6 bracket
+            host = ""
+    else:
+        # scp-like syntax has no scheme; git treats it as such only when a colon precedes any
+        # slash, otherwise it is a local path.
+        head, colon, _ = url.partition(":")
+        host = head.rpartition("@")[2] if colon and "/" not in head else ""
+    return host.lower().rstrip(".")
+
+
 def suggested_provider(url: str | None) -> Provider:
-    """API provider for a remote URL (PR mode needs it); plain git otherwise."""
-    host = (url or "").lower()
-    if "github" in host:
-        return "github"
-    if "gitlab" in host:
-        return "gitlab"
-    if "bitbucket.org" in host:
-        return "bitbucket"
-    if "dev.azure.com" in host or "visualstudio.com" in host:
-        return "azure"
-    if "gitea" in host or "forgejo" in host or "codeberg.org" in host:
-        return "gitea"
+    """API provider for a remote URL (PR mode needs it); plain git otherwise.
+
+    Only a hint for the setup UI: the hostname is parsed and matched on label boundaries, so a
+    look-alike host or a provider name in the path does not pick an API.
+    """
+    host = _remote_host(url or "")
+    if not host:
+        return "local"
+    for domain, provider in _HOSTED_PROVIDERS:
+        if host == domain or host.endswith("." + domain):
+            return provider
+    labels = host.split(".")
+    for label, provider in _PRODUCT_LABELS:
+        if label in labels:
+            return provider
     return "local"
 
 

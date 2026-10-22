@@ -122,11 +122,13 @@ def test_delete_removes_the_history(tmp_path):
     store.save(TemplateInput.model_validate(_template()))
     current = store.get("notify-step")
     assert current is not None
-    assert store.delete("notify-step", if_match=current.etag)
+    deleted = store.delete("notify-step", if_match=current.etag)
+    assert deleted
     assert store.versions("notify-step") is None
     store.save(TemplateInput.model_validate(_template()))  # same id again: starts over
     assert [v.version for v in store.versions("notify-step") or []] == ["1"]
-    assert store.delete("missing") is False
+    deleted = store.delete("missing")
+    assert deleted is False
 
 
 def test_history_is_bounded_and_keeps_versions_without_history(tmp_path):
@@ -268,9 +270,12 @@ def test_template_write_and_owner_team_rules(tmp_path):
     assert c.post("/api/templates", json=_template(), headers=manager).status_code == 403
     takeover = _template(owner_team="data")  # re-owning it is a change of their template
     assert c.post("/api/templates", json=takeover, headers=manager).status_code == 403
-    assert c.delete("/api/templates/notify-step", headers=manager).status_code == 403
-    assert c.delete("/api/admin/templates/notify-step", headers=manager).status_code == 403
-    assert c.delete("/api/templates/notify-step", headers=admin).json() == {"deleted": True}
+    response = c.delete("/api/templates/notify-step", headers=manager)
+    assert response.status_code == 403
+    response = c.delete("/api/admin/templates/notify-step", headers=manager)
+    assert response.status_code == 403
+    response = c.delete("/api/templates/notify-step", headers=admin)
+    assert response.json() == {"deleted": True}
 
 
 @requires_mcp
