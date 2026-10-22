@@ -348,13 +348,17 @@ class AirflowGateway:
             size = min(self.page_size, cap - len(items))
             data = await self._request("GET", url, params={"limit": size, "offset": len(items)})
             page = list(data.get(key, [])) if isinstance(data, dict) else []
-            if not page:
+            # An empty page, or the same page again (a server or proxy that ignores
+            # ``offset``), ends the list.
+            if not page or (items and page == items[-len(page) :]):
                 break
             items.extend(page)
             if isinstance(data.get("total_entries"), int):
                 total = data["total_entries"]
                 if len(items) >= total:
                     break
+            elif len(page) < size:
+                break  # no total: a short page is the last one
         if limit is None and len(items) >= cap and (total is None or total > cap):
             log.warning("%s: stopped after %d entries (server.airflow_list_max_entries)", url, cap)
         return items[:cap]

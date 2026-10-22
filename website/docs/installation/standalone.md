@@ -98,7 +98,7 @@ curl -s -X POST https://airflow.example.com/auth/token \
 API clients send it as `Authorization: Bearer <token>`. Tokens expire with Airflow's `[api_auth] jwt_expiration_time`. The session-sharing setups, CSRF protection for cookie sessions and logout propagation are described in [SSO](/docs/admin/sso).
 
 :::danger
-`autoair serve --no-auth` accepts requests without a token and gives every caller the roles in `iam.anonymous_roles` (default `["Admin"]`). Calls to Airflow are then made without credentials. Use it only on an isolated development machine.
+`autoair serve --no-auth` accepts requests without a token and gives every caller the roles in `iam.anonymous_roles` (default `["Viewer"]`; set `AUTOAIR_IAM__ANONYMOUS_ROLES='["Admin"]'` to edit and deploy). It serves only on a loopback address (`127.0.0.1`, `::1`) and answers only requests whose `Host` and `Origin` are loopback or `server.public_url`, so a web page cannot reach it through DNS rebinding. Calls to Airflow are made without credentials. Use it only on a development machine; in a container, check health from inside it.
 :::
 
 ## Getting the DAG files to Airflow

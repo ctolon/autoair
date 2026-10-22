@@ -14,7 +14,13 @@ import { settle, snap } from "./shots";
 test.describe.configure({ mode: "serial" });
 
 test.beforeAll(async ({ request }) => {
-  const put = await request.put(`/api/specs/${DAG_ID}`, { data: { spec: SPEC, force: true } });
+  // beforeAll runs once per theme project: the second run overwrites the DAG the first one
+  // deployed, which needs its etag (428 without it).
+  const current = await request.get(`/api/specs/${DAG_ID}`);
+  const base_etag = current.ok() ? ((await current.json()) as { etag?: string }).etag : undefined;
+  const put = await request.put(`/api/specs/${DAG_ID}`, {
+    data: { spec: SPEC, force: true, ...(base_etag ? { base_etag } : {}) },
+  });
   expect(put.ok(), await put.text()).toBeTruthy();
   const body = await put.json();
   expect(body.status, JSON.stringify(body.report?.problems ?? body)).toBe("deployed");

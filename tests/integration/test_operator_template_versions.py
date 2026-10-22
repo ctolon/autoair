@@ -235,7 +235,10 @@ def _iam_client(tmp_path: Path, **settings: Any) -> TestClient:
         **settings,
     )
     verifier = TokenVerifier(
-        airflow, transport=httpx2.MockTransport(lambda r: httpx2.Response(200, json={}))
+        airflow,
+        transport=httpx2.MockTransport(
+            lambda r: httpx2.Response(200, json={"dags": [], "total_entries": 0})
+        ),
     )
     return TestClient(
         create_app(build_services(s, bearer_passthrough(verifier))), raise_server_exceptions=False

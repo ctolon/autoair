@@ -173,9 +173,26 @@ def test_lists_without_total_entries_stop_on_an_empty_page_and_at_the_cap() -> N
     handler, seen = _paged_airflow(5, "connections", total=False)
     gw = AirflowGateway("http://airflow", transport=httpx2.MockTransport(handler), page_size=2)
     assert len(asyncio.run(gw.connections())) == 5
-    assert seen[-1] == (2, 5)  # the empty page ends it
+    assert seen[-1] == (2, 4)  # the short last page ends it, no extra request
     capped, _ = _paged_airflow(10, "connections")
     gw = AirflowGateway(
         "http://airflow", transport=httpx2.MockTransport(capped), page_size=3, max_entries=4
     )
     assert len(asyncio.run(gw.connections())) == 4
+
+
+def test_lists_stop_when_the_server_ignores_offset() -> None:
+    """A server that answers every page with the first one must not loop to the cap."""
+    calls: list[str] = []
+
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        calls.append(str(request.url))
+        page = [
+            {"connection_id": "a", "conn_type": "http"},
+            {"connection_id": "b", "conn_type": "http"},
+        ]
+        return httpx2.Response(200, json={"connections": page})
+
+    gw = AirflowGateway("http://airflow", transport=httpx2.MockTransport(handler), page_size=2)
+    assert [c.connection_id for c in asyncio.run(gw.connections())] == ["a", "b"]
+    assert len(calls) == 2

@@ -39,7 +39,7 @@ SDK = "airflow.sdk"
 # Modules the generated file may ``import`` by name: a function, task or variable with one of
 # these names would shadow the module for every later use (the materialised-script helper
 # runs ``os.path`` at parse time).
-PLAIN_MODULES = frozenset({"datetime", "pendulum", "hashlib", "os", "tempfile"})
+PLAIN_MODULES = frozenset({"contextlib", "datetime", "pendulum", "hashlib", "os", "tempfile"})
 # ``datetime.timedelta(seconds=...)`` raises OverflowError beyond timedelta.max / .min.
 MAX_TIMEDELTA_SECONDS = 999_999_999 * 86_400 + 86_399
 
@@ -117,16 +117,57 @@ def {name}(name: str, content: str) -> str:
     """Write a script embedded in this DAG to a content-addressed file; return its path.
 
     Runs when the DAG is parsed (on every worker), so the file exists wherever tasks run.
+    The folder is private to this user (0700, checked: not a symlink, owned by us, no group
+    or other access), and an existing file is used only when it is a regular file of ours
+    with exactly this content; anything else is replaced atomically.
     """
+    uid = os.getuid() if hasattr(os, "getuid") else None
+
+    def private(folder: str) -> bool:
+        try:
+            os.mkdir(folder, 0o700)
+        except FileExistsError:
+            pass
+        st = os.lstat(folder)
+        if os.path.islink(folder) or not os.path.isdir(folder):
+            return False
+        return uid is None or (st.st_uid == uid and not st.st_mode & 0o077)
+
+    owner = uid if uid is not None else "user"
+    root = os.path.join(tempfile.gettempdir(), f"airflow-scripts-{{owner}}")
+    if not private(root):
+        root = tempfile.mkdtemp(prefix="airflow-scripts-")  # never trust a foreign folder
     digest = hashlib.sha256(content.encode()).hexdigest()[:16]
-    path = os.path.join(tempfile.gettempdir(), "airflow-scripts", {dag_id!r}, digest, name)
-    if not os.path.exists(path):
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        tmp = f"{{path}}.{{os.getpid()}}.tmp"
-        with open(tmp, "w", encoding="utf-8") as fh:
-            fh.write(content)
-        os.chmod(tmp, 0o755)
+    folder = root
+    for part in ({dag_id!r}, digest):
+        folder = os.path.join(folder, part)
+        if not private(folder):
+            raise RuntimeError(f"unsafe script folder {{folder}}")
+    path = os.path.join(folder, name)
+    expected = content.encode()
+    try:
+        st = os.lstat(path)
+        if (
+            not os.path.islink(path)
+            and os.path.isfile(path)
+            and (uid is None or st.st_uid == uid)
+            and st.st_size == len(expected)
+        ):
+            with open(path, "rb") as fh:
+                if fh.read() == expected:
+                    return path
+    except FileNotFoundError:
+        pass
+    fd, tmp = tempfile.mkstemp(dir=folder, prefix=".script-")
+    try:
+        with os.fdopen(fd, "wb") as fh:
+            fh.write(expected)
+        os.chmod(tmp, 0o700)
         os.replace(tmp, path)
+    except BaseException:
+        with contextlib.suppress(FileNotFoundError):
+            os.unlink(tmp)
+        raise
     return path
 '''
 
@@ -503,7 +544,7 @@ class CodegenContext:
         if self._materialize:
             return self._materialize
         name = self._reserve("_script_file")
-        for module in ("hashlib", "os", "tempfile"):
+        for module in ("contextlib", "hashlib", "os", "tempfile"):
             self.import_module(module)
         template = MATERIALIZE_TEMPLATE.format(name=name, dag_id=self.spec.dag_id)
         self.module_defs.append(ast.parse(template).body[0])

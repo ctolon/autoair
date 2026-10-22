@@ -279,3 +279,34 @@ def test_trigger_semantics_do_not_depend_on_airflow_config(
             kwargs["include_examples"] = False
         (dag,) = cls(**kwargs).dags.values()
         assert type(dag.timetable).__name__ == expected, (schedule, cron_intervals)
+
+
+RERUN_UNSET = """
+from airflow.sdk import DAG
+from airflow.providers.standard.operators.empty import EmptyOperator
+
+with DAG("rerun", schedule=None):
+    EmptyOperator(task_id="a")
+"""
+
+
+@pytest.mark.parametrize("value", [True, False])
+def test_rerun_with_latest_version_is_imported(value: bool) -> None:
+    """Generated for Airflow 3.3+ but was never read back on import."""
+    from autoair._compat import airflow_version
+
+    if (airflow_version() or (0, 0, 0)) < (3, 3, 0):
+        pytest.skip("rerun_with_latest_version needs Airflow 3.3")
+    imported = _import(
+        f"""
+from airflow.sdk import DAG
+from airflow.providers.standard.operators.empty import EmptyOperator
+
+with DAG("rerun", schedule=None, rerun_with_latest_version={value}):
+    EmptyOperator(task_id="a")
+"""
+    )
+    assert imported.spec.rerun_with_latest_version is value
+    assert _import(generate_source(imported.spec)).spec.rerun_with_latest_version is value
+    unset = _import(RERUN_UNSET)
+    assert unset.spec.rerun_with_latest_version is None

@@ -412,11 +412,16 @@ jobs:
           docker image inspect autoair:ci --format '{{json .Config.Healthcheck}}' | grep -q healthcheck.py
       - name: Standalone server answers its health check
         run: |
-          docker run -d --name autoair-smoke -p 127.0.0.1:18765:8765 \
-            -e AUTOAIR_SERVER__HOST=0.0.0.0 --entrypoint autoair autoair:ci serve --no-auth
+          # --no-auth serves loopback only (0.2.3), so the check runs inside the container:
+          # the image's own HEALTHCHECK plus a request to /api/health on 127.0.0.1.
+          docker run -d --name autoair-smoke \
+            -e AUTOAIR_SERVER__HOST=127.0.0.1 --entrypoint autoair autoair:ci serve --no-auth
+          health='import urllib.request; urllib.request.urlopen("http://127.0.0.1:8765/api/health", timeout=5)'
           for _ in $(seq 1 60); do
             status=$(docker inspect autoair-smoke --format '{{.State.Health.Status}}')
-            curl -sf http://127.0.0.1:18765/api/health && [ "$status" = healthy ] && exit 0
+            if [ "$status" = healthy ] && docker exec autoair-smoke python -c "$health"; then
+              exit 0
+            fi
             sleep 3
           done
           docker logs autoair-smoke; exit 1

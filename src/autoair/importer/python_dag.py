@@ -244,11 +244,13 @@ def _resolve_preset(expr: str | None) -> str | None:
     return resolved
 
 
-# ``<run_with> <tmp>/airflow-scripts/<dag_id>/<sha256[:16]>/<name> `` (see codegen's
-# MATERIALIZE_TEMPLATE): a script written in the builder, materialised at parse time.
+# ``<run_with> <tmp>/airflow-scripts-<uid>/<dag_id>/<sha256[:16]>/<name> `` (see codegen's
+# MATERIALIZE_TEMPLATE; ``airflow-scripts/`` before 0.2.3, ``airflow-scripts-<random>`` for
+# a private fallback folder): a script written in the builder, materialised at parse time.
 _SCRIPT_PATH = (
     r"^(?:(?P<run>[A-Za-z0-9_./-]{1,40}) )?"
-    r"(?P<path>\S*[/\\]airflow-scripts[/\\][^/\\]+[/\\](?P<digest>[0-9a-f]{16})[/\\]"
+    r"(?P<path>\S*[/\\]airflow-scripts(?:-[A-Za-z0-9_]+)?[/\\][^/\\]+[/\\]"
+    r"(?P<digest>[0-9a-f]{16})[/\\]"
     r"(?P<name>[A-Za-z0-9][A-Za-z0-9_.-]{0,120}))(?P<tail> ?)$"
 )
 
@@ -264,10 +266,13 @@ def _script_file(value: str) -> dict[str, Any] | None:
     if m is None or bool(m.group("run")) != bool(m.group("tail")):
         return None
     path = Path(m.group("path"))
-    root = Path(tempfile.gettempdir()).resolve() / "airflow-scripts"
+    tmp = Path(tempfile.gettempdir()).resolve()
     try:
         resolved = path.resolve()
-        if not resolved.is_relative_to(root) or not resolved.is_file():
+        if not resolved.is_relative_to(tmp) or not resolved.is_file():
+            return None
+        top = resolved.relative_to(tmp).parts[0]
+        if not (top == "airflow-scripts" or top.startswith("airflow-scripts-")):
             return None
         content = resolved.read_text(encoding="utf-8")
     except (OSError, ValueError):
@@ -1248,6 +1253,11 @@ def _convert_dag(dag: Any, warnings: list[str]) -> dict[str, Any]:
             default = _DAG_DEFAULTS.get(attr)
         if isinstance(val, (bool, int)) and val != default:
             spec[attr] = val
+    # Airflow 3.3+: None means "follow [core] rerun_with_latest_version"; only an explicit
+    # choice is imported (older Airflow has no such attribute).
+    rerun = getattr(dag, "rerun_with_latest_version", None)
+    if isinstance(rerun, bool):
+        spec["rerun_with_latest_version"] = rerun
     owner_links = getattr(dag, "owner_links", None)
     if isinstance(owner_links, dict) and owner_links:
         spec["owner_links"] = {str(k): str(v) for k, v in owner_links.items()}

@@ -11,6 +11,11 @@ minor versions may contain breaking changes; they are listed under **Changed** o
 ## [0.2.3] - 2026-10-22
 
 ### Security
+- Generated DAGs write embedded scripts into a folder private to the worker's user
+  (`<tmp>/airflow-scripts-<uid>`, mode 0700, checked: not a symlink, owned by that user, no
+  group or other access; otherwise a fresh private folder). An existing script is used only
+  when it is a regular file of that user with exactly the expected content; anything else,
+  including a symlink planted at the content-addressed path, is replaced atomically.
 - Standalone token verification accepts only Airflow's own answer: a `200` with the DAG list.
   A redirect (an SSO proxy or a wrong `airflow_url` sending the check to a login page), another
   2xx or an unexpected body used to count as a verified token, so a forged JWT's role claims
@@ -69,6 +74,10 @@ minor versions may contain breaking changes; they are listed under **Changed** o
 - The production Kustomize overlay (`overlays/production/settings/settings.env`) and the Helm example values (`deploy/helm/values-autoair.yaml`) set `validator.fail_mode=closed`: deploys are refused while the validator service cannot be asked. The application default stays `open`. Upgrade note: copies of the production overlay that should keep deploying while the validator is down set `AUTOAIR_VALIDATOR__FAIL_MODE=open` in their `settings.env`.
 
 ### Fixed
+- Python DAG import reads `rerun_with_latest_version` (Airflow 3.3+), which code generation
+  already wrote.
+- Paged Airflow lists stop on a short page or a repeated page, so a server or proxy that
+  ignores `offset` does not make AutoAir read the same page up to the entry limit.
 - Python DAG import: positional TaskFlow arguments (`multiply(7)`) are bound to their
   parameters instead of falling back to the defaults; keyword-only and positional-only
   parameters and their literal defaults are kept; `*args` / `**kwargs` and non-literal

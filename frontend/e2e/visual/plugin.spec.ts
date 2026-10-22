@@ -30,7 +30,14 @@ const dags = new DeployedDags("visual-plugin");
 test.beforeAll(async ({ request }) => {
   const headers = await authHeaders(request);
   dags.track(API, DAG_ID, headers);
-  const put = await request.put(`${API}/specs/${DAG_ID}`, { data: { spec: PLUGIN_SPEC, force: true }, headers });
+  // beforeAll runs once per theme project: the second run overwrites the DAG the first one
+  // deployed, which needs its etag (428 without it).
+  const current = await request.get(`${API}/specs/${DAG_ID}`, { headers });
+  const base_etag = current.ok() ? ((await current.json()) as { etag?: string }).etag : undefined;
+  const put = await request.put(`${API}/specs/${DAG_ID}`, {
+    data: { spec: PLUGIN_SPEC, force: true, ...(base_etag ? { base_etag } : {}) },
+    headers,
+  });
   expect(put.ok(), await put.text()).toBeTruthy();
   const body = await put.json();
   expect(body.status, JSON.stringify(body.report?.problems ?? body)).toBe("deployed");
