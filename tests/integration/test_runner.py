@@ -441,6 +441,37 @@ DB_SPEC = {
 }
 
 
+# NOTE: upstream bug, not AutoAir's. Airflow 3.2's execution API declares
+# Field(discriminator=<callable>) on TITerminalStatePayload, which FastAPI 0.156.1 and newer
+# reject when the app is built ("needs a discriminator field"), so every task call of an
+# in-process dag.test() fails. Airflow 3.2 sets no upper bound on FastAPI; its constraints file
+# pins 0.136, which the required CI jobs use (scripts/airflow_constraints.py). Only the
+# non-blocking fresh-resolve job (nox -s "fresh(3.2)") picks the newer FastAPI: there the test
+# is marked xfail with a warning (and a GitHub annotation, tests/conftest.py) instead of
+# failing. Any other failure still fails. Remove this once Airflow 3.2 (or the oldest 3.2 we
+# test) builds on current FastAPI.
+_AIRFLOW_32_FASTAPI_BUG = ("TITerminalStatePayload", "needs a discriminator field")
+
+
+def _xfail_on_airflow_32_fastapi_bug(log: str) -> None:
+    import warnings
+
+    from autoair._compat import airflow_version
+
+    if (airflow_version() or (0, 0, 0))[:2] != (3, 2):
+        return
+    if not all(marker in log for marker in _AIRFLOW_32_FASTAPI_BUG):
+        return
+    import fastapi
+
+    message = (
+        f"Airflow 3.2 execution API does not build on FastAPI {fastapi.__version__} "
+        "(TITerminalStatePayload discriminator; upstream bug, see NOTE in test_runner.py)"
+    )
+    warnings.warn(message, UserWarning, stacklevel=2)
+    pytest.xfail(message)
+
+
 def test_db_mode_runs_dag_test_against_the_metadata_db(tmp_path, metadata_db):
     """A real ``dag.test()`` run: the generated DAG is serialized first (Airflow 3.1+) and
     the in-process execution API accepts the task calls (3.0's client, 3.2's lifespan)."""
@@ -469,6 +500,8 @@ def test_db_mode_runs_dag_test_against_the_metadata_db(tmp_path, metadata_db):
         assert resp.status_code == 200, resp.text
         body = resp.json()
         assert body["mode"] == "db", body
+        if body["state"] != "success":
+            _xfail_on_airflow_32_fastapi_bug(body["log"] or "")
         assert body["state"] == "success", (body["error"], body["log"][-4000:])
         assert {t["task_id"]: t["state"] for t in body["tasks"]} == {
             "up": "success",

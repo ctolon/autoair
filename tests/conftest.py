@@ -32,6 +32,17 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
             item.add_marker(skip)
 
 
+def pytest_terminal_summary(terminalreporter: pytest.TerminalReporter) -> None:
+    """On GitHub Actions, an expected failure (xfail) becomes a warning annotation on the run,
+    so a known upstream break is visible without turning the job red. Printed here because
+    output inside a test is captured."""
+    if os.environ.get("GITHUB_ACTIONS") != "true":
+        return
+    for report in terminalreporter.stats.get("xfailed", []):
+        reason = str(getattr(report, "wasxfail", "")).removeprefix("reason: ")
+        terminalreporter.write_line(f"::warning title=xfail {report.nodeid}::{reason}")
+
+
 @pytest.fixture(autouse=True)
 def _stop_kb_schedulers():
     """End the knowledge-base schedulers a test's apps started, so none keeps running (and

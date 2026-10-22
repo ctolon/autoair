@@ -21,7 +21,15 @@ from fastapi.testclient import TestClient
 from autoair.api.platform import RateLimiter, effective_limit, rate_group
 from autoair.logging_setup import JsonFormatter, logging_config
 from autoair.sections import LimitsSettings, LoggingSettings
-from autoair.server import ServeOptions, build_app, local_preset, settings_for, uvicorn_options
+from autoair.server import (
+    ServeOptions,
+    build_app,
+    default_ciphers,
+    local_preset,
+    settings_for,
+    tls_context,
+    uvicorn_options,
+)
 
 
 def client(tmp_path: Path, **extra: Any) -> TestClient:
@@ -220,7 +228,7 @@ def test_uvicorn_options(tmp_path: Path) -> None:
             }
         )
     )
-    opts = uvicorn_options(settings, host="127.0.0.1", port=1)
+    opts = uvicorn_options(settings, host="127.0.0.1", port=1, context_factory=True)
     assert opts["ssl_certfile"] == str(cert)
     assert opts["workers"] == 3
     assert opts["forwarded_allow_ips"] == ["10.0.0.1"]
@@ -232,6 +240,46 @@ def test_uvicorn_options(tmp_path: Path) -> None:
     bad = settings_for(ServeOptions(overrides={"server": {"ssl_cert_reqs": "required"}}))
     with pytest.raises(ValueError, match="ssl_certfile"):
         uvicorn_options(bad, host="h", port=1)
+
+
+def test_tls12_offers_modern_ciphers(tmp_path: Path) -> None:
+    """uvicorn's default cipher string "TLSv1" left TLS 1.2 only SHA-1 CBC suites, so a
+    TLS 1.2 client with Python's defaults could not connect to `autoair serve`."""
+    import uvicorn.config
+
+    cert, key = _self_signed(tmp_path)
+
+    def uvicorn_default() -> ssl.SSLContext:
+        return uvicorn.config.create_ssl_context(
+            str(cert), str(key), None, ssl.PROTOCOL_TLS_SERVER, ssl.CERT_NONE, None, "TLSv1"
+        )
+
+    ctx = tls_context(None, uvicorn_default)
+    names = {c["name"] for c in ctx.get_ciphers()}
+    assert "ECDHE-RSA-AES128-GCM-SHA256" in names
+    assert not any(n.endswith("-SHA") for n in names)
+    assert ctx.minimum_version == ssl.TLSVersion.TLSv1_2
+
+
+def test_uvicorn_without_a_context_factory(tmp_path: Path) -> None:
+    """uvicorn < 0.47 (Airflow 3.0/3.1 constraints) has no ssl_context_factory: passing it
+    made `autoair serve` with TLS crash with a TypeError."""
+    cert, key = _self_signed(tmp_path)
+
+    def options(**server: Any) -> dict[str, Any]:
+        settings = settings_for(
+            ServeOptions(
+                overrides={"server": {"ssl_certfile": str(cert), "ssl_keyfile": str(key), **server}}
+            )
+        )
+        return uvicorn_options(settings, host="127.0.0.1", port=1, context_factory=False)
+
+    plain = options()
+    assert "ssl_context_factory" not in plain
+    assert plain["ssl_ciphers"] == default_ciphers()
+    assert options(ssl_ciphers="ECDHE+AESGCM")["ssl_ciphers"] == "ECDHE+AESGCM"
+    with pytest.raises(ValueError, match=r"uvicorn 0\.47"):
+        options(ssl_min_version="TLSv1.3")
 
 
 def _free_port() -> int:
@@ -247,7 +295,11 @@ def _free_port() -> int:
 
 def test_https_server_with_tls13_and_hsts(tmp_path: Path) -> None:
     """A real `autoair local` over HTTPS: the outbound helper trusts its certificate
-    through a CA bundle (no verify=false), TLS 1.2 clients are refused."""
+    through a CA bundle (no verify=false), TLS 1.2 clients are refused. uvicorn < 0.47 (no
+    ssl_context_factory) serves with the TLS 1.2 minimum instead."""
+    from autoair.server import _uvicorn_takes_context_factory
+
+    tls13 = _uvicorn_takes_context_factory()
     cert, key = _self_signed(tmp_path)
     port = _free_port()
     env = {
@@ -255,7 +307,7 @@ def test_https_server_with_tls13_and_hsts(tmp_path: Path) -> None:
         "AUTOAIR_AI__ENABLED": "false",
         "AUTOAIR_SERVER__SSL_CERTFILE": str(cert),
         "AUTOAIR_SERVER__SSL_KEYFILE": str(key),
-        "AUTOAIR_SERVER__SSL_MIN_VERSION": "TLSv1.3",
+        "AUTOAIR_SERVER__SSL_MIN_VERSION": "TLSv1.3" if tls13 else "TLSv1.2",
         "AUTOAIR_SERVER__HSTS_SECONDS": "3600",
         "AUTOAIR_LOGGING__FORMAT": "json",
         "XDG_CACHE_HOME": str(tmp_path),
@@ -295,11 +347,13 @@ def test_https_server_with_tls13_and_hsts(tmp_path: Path) -> None:
                 time.sleep(0.5)
         assert resp.status_code == 200
         assert resp.headers["strict-transport-security"] == "max-age=3600"
-        # TLS 1.2-only clients are refused
         old = ssl.create_default_context(cafile=str(cert))
         old.maximum_version = ssl.TLSVersion.TLSv1_2
-        with pytest.raises(httpx2.ConnectError):
-            httpx2.get(f"{base}/api/health", verify=old, timeout=5)
+        if tls13:  # TLS 1.2-only clients are refused
+            with pytest.raises(httpx2.ConnectError):
+                httpx2.get(f"{base}/api/health", verify=old, timeout=5)
+        else:
+            assert httpx2.get(f"{base}/api/health", verify=old, timeout=5).status_code == 200
         # an untrusted certificate fails verification (verify stays on by default)
         with pytest.raises(httpx2.ConnectError):
             httpx2.get(f"{base}/api/health", timeout=5)

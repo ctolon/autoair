@@ -10,6 +10,7 @@ process rebuilds the app from the options passed in :data:`OPTIONS_ENV`.
 from __future__ import annotations
 
 import functools
+import inspect
 import json
 import os
 import ssl
@@ -140,6 +141,13 @@ def app_factory() -> FastAPI:
     return build_app(options, settings)
 
 
+def default_ciphers() -> str:
+    """Python's default cipher list for TLS 1.2 and below. uvicorn's own default ("TLSv1")
+    leaves TLS 1.2 only SHA-1 CBC suites, which current clients (Python's included) refuse."""
+    fresh = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    return ":".join(c["name"] for c in fresh.get_ciphers() if c["protocol"] != "TLSv1.3")
+
+
 def tls_context(
     config: Any,
     default: Any,
@@ -151,13 +159,26 @@ def tls_context(
     cipher string of ``server.ssl_min_version`` / ``server.ssl_ciphers``."""
     ctx: ssl.SSLContext = default()
     ctx.minimum_version = _TLS_VERSIONS[min_version]
-    if ciphers:
-        ctx.set_ciphers(ciphers)
+    ctx.set_ciphers(ciphers or default_ciphers())
     return ctx
 
 
-def uvicorn_options(settings: Settings, *, host: str, port: int) -> dict[str, Any]:
-    """``uvicorn.run``/``uvicorn.Config`` keyword arguments from ``server.*``."""
+def _uvicorn_takes_context_factory() -> bool:
+    # uvicorn added ssl_context_factory in 0.47; Airflow 3.0 and 3.1 constraints pin 0.35/0.41.
+    try:
+        import uvicorn
+    except ImportError:
+        return True
+    return "ssl_context_factory" in inspect.signature(uvicorn.Config).parameters
+
+
+def uvicorn_options(
+    settings: Settings, *, host: str, port: int, context_factory: bool | None = None
+) -> dict[str, Any]:
+    """``uvicorn.run``/``uvicorn.Config`` keyword arguments from ``server.*``.
+
+    ``context_factory``: whether uvicorn accepts ``ssl_context_factory`` (detected when
+    None)."""
     server = settings.server
     out: dict[str, Any] = {
         "host": host,
@@ -183,10 +204,21 @@ def uvicorn_options(settings: Settings, *, host: str, port: int) -> dict[str, An
             ),
             ssl_ca_certs=str(server.ssl_ca_certs.expanduser()) if server.ssl_ca_certs else None,
             ssl_cert_reqs=_CERT_REQS[server.ssl_cert_reqs],
-            ssl_context_factory=functools.partial(
-                tls_context, min_version=server.ssl_min_version, ciphers=server.ssl_ciphers
-            ),
         )
+        if context_factory is None:
+            context_factory = _uvicorn_takes_context_factory()
+        if context_factory:
+            out["ssl_context_factory"] = functools.partial(
+                tls_context, min_version=server.ssl_min_version, ciphers=server.ssl_ciphers
+            )
+        elif server.ssl_min_version != "TLSv1.2":
+            raise ValueError(
+                f"server.ssl_min_version={server.ssl_min_version} needs uvicorn 0.47 or newer "
+                "(pip install 'uvicorn>=0.47'); this uvicorn can only keep the TLS 1.2 minimum"
+            )
+        else:
+            # Python's server contexts refuse TLS < 1.2 already; uvicorn applies the ciphers.
+            out["ssl_ciphers"] = server.ssl_ciphers or default_ciphers()
         if server.ssl_cert_reqs != "none" and not server.ssl_ca_certs:
             raise ValueError("server.ssl_cert_reqs needs server.ssl_ca_certs (mutual TLS)")
     elif server.ssl_cert_reqs != "none" or server.ssl_keyfile:
@@ -256,6 +288,7 @@ __all__ = [
     "ServeOptions",
     "app_factory",
     "build_app",
+    "default_ciphers",
     "is_loopback",
     "local_preset",
     "run",

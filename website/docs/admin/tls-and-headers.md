@@ -30,7 +30,7 @@ AUTOAIR_SERVER__SSL_CIPHERS='ECDHE+AESGCM:ECDHE+CHACHA20'   # default: Python's 
 | `server.ssl_certfile` | `--ssl-certfile` | unset | Certificate chain (PEM); enables HTTPS |
 | `server.ssl_keyfile` | `--ssl-keyfile` | unset | Private key (PEM) |
 | `server.ssl_keyfile_password` | none (secret) | unset | Password of an encrypted key |
-| `server.ssl_min_version` | none | `TLSv1.2` | Lowest TLS version: `TLSv1.2` or `TLSv1.3` |
+| `server.ssl_min_version` | none | `TLSv1.2` | Lowest TLS version: `TLSv1.2` or `TLSv1.3` (`TLSv1.3` needs uvicorn 0.47 or newer; Airflow 3.0 and 3.1 constraints install older ones) |
 | `server.ssl_ciphers` | none | Python's default | OpenSSL cipher string (TLS 1.2 suites) |
 | `server.ssl_ca_certs` | `--ssl-ca-certs` | unset | CA bundle that client certificates are verified against |
 | `server.ssl_cert_reqs` | `--ssl-cert-reqs` | `none` | Client certificates: `none`, `optional`, `required` |

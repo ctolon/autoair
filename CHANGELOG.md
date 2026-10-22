@@ -74,6 +74,12 @@ minor versions may contain breaking changes; they are listed under **Changed** o
 - The production Kustomize overlay (`overlays/production/settings/settings.env`) and the Helm example values (`deploy/helm/values-autoair.yaml`) set `validator.fail_mode=closed`: deploys are refused while the validator service cannot be asked. The application default stays `open`. Upgrade note: copies of the production overlay that should keep deploying while the validator is down set `AUTOAIR_VALIDATOR__FAIL_MODE=open` in their `settings.env`.
 
 ### Fixed
+- `autoair serve` / `autoair local` over HTTPS: TLS 1.2 clients with current cipher policies
+  (Python's, for one) could not connect, because uvicorn's default cipher string left TLS 1.2
+  only SHA-1 CBC suites. Without `server.ssl_ciphers` the server now uses Python's default
+  set, as the setting describes. With uvicorn older than 0.47 (the version Airflow 3.0 and 3.1
+  constraints install) HTTPS failed to start with a `TypeError`; it now starts, and
+  `server.ssl_min_version=TLSv1.3` there names the uvicorn version it needs.
 - Python DAG import reads `rerun_with_latest_version` (Airflow 3.3+), which code generation
   already wrote.
 - Paged Airflow lists stop on a short page or a repeated page, so a server or proxy that
